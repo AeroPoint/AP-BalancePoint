@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} | Ledger</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;650;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <a class="brand" href="{{ url_for('main.dashboard') }}">Ledger</a>
+    <nav aria-label="Main">
+      {% for ep, text in [
+        ('main.dashboard', 'Overview'),
+        ('main.trends', 'Year trends'),
+        ('main.transactions', 'Transactions'),
+        ('main.categorize', 'Categorize'),
+        ('main.net_worth', 'Net worth'),
+        ('main.accounts_page', 'Accounts'),
+        ('main.upload', 'Upload data'),
+        ('main.rules_page', 'Merchant dictionary'),
+        ('main.categories_page', 'Categories'),
+      ] %}
+      <a href="{{ url_for(ep) }}" class="{{ 'on' if endpoint == ep }}" {% if endpoint == ep %}aria-current="page"{% endif %}>
+        {{ text }}{% if ep == 'main.categorize' and uncategorized_count %}<span class="count" title="Uncategorized transactions">{{ uncategorized_count }}</span>{% endif %}
+      </a>
+      {% endfor %}
+    </nav>
+  </aside>
+  <main class="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for kind, message in messages %}<p class="flash {{ kind }}" role="status">{{ message }}</p>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<div id="tip" class="tip" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden><span class="toast-msg"></span><span class="toast-actions"></span></div>
+<script src="{{ url_for('static', filename='charts.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

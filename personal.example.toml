@@ -1,0 +1,78 @@
+# Example personal settings for Ledger.
+#
+# Copy this file to data/personal.toml and edit it. data/ is git-ignored, so nothing you put in
+# personal.toml ends up in the code repository. The app reads it at startup; restart after editing.
+# Anything you change on the Merchant dictionary page in the app wins over this file.
+
+# ------------------------------------------------------------------ extra categories
+# kind is expense, income or transfer (transfers aren't counted as income or spending).
+
+[[category]]
+name = "Garden"
+kind = "expense"
+
+# ------------------------------------------------------------------ merchants
+# match:    text found in the bank's description (capitals don't matter; prefix with re: for a regex)
+# name:     how it shows up in the app
+# category: where it goes
+# name or category can be left out.
+
+[[merchant]]
+match = "MAPLE STREET BAKERY"
+name = "Maple Street Bakery"
+category = "Eating Out"
+
+[[merchant]]
+match = "ACME CORP PAYROLL"
+name = "Paycheck"
+category = "Paycheck"
+
+# ------------------------------------------------------------------ category keywords
+# A word in the cleaned-up merchant name -> category.
+
+[keywords]
+"Nursery" = "Garden"
+
+# ------------------------------------------------------------------ old budget spreadsheet (optional)
+# Tells Upload data -> Old budget workbook how to read a hand-kept budget spreadsheet.
+# Leave this whole section out if you don't have one.
+
+[spreadsheet]
+# A daily ledger sheet. Its top rows are a legend: "<Mon YYYY> - ..." in column A, then headers
+# like "Checking Income | Item" over each amount/name column pair, used from that month on.
+ledger_sheet = "Budget"
+# Sheets holding a US Bank export (Date, Transaction, Name, Memo, Amount) plus your own name for
+# each charge in name_column. Used to learn merchant names.
+name_sheets = ["Card Export"]
+name_column = "G"
+investments_sheet = "Investments"
+
+# Ledger column header (the part before "| Item") -> account
+[spreadsheet.ledger_accounts]
+"Checking Income" = { account = "Checking", kind = "checking" }
+"Checking Cost" = { account = "Checking", kind = "checking" }
+"Credit Cost" = { account = "Credit Card", kind = "credit" }
+
+# Running balance column headers in the legend rows -> account
+[spreadsheet.balance_columns]
+"Checking Balance" = { account = "Checking", kind = "checking" }
+"Card Balance" = { account = "Credit Card", kind = "credit" }
+
+# Label anywhere right of the ledger -> account; the value is in the cell to its left
+[spreadsheet.panel_accounts]
+"401k" = { account = "401k", kind = "retirement" }
+"Home Loan" = { account = "Mortgage", kind = "loan" }
+
+# Summary label with a =SUM(...) formula right below it -> category.
+# also_ok: categories the automatic rules may keep instead.
+# only_if_uncategorized: use the label only when nothing else categorized the transaction.
+[spreadsheet.category_labels]
+"Food" = { category = "Eating Out", also_ok = ["Groceries", "Drinks & Bars"] }
+"Misc" = { category = "Other", only_if_uncategorized = true }
+
+# Investments sheet: a section title alone on its row -> account, and the column holding values
+[spreadsheet.investments]
+"Brokerage" = { account = "Brokerage", kind = "brokerage", column = "E" }
+
+# Account kinds: checking, savings, cash, brokerage, retirement, hsa, crypto, property, vehicle,
+# other, credit, loan, other_debt

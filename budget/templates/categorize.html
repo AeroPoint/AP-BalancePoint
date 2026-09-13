@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_options %}
+{% block title %}Categorize{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Categorize</h1>
+    <p class="sub">
+      Pick a category once per merchant. With “Always” checked, every past transaction from that merchant
+      and every future upload goes to the same place.
+    </p>
+  </div>
+  <nav class="seg" aria-label="Which transactions">
+    <a href="{{ url_for('main.categorize') }}" class="{{ 'on' if mode == 'uncategorized' }}">Uncategorized ({{ uncategorized_count }})</a>
+    <a href="{{ url_for('main.categorize', mode='guessed') }}" class="{{ 'on' if mode == 'guessed' }}">Guessed from card type ({{ guessed }})</a>
+  </nav>
+</header>
+
+{% if mode == 'guessed' %}
+<p class="tab-help">These were filed using the merchant type US Bank sends with each card charge. They're usually right; confirm the ones you care about.</p>
+{% endif %}
+
+{% if groups %}
+<div class="panel flush">
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead>
+        <tr>
+          <th>Merchant</th>
+          <th class="num">Transactions</th>
+          <th class="num">Total</th>
+          <th>Last seen</th>
+          <th>Category</th>
+          <th>Always</th>
+          <th><span class="visually-hidden">Apply</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in groups %}
+        <tr data-merchant="{{ g.name }}">
+          <td class="merchant">
+            <a href="{{ url_for('main.transactions', name=g.name) }}">{{ g.name }}</a>
+            {% if g.sample != g.name %}<span class="raw" title="{{ g.sample }}">{{ g.sample }}</span>{% endif %}
+          </td>
+          <td class="num">{{ g.n }}</td>
+          <td class="num {{ 'in' if g.total > 0 }}">{{ '+' if g.total > 0 }}{{ g.total|money }}</td>
+          <td class="date">{{ g.last_date }}</td>
+          <td><select aria-label="Category for {{ g.name }}">{{ category_options(categories, g.category_id if mode == 'guessed' else None, 'Choose a category') }}</select></td>
+          <td><input type="checkbox" checked aria-label="Always use this category for {{ g.name }}"></td>
+          <td class="actions"><button type="button" class="btn small apply">Apply</button> <span class="status muted"></span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<section class="empty">
+  <h1>{{ 'Everything has a category' if mode == 'uncategorized' else 'No guesses to review' }}</h1>
+  <p>Transactions from new uploads that don't match your merchant dictionary will show up here.</p>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_options %}
+{% block title %}Merchant dictionary{% endblock %}
+{% set limit = 250 %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Merchant dictionary</h1>
+    <p class="sub">
+      Turns bank text like “TRADER JOE S #552 SPRINGFIELD IL” into “Trader Joe's” and files it under a category.
+      When several entries match, the longest one wins, and entries you've edited beat built-in ones.
+      Saving an entry re-runs it over your existing transactions, except ones you categorized by hand.
+    </p>
+  </div>
+</header>
+
+<section class="panel">
+  <form method="get" class="inline">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <label class="field grow">
+      <span>Try a bank description</span>
+      <input type="text" name="test" value="{{ test_raw }}" placeholder="COSTCO GAS #0123      SPRINGFIELD   IL">
+    </label>
+    <button class="btn">Test it</button>
+  </form>
+  {% if test_result %}
+  <p class="test-result">
+    Shows as <b>{{ test_result.name }}</b> in <b>{{ test_result.category or 'Uncategorized' }}</b>{% if test_result.source == 'mcc' %} (guessed from card type){% endif %}.
+    To add an entry for it, match on <code>{{ test_result.suggested_pattern }}</code>.
+  </p>
+  {% endif %}
+</section>
+
+<nav class="seg" aria-label="Entry type">
+  <a href="{{ url_for('main.rules_page', tab='raw') }}" class="{{ 'on' if tab == 'raw' }}">Bank names ({{ counts.get('raw', 0) }})</a>
+  <a href="{{ url_for('main.rules_page', tab='name') }}" class="{{ 'on' if tab == 'name' }}">Category keywords ({{ counts.get('name', 0) }})</a>
+</nav>
+<p class="tab-help">
+  {% if tab == 'raw' %}
+    The match text is looked for inside the bank's description; capitals don't matter. Leave “Show as” blank to only set a category.
+  {% else %}
+    Keywords are looked for inside the cleaned-up merchant name, so “Gas” files “Costco Gas” and “Shell Gas” under Auto &amp; Gas.
+    A keyword only applies when no bank-name entry already chose a category, except merchants you set with “Always”, which win outright.
+  {% endif %}
+</p>
+
+<section class="panel">
+  <h2 class="h-sm">Add an entry</h2>
+  <form method="post" action="{{ url_for('main.save_rule') }}" class="inline">
+    <input type="hidden" name="match_on" value="{{ tab }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <label class="field grow">
+      <span>{{ 'Bank text contains' if tab == 'raw' else 'Merchant name contains' }}</span>
+      <input name="pattern" required placeholder="{{ 'SHELL OIL' if tab == 'raw' else 'Gas' }}">
+    </label>
+    {% if tab == 'raw' %}
+    <label class="field grow"><span>Show as</span><input name="rename_to" placeholder="Shell"></label>
+    {% endif %}
+    <label class="field"><span>Category</span><select name="category_id">{{ category_options(categories, None, 'No category') }}</select></label>
+    <button class="btn primary">Add entry</button>
+  </form>
+</section>
+
+<form method="get" class="filters">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search entries" aria-label="Search entries">
+  <select name="source" aria-label="Source">
+    <option value="">All sources</option>
+    <option value="user" {{ 'selected' if source == 'user' }}>Edited by you</option>
+    <option value="config" {{ 'selected' if source == 'config' }}>From personal.toml</option>
+    <option value="excel" {{ 'selected' if source == 'excel' }}>Learned from your spreadsheet</option>
+    <option value="builtin" {{ 'selected' if source == 'builtin' }}>Built in</option>
+  </select>
+  <button class="btn">Filter</button>
+</form>
+
+<div class="panel flush">
+  <div class="table-wrap">
+    <table class="ledger rules">
+      <thead>
+        <tr>
+          <th>{{ 'Bank text contains' if tab == 'raw' else 'Name contains' }}</th>
+          {% if tab == 'raw' %}<th>Show as</th>{% endif %}
+          <th>Category</th>
+          <th>Source</th>
+          <th><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rules[:limit] %}
+        <tr>
+          <td><input form="rule-{{ r.id }}" name="pattern" value="{{ r.pattern }}" aria-label="Match text"></td>
+          {% if tab == 'raw' %}<td><input form="rule-{{ r.id }}" name="rename_to" value="{{ r.rename_to or '' }}" aria-label="Show as"></td>{% endif %}
+          <td><select form="rule-{{ r.id }}" name="category_id" aria-label="Category">{{ category_options(categories, r.category_id, 'No category') }}</select></td>
+          <td class="source-tag">{{ {'user': 'You', 'config': 'personal.toml', 'excel': 'Spreadsheet', 'builtin': 'Built in'}.get(r.source, r.source) }}</td>
+          <td class="actions">
+            <form id="rule-{{ r.id }}" method="post" action="{{ url_for('main.save_rule') }}">
+              <input type="hidden" name="id" value="{{ r.id }}">
+              <input type="hidden" name="match_on" value="{{ r.match_on }}">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              <button class="btn small">Save</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delete_rule', rid=r.id) }}" data-confirm="Delete the entry for “{{ r.pattern }}”?">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              <button class="btn small quiet danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">No entries match.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if rules|length > limit %}<p class="note">Showing {{ limit }} of {{ rules|length }} entries. Search to find the rest.</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% macro category_options(categories, selected=None, blank="Uncategorized") -%}
+<option value="">{{ blank }}</option>
+{%- for kind, label in [("expense", "Spending"), ("income", "Income"), ("transfer", "Transfers (not counted)")] %}
+<optgroup label="{{ label }}">
+  {%- for c in categories if c.kind == kind %}<option value="{{ c.id }}"{% if c.id == selected %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+</optgroup>
+{%- endfor %}
+{%- endmacro %}
+
+{% macro empty_upload(title) -%}
+<section class="empty">
+  <h1>{{ title }}</h1>
+  <p>Upload a US Bank CSV export, or import your old budget workbook, to see where your money went.</p>
+  <a class="btn primary" href="{{ url_for('main.upload') }}">Upload data</a>
+</section>
+{%- endmacro %}
+
+{# Account picker for reports. `keep` holds the other query values to carry along. #}
+{% macro account_filter(accounts, selected, keep) -%}
+{% if accounts|length > 1 %}
+<details class="acct-filter">
+  <summary class="btn">{% if selected %}{{ selected|length }} of {{ accounts|length }} accounts{% else %}All accounts{% endif %}</summary>
+  <form method="get" class="acct-panel">
+    {% for key, value in keep.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    {% for title, group in [("Open accounts", accounts|rejectattr("closed")|list), ("Closed accounts", accounts|selectattr("closed")|list)] if group %}
+    <fieldset>
+      <legend>{{ title }}</legend>
+      {% for a in group %}
+      <label class="check"><input type="checkbox" name="acct" value="{{ a.id }}"{% if not selected or a.id in selected %} checked{% endif %}> {{ a.name }}</label>
+      {% endfor %}
+    </fieldset>
+    {% endfor %}
+    <div class="form-actions">
+      <button class="btn small primary">Show these accounts</button>
+      <a class="btn small quiet" href="?{{ keep|urlencode }}">All accounts</a>
+    </div>
+  </form>
+</details>
+{% endif %}
+{%- endmacro %}
+
+{% macro kind_select(kinds, groups, selected=None, form=None) -%}
+<select name="kind"{% if form %} form="{{ form }}"{% endif %} aria-label="Account type">
+  {% for group in groups %}
+  <optgroup label="{{ group }}">
+    {% for key, label, side, g in kinds if g == group %}<option value="{{ key }}"{% if key == selected %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </optgroup>
+  {% endfor %}
+</select>
+{%- endmacro %}

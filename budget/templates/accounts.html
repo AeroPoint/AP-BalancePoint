@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_macros.html" import kind_select %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Accounts</h1>
+    <p class="sub">
+      Every account you track, open or closed. Closing an account keeps its transactions and balance history in every report;
+      it just stops asking for new balances after the month it closed. If one account shows up under two names, merge them.
+    </p>
+  </div>
+</header>
+
+<section class="panel">
+  <h2 class="h-sm">Add an account</h2>
+  <form method="post" action="{{ url_for('main.save_account') }}" class="inline">
+    <label class="field grow"><span>Name</span><input name="name" required placeholder="Fidelity Roth IRA"></label>
+    <label class="field"><span>Type</span>{{ kind_select(kinds, groups, 'retirement') }}</label>
+    <label class="field"><span>Bank or institution</span><input name="institution" placeholder="Fidelity"></label>
+    <label class="field"><span>Opened</span><input type="month" name="opened"></label>
+    <button class="btn primary">Add account</button>
+  </form>
+</section>
+
+{% if accounts %}
+<div class="panel flush">
+  <div class="table-wrap">
+    <table class="ledger rules accounts-table">
+      <thead>
+        <tr>
+          <th>Name</th><th>Type</th><th>Institution</th><th>Opened</th><th>Closed</th><th>Activity</th>
+          <th class="num">Latest balance</th><th><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in accounts %}
+        <tr class="{{ 'is-closed' if a.closed }}">
+          <td><input form="acct-{{ a.id }}" name="name" value="{{ a.name }}" aria-label="Account name" required></td>
+          <td>{{ kind_select(kinds, groups, a.kind, 'acct-' ~ a.id) }}</td>
+          <td><input form="acct-{{ a.id }}" name="institution" value="{{ a.institution or '' }}" aria-label="Institution"></td>
+          <td><input form="acct-{{ a.id }}" type="month" name="opened" value="{{ a.opened or '' }}" aria-label="Opened"></td>
+          <td><input form="acct-{{ a.id }}" type="month" name="closed" value="{{ a.closed or '' }}" aria-label="Closed"></td>
+          <td class="activity">
+            {% if a.n %}
+              <a href="{{ url_for('main.transactions', account=a.id) }}">{{ '{:,}'.format(a.n) }} transactions</a>
+              <small>{{ a.first_date[:7]|month_label }} to {{ a.last_date[:7]|month_label }}</small>
+            {% else %}
+              <span class="muted">Balances only</span>
+            {% endif %}
+            {% if a.quiet_since %}
+            <form method="post" action="{{ url_for('main.close_account', aid=a.id) }}" class="quiet-hint">
+              <input type="hidden" name="month" value="{{ a.quiet_since }}">
+              <small>Nothing since {{ a.quiet_since|month_label }}.</small>
+              <button class="btn small quiet">Mark closed</button>
+            </form>
+            {% endif %}
+          </td>
+          <td class="num">
+            {% if a.balance_month %}{{ a.balance|money(false) }}<small>{{ a.balance_month|month_label }}</small>{% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td class="actions">
+            <form id="acct-{{ a.id }}" method="post" action="{{ url_for('main.save_account') }}">
+              <input type="hidden" name="id" value="{{ a.id }}">
+              <button class="btn small">Save</button>
+            </form>
+            {% if accounts|length > 1 %}
+            <details class="more">
+              <summary class="btn small quiet">More</summary>
+              <div class="more-panel">
+                <form method="post" action="{{ url_for('main.merge_account', aid=a.id) }}" class="stack"
+                      data-confirm="Move all of “{{ a.name }}”'s transactions and balances into the account you picked, then remove “{{ a.name }}”?">
+                  <label class="field">
+                    <span>Merge into</span>
+                    <select name="target">{% for b in accounts if b.id != a.id %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select>
+                  </label>
+                  <button class="btn small">Merge accounts</button>
+                </form>
+                {% if not a.n %}
+                <form method="post" action="{{ url_for('main.delete_account', aid=a.id) }}" data-confirm="Delete “{{ a.name }}” and its balance history?">
+                  <button class="btn small danger">Delete account</button>
+                </form>
+                {% endif %}
+              </div>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

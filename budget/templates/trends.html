@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty_upload, account_filter %}
+{% block title %}Year trends{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>{{ year }}, month by month</h1>
+    <p class="sub">See which months ran high for each category, and whether this year is pacing ahead of past years.</p>
+  </div>
+  <div class="period">
+    <a class="step" href="{{ url_for('main.trends', year=year - 1, acct=acct) }}" aria-label="Previous year">‹</a>
+    <form method="get" class="period-pick">
+      {% for id in acct %}<input type="hidden" name="acct" value="{{ id }}">{% endfor %}
+      <select name="year" aria-label="Year" onchange="this.form.submit()">
+        {% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}
+      </select>
+    </form>
+    <a class="step" href="{{ url_for('main.trends', year=year + 1, acct=acct) }}" aria-label="Next year">›</a>
+    {{ account_filter(accounts, acct, {'year': year}) }}
+  </div>
+</header>
+
+{% if not matrix %}
+  {{ empty_upload("No spending recorded in " ~ year) }}
+{% else %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>Spending by category and month</h2>
+    <p class="muted">Darker cells are that category's bigger months. Whole dollars; hover for exact amounts. The last column compares with the same months of {{ year - 1 }}.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="ledger heat-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          {% for m in months %}<th class="num">{{ m }}</th>{% endfor %}
+          <th class="num">Total</th>
+          <th class="num">Per month</th>
+          <th class="num">vs {{ year - 1 }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in matrix %}
+        {% set row_max = row.months|max %}
+        <tr>
+          <th scope="row"><a href="{{ url_for('main.transactions', category=row.id if row.id else 'none', period=year, account=acct) }}">{{ row.name }}</a></th>
+          {% for v in row.months %}
+            {% set m = loop.index %}
+            {% if m in active %}
+              {% set h = ([0, (v / row_max * 85) if row_max > 0 else 0]|max)|round|int %}
+              <td class="heat{{ ' deep' if h > 50 }}" style="--h: {{ h }}" data-tip="{{ row.name }}, {{ months[m - 1] }} {{ year }}: {{ v|money }}">{{ '{:,.0f}'.format(v) if v|abs >= 0.5 else '' }}</td>
+            {% else %}
+              <td class="heat off" data-tip="No data for {{ months[m - 1] }} {{ year }}"></td>
+            {% endif %}
+          {% endfor %}
+          <td class="num strong">{{ row.total|money(false) }}</td>
+          <td class="num">{{ row.average|money(false) }}</td>
+          <td class="num">
+            {% if row.prev_total %}{% set change = (row.total - row.prev_total) / row.prev_total * 100 %}
+              <span data-tip="{{ year - 1 }} same months: {{ row.prev_total|money }}">{{ '+' if change >= 0 else '−' }}{{ change|abs|round|int }}%</span>
+            {% else %}<span class="muted">new</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>All spending</td>
+          {% for v in month_totals %}<td class="num">{{ '{:,.0f}'.format(v) if loop.index in active else '' }}</td>{% endfor %}
+          <td class="num">{{ month_totals|sum|money(false) }}</td>
+          <td class="num">{{ (month_totals|sum / (active|length or 1))|money(false) }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</section>
+
+<div class="split">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Monthly spending, biggest categories</h2>
+      <p class="muted">Your seven biggest categories of all time keep the same color in every year.</p>
+    </div>
+    <div id="stacked" class="chart"></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Running total against past years</h2>
+      <p class="muted">Where total spending stood at the end of each month.</p>
+    </div>
+    <div id="pace" class="chart"></div>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><h2>Income and spending each month</h2></div>
+  <div id="flow" class="chart"></div>
+</section>
+{% endif %}
+
+{% if yearly %}
+<section class="panel">
+  <div class="panel-head"><h2>Every year</h2></div>
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead><tr><th>Year</th><th class="num">Income</th><th class="num">Spending</th><th class="num">Kept</th><th class="num">Savings rate</th></tr></thead>
+      <tbody>
+        {% for y in yearly|reverse %}
+        <tr>
+          <td><a href="{{ url_for('main.trends', year=y.year, acct=acct) }}">{{ y.year }}</a></td>
+          <td class="num">{{ y.income|money(false) }}</td>
+          <td class="num">{{ y.spending|money(false) }}</td>
+          <td class="num">{{ y.net|money(false) }}</td>
+          <td class="num">{{ ((y.rate * 100)|round|int ~ '%') if y.rate is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if matrix %}
+<script type="application/json" id="data-stacked">{{ stacked|tojson }}</script>
+<script type="application/json" id="data-pace">{{ cumulative|tojson }}</script>
+<script type="application/json" id="data-flow">{{ flow|tojson }}</script>
+<script>
+  (function () {
+    const read = (id) => JSON.parse(document.getElementById(id).textContent);
+    const months = {{ months|tojson }};
+    const year = {{ year }};
+    const stacked = read("data-stacked");
+    Charts.columns(document.getElementById("stacked"), {
+      labels: months,
+      titles: months.map((m) => `${m} ${year}`),
+      stacked: true,
+      series: stacked,
+      colors: stacked.map((s, i) => (s.name === "Other" ? Charts.token("--s-other") : Charts.seriesColor(i))),
+    });
+    const pace = read("data-pace");
+    Charts.lines(document.getElementById("pace"), {
+      labels: months,
+      series: pace,
+      colors: pace.map((s) => Charts.seriesColor(Number(s.name) % 8)),
+    });
+    const flow = read("data-flow");
+    Charts.columns(document.getElementById("flow"), {
+      labels: months,
+      titles: months.map((m) => `${m} ${year}`),
+      series: [
+        { name: "Income", values: flow.map((f) => f.income) },
+        { name: "Spending", values: flow.map((f) => f.spending) },
+      ],
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

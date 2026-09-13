@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Categories{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Categories</h1>
+    <p class="sub">Transfers, like card payments, moving money between your accounts, and investing, are left out of income and spending totals.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <h2 class="h-sm">Add a category</h2>
+  <form method="post" action="{{ url_for('main.save_category') }}" class="inline">
+    <label class="field grow"><span>Name</span><input name="name" required placeholder="Home Projects"></label>
+    <label class="field"><span>Type</span>
+      <select name="kind"><option value="expense">Spending</option><option value="income">Income</option><option value="transfer">Transfer</option></select>
+    </label>
+    <button class="btn primary">Add category</button>
+  </form>
+</section>
+
+<div class="panel flush">
+  <div class="table-wrap">
+    <table class="ledger rules">
+      <thead>
+        <tr><th>Name</th><th>Type</th><th class="num">Transactions</th><th class="num">Dictionary entries</th><th class="num">All-time total</th><th><span class="visually-hidden">Actions</span></th></tr>
+      </thead>
+      <tbody>
+        {% for c in rows %}
+        <tr>
+          <td><input form="cat-{{ c.id }}" name="name" value="{{ c.name }}" aria-label="Category name"></td>
+          <td>
+            <select form="cat-{{ c.id }}" name="kind" aria-label="Type">
+              {% for value, label in [('expense', 'Spending'), ('income', 'Income'), ('transfer', 'Transfer')] %}
+              <option value="{{ value }}" {{ 'selected' if c.kind == value }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td class="num">{% if c.n %}<a href="{{ url_for('main.transactions', category=c.id) }}">{{ '{:,}'.format(c.n) }}</a>{% else %}0{% endif %}</td>
+          <td class="num">{{ c.rule_count }}</td>
+          <td class="num">{{ c.total|money(false) }}</td>
+          <td class="actions">
+            <form id="cat-{{ c.id }}" method="post" action="{{ url_for('main.save_category') }}">
+              <input type="hidden" name="id" value="{{ c.id }}">
+              <button class="btn small">Save</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delete_category', cid=c.id) }}"
+                  data-confirm="Delete “{{ c.name }}”? Its {{ c.n }} transactions go back through your dictionary, and any left over become uncategorized.">
+              <button class="btn small quiet danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

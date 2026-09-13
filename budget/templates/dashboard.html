@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty_upload, account_filter %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div class="period">
+    <nav class="seg" aria-label="Period length">
+      <a href="{{ url_for('main.dashboard', view='month', year=year, month=month, acct=acct) }}" class="{{ 'on' if view == 'month' }}">Month</a>
+      <a href="{{ url_for('main.dashboard', view='year', year=year, acct=acct) }}" class="{{ 'on' if view == 'year' }}">Year</a>
+    </nav>
+    <a class="step" href="{{ prev_link }}" aria-label="Previous {{ view }}">‹</a>
+    <form method="get" class="period-pick">
+      <input type="hidden" name="view" value="{{ view }}">
+      {% for id in acct %}<input type="hidden" name="acct" value="{{ id }}">{% endfor %}
+      {% if view == 'month' %}
+      <select name="month" aria-label="Month" onchange="this.form.submit()">
+        {% for m in months %}<option value="{{ loop.index }}" {{ 'selected' if loop.index == month }}>{{ m }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <select name="year" aria-label="Year" onchange="this.form.submit()">
+        {% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}
+      </select>
+    </form>
+    <a class="step" href="{{ next_link }}" aria-label="Next {{ view }}">›</a>
+    {{ account_filter(accounts, acct, {'view': view, 'year': year, 'month': month}) }}
+  </div>
+</header>
+
+{% if current.count == 0 %}
+  {{ empty_upload("Nothing recorded for " ~ label) }}
+{% else %}
+<section class="statement">
+  <h1>
+    In {{ label }} you brought in <b>{{ current.income|money(false) }}</b>
+    {%- if current.net >= 0 %}, spent <b>{{ current.spending|money(false) }}</b> and kept <b>{{ current.net|money(false) }}</b>{% if current.rate is not none %} ({{ (current.rate * 100)|round|int }}% of income){% endif %}.
+    {%- else %} and spent <b>{{ current.spending|money(false) }}</b>, which is <b>{{ (-current.net)|money(false) }}</b> more than came in.{% endif %}
+  </h1>
+  {% if previous.count %}
+  {% set diff = current.spending - previous.spending %}
+  <p class="compare">
+    Spending is {{ 'up' if diff > 0 else 'down' }} {{ diff|abs|money(false) }} from {{ prev_label }}{% if previous.spending %} ({{ (diff|abs / previous.spending * 100)|round|int }}%){% endif %}.
+    Income was {{ previous.income|money(false) }} then.
+  </p>
+  {% endif %}
+  {% if deposits.n %}
+  <p class="compare">
+    {{ deposits.n }} uncategorized {{ 'deposit' if deposits.n == 1 else 'deposits' }} ({{ deposits.total|money(false) }}) {{ 'isn’t' if deposits.n == 1 else 'aren’t' }} counted as income yet.
+    <a href="{{ url_for('main.transactions', category='none', period=period_filter, account=acct) }}">Categorize {{ 'it' if deposits.n == 1 else 'them' }}</a> as income, a refund, or a transfer.
+  </p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Where the money went</h2>
+    <p class="muted">Income on the left, spending and savings on the right. Click a category to see its transactions. Card payments and transfers between your accounts aren't counted.</p>
+  </div>
+  <div id="flow" class="chart"></div>
+</section>
+
+<div class="split">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Spending by category</h2>
+      {% if view == 'month' and avg_months %}<p class="muted">The dark tick is your average month over the previous {{ avg_months }} months.</p>{% endif %}
+    </div>
+    {% set averages = spending|selectattr('average')|map(attribute='average')|list %}
+    {% set scale = ([spending|map(attribute='total')|max] + averages)|max %}
+    <ul class="catbars">
+      {% for row in spending %}
+      <li>
+        <a class="cb-name" href="{{ url_for('main.transactions', category=row.id if row.id else 'none', period=period_filter, account=acct) }}">{{ row.name }}</a>
+        <span class="cb-track" data-tip="{{ row.name }}: {{ row.total|money }} across {{ row.n }} transactions{% if row.average %}, typical month {{ row.average|money }}{% endif %}">
+          <span class="cb-fill" style="width: {{ (row.total / scale * 100)|round(2) }}%"></span>
+          {% if row.average %}<span class="cb-avg" style="left: {{ (row.average / scale * 100)|round(2) }}%"></span>{% endif %}
+        </span>
+        <span class="cb-amt">{{ row.total|money(false) }}</span>
+        {% if view == 'month' %}
+          {% if row.average %}{% set d = row.total - row.average %}
+          <span class="cb-delta" data-tip="Compared with your average month">{{ '+' if d >= 0 else '−' }}{{ d|abs|money(false) }}</span>
+          {% else %}<span class="cb-delta">new</span>{% endif %}
+        {% else %}<span class="cb-delta">{{ (row.total / current.spending * 100)|round|int }}%</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Top merchants</h2></div>
+    <table class="ledger">
+      <tbody>
+        {% for m in merchants %}
+        <tr>
+          <td><a href="{{ url_for('main.transactions', name=m.name, period=period_filter, account=acct) }}">{{ m.name }}</a></td>
+          <td class="num muted">{{ m.n }} {{ 'visit' if m.n == 1 else 'visits' }}</td>
+          <td class="num">{{ m.total|money(false) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>{{ 'Last 12 months' if view == 'month' else year ~ ' by month' }}</h2>
+    <a href="{{ url_for('main.trends', year=year, acct=acct) }}">Compare categories across {{ year }}</a>
+  </div>
+  <div id="trend" class="chart"></div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if current.count %}
+<script type="application/json" id="data-income">{{ income|tojson }}</script>
+<script type="application/json" id="data-spending">{{ spending|tojson }}</script>
+<script type="application/json" id="data-trend">{{ trend|tojson }}</script>
+<script>
+  (function () {
+    const read = (id) => JSON.parse(document.getElementById(id).textContent);
+    Charts.sankey(document.getElementById("flow"), {
+      income: read("data-income"),
+      spending: read("data-spending"),
+      link: {{ url_for('main.transactions', period=period_filter, account=acct)|tojson }},
+    });
+    const trend = read("data-trend");
+    Charts.columns(document.getElementById("trend"), {
+      labels: trend.map((t) => t.label),
+      titles: trend.map((t) => `${t.label} ${t.year}`),
+      series: [
+        { name: "Income", values: trend.map((t) => t.income) },
+        { name: "Spending", values: trend.map((t) => t.spending) },
+      ],
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

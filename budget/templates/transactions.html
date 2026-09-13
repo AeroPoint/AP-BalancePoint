@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% from "_macros.html" import category_options %}
+{% block title %}Transactions{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Transactions</h1>
+    <p class="sub">
+      {{ '{:,}'.format(summary.n) }} {{ 'transaction' if summary.n == 1 else 'transactions' }}, adding up to {{ summary.total|money }}.
+      Click a merchant name to rename it. Change a category and you can make it apply to that merchant every time.
+    </p>
+  </div>
+</header>
+
+{% set a = request.args %}
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ a.get('q', '') }}" placeholder="Search merchant, bank text or notes" aria-label="Search">
+  <select name="period" aria-label="Dates">
+    <option value="">All dates</option>
+    {% for y in years %}
+    <optgroup label="{{ y }}">
+      <option value="{{ y }}" {{ 'selected' if a.get('period') == y }}>All of {{ y }}</option>
+      {% for p in periods if p.startswith(y) %}<option value="{{ p }}" {{ 'selected' if a.get('period') == p }}>{{ p|month_label }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+  <select name="category" aria-label="Category">
+    <option value="">All categories</option>
+    <option value="none" {{ 'selected' if a.get('category') == 'none' }}>Uncategorized</option>
+    {% for kind, label in [('expense', 'Spending'), ('income', 'Income'), ('transfer', 'Transfers')] %}
+    <optgroup label="{{ label }}">
+      {% for c in categories if c.kind == kind %}<option value="{{ c.id }}" {{ 'selected' if a.get('category') == c.id|string }}>{{ c.name }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+  {% set picked = a.getlist('account') %}
+  {% if picked|length > 1 %}
+    {% for id in picked %}<input type="hidden" name="account" value="{{ id }}">{% endfor %}
+    <span class="chip">{{ picked|length }} accounts</span>
+  {% else %}
+  <select name="account" aria-label="Account">
+    <option value="">All accounts</option>
+    {% for acct in accounts %}<option value="{{ acct.id }}" {{ 'selected' if picked and picked[0] == acct.id|string }}>{{ acct.name }}{{ ' (closed)' if acct.closed }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  {% if a.get('name') %}
+    <input type="hidden" name="name" value="{{ a.get('name') }}">
+    <span class="chip">Merchant: {{ a.get('name') }}</span>
+  {% endif %}
+  {% if a.get('source') %}<input type="hidden" name="source" value="{{ a.get('source') }}">{% endif %}
+  <button class="btn primary">Filter</button>
+  {% if a %}<a class="btn quiet" href="{{ url_for('main.transactions') }}">Clear filters</a>{% endif %}
+</form>
+
+{% if rows %}
+<div class="panel flush">
+  <div class="table-wrap">
+    <table class="ledger txns">
+      <thead>
+        <tr><th>Date</th><th>Merchant</th><th>Category</th><th>Account</th><th class="num">Amount</th></tr>
+      </thead>
+      <tbody>
+        {% for t in rows %}
+        <tr data-id="{{ t.id }}" data-name="{{ t.name }}" data-source="{{ t.category_source }}">
+          <td class="date">{{ t.date }}</td>
+          <td class="merchant">
+            <button type="button" class="name-edit" title="Rename">{{ t.name }}</button>
+            {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}
+          </td>
+          <td>
+            <select class="cat-select" aria-label="Category for {{ t.name }}">{{ category_options(categories, t.category_id) }}</select>
+            {% if t.category_source == 'mcc' %}<span class="guess" data-tip="Guessed from the card's merchant type. Pick a category to confirm it.">guess</span>{% endif %}
+          </td>
+          <td class="source-tag">{{ t.account_name }}</td>
+          <td class="num {{ 'in' if t.amount > 0 }}">{{ '+' if t.amount > 0 }}{{ t.amount|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if pages > 1 %}
+{% set args = a.to_dict() %}
+<nav class="pager" aria-label="Pages">
+  {% if page > 1 %}{% set _ = args.update(page=page - 1) %}<a class="btn small" href="{{ url_for('main.transactions', **args) }}">Newer</a>{% endif %}
+  <span class="muted">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}{% set _ = args.update(page=page + 1) %}<a class="btn small" href="{{ url_for('main.transactions', **args) }}">Older</a>{% endif %}
+</nav>
+{% endif %}
+{% else %}
+<section class="empty">
+  <h1>No transactions match</h1>
+  <p>Clear the filters to see everything, or upload a bank export.</p>
+  <a class="btn" href="{{ url_for('main.upload') }}">Upload data</a>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Upload data{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Upload data</h1>
+    <p class="sub">Uploaded files are kept in the project's data folder, which git ignores, so nothing financial ends up in the repository.</p>
+  </div>
+</header>
+
+<div class="split">
+  <section class="panel">
+    <div class="panel-head"><h2>Bank CSV exports</h2></div>
+    <form method="post" enctype="multipart/form-data" class="stack">
+      <label class="field">
+        <span>CSV files</span>
+        <input type="file" name="files" accept=".csv,text/csv" multiple required>
+        <small>Transactions you've already imported are skipped, so overlapping date ranges are fine.</small>
+      </label>
+      <label class="field">
+        <span>Account</span>
+        <select name="account_id">
+          {% for acct in accounts if not acct.closed %}<option value="{{ acct.id }}" {{ 'selected' if acct.id == last_account_id }}>{{ acct.name }}</option>{% endfor %}
+          <option value="" {{ 'selected' if not accounts }}>A new account</option>
+          {% set closed_accounts = accounts|selectattr('closed')|list %}
+          {% if closed_accounts %}
+          <optgroup label="Closed accounts">
+            {% for acct in closed_accounts %}<option value="{{ acct.id }}" {{ 'selected' if acct.id == last_account_id }}>{{ acct.name }}</option>{% endfor %}
+          </optgroup>
+          {% endif %}
+        </select>
+      </label>
+      <div class="inline">
+        <label class="field grow">
+          <span>New account name</span>
+          <input name="new_account" placeholder="US Bank Altitude Go">
+        </label>
+        <label class="field">
+          <span>Type</span>
+          <select name="kind"><option value="credit">Credit card</option><option value="checking">Checking</option><option value="savings">Savings</option></select>
+        </label>
+      </div>
+      <small class="muted">Only fill in a new account name if the account isn't in the list above; a name here takes priority.</small>
+      <div><button class="btn primary">Upload CSV files</button></div>
+    </form>
+  </section>
+
+  <section class="panel steps">
+    <div class="panel-head"><h2>Getting a CSV from US Bank</h2></div>
+    <ol>
+      <li>Sign in at usbank.com and open the checking account or card.</li>
+      <li>On the transactions list, choose the download or export option.</li>
+      <li>Pick a date range and the CSV format.</li>
+      <li>Upload the file here and choose the matching account.</li>
+    </ol>
+    <p class="muted">Files from other banks work too, as long as they have a date column, a description or name column, and an amount (or debit and credit) column.</p>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Old budget workbook</h2>
+    <p class="muted">
+      Reads transaction history, hand-sorted categories, merchant names and balances from a budget spreadsheet,
+      following the [spreadsheet] section of data/personal.toml. Running it again skips anything already imported.
+    </p>
+  </div>
+  {% if not sheet_configured %}
+  <p class="flash error">data/personal.toml has no [spreadsheet] section yet, so there's nothing to read. personal.example.toml shows the format.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('main.upload_excel') }}" enctype="multipart/form-data" class="inline">
+    {% if workbooks %}
+    <label class="field grow">
+      <span>Workbook in data/source</span>
+      <select name="existing">{% for w in workbooks %}<option>{{ w }}</option>{% endfor %}</select>
+    </label>
+    {% endif %}
+    <label class="field grow">
+      <span>{{ 'Or upload a different workbook' if workbooks else 'Workbook (.xlsx)' }}</span>
+      <input type="file" name="workbook" accept=".xlsx">
+    </label>
+    <label class="field">
+      <span>Import rows through</span>
+      <input type="date" name="through">
+    </label>
+    <button class="btn primary">Import workbook</button>
+  </form>
+  <p class="note">Leave the date blank to use the day the file was last saved; rows after that are bills the sheet projects forward.</p>
+</section>
+
+<section class="panel flush">
+  <div class="panel-head" style="padding: 16px clamp(14px, 2.5vw, 24px) 0"><h2>Import history</h2></div>
+  {% if imports %}
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead>
+        <tr><th>File</th><th>Account</th><th>Imported</th><th>Dates covered</th><th class="num">Added</th><th><span class="visually-hidden">Actions</span></th></tr>
+      </thead>
+      <tbody>
+        {% for i in imports %}
+        <tr>
+          <td>{{ i.filename }}</td>
+          <td class="source-tag">{{ i.account_name or '—' }}</td>
+          <td class="date">{{ i.uploaded_at[:16] }}</td>
+          <td class="date">{% if i.first_date %}{{ i.first_date }} to {{ i.last_date }}{% else %}—{% endif %}</td>
+          <td class="num">{{ '{:,}'.format(i.remaining) }} of {{ '{:,}'.format(i.rows_read) }}</td>
+          <td class="actions">
+            <form method="post" action="{{ url_for('main.delete_import', iid=i.id) }}"
+                  data-confirm="Remove this import and its {{ i.remaining }} transactions? The file stays in the data folder.">
+              <button class="btn small quiet danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted" style="padding: 0 clamp(14px, 2.5vw, 24px) 16px">Nothing imported yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Net worth{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Net worth</h1>
+    <p class="sub">Where your money sits across every account. Untick accounts to leave them out; closed accounts still count for the months they were open.</p>
+  </div>
+  <form method="get" class="period">
+    <a class="step" href="{{ url_for('main.net_worth', month=prev_month) }}" aria-label="Previous month">‹</a>
+    <input type="month" name="month" value="{{ month }}" aria-label="Month" onchange="this.form.submit()">
+    <a class="step" href="{{ url_for('main.net_worth', month=next_month) }}" aria-label="Next month">›</a>
+  </form>
+</header>
+
+{% if not accounts %}
+<section class="empty">
+  <h1>No accounts yet</h1>
+  <p>Add the accounts you want to track, like checking, savings, retirement, your home and any loans. Then enter their balances once a month.</p>
+  <a class="btn primary" href="{{ url_for('main.accounts_page') }}">Add accounts</a>
+</section>
+{% else %}
+<div id="nw-app">
+  <section class="statement" id="nw-statement" aria-live="polite"></section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Accounts to include</h2>
+      <div class="inline">
+        <button type="button" class="btn small" data-preset="all">Everything</button>
+        <button type="button" class="btn small" data-preset="liquid">Leave out home and cars</button>
+        <button type="button" class="btn small" data-preset="cash">Cash only</button>
+        <button type="button" class="btn small" data-preset="investments">Investments only</button>
+      </div>
+    </div>
+    <div id="nw-chips" class="chip-groups"></div>
+    <label class="check" id="nw-closed-wrap"><input type="checkbox" id="nw-show-closed"> Show closed accounts</label>
+  </section>
+
+  <div id="nw-charts">
+    <div class="split">
+      <section class="panel">
+        <div class="panel-head"><h2 id="nw-sits-title">Where it sits</h2></div>
+        <div id="nw-sits"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Own, owe and net worth</h2>
+          <select id="nw-range" aria-label="Time range">
+            <option value="12">Last 12 months</option>
+            <option value="24">Last 2 years</option>
+            <option value="all">All history</option>
+          </select>
+        </div>
+        <div id="nw-lines" class="chart"></div>
+      </section>
+    </div>
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Money in each account over time</h2>
+        <p class="muted">What you own, stacked by account. Your seven biggest accounts keep their colors; the rest are grouped.</p>
+      </div>
+      <div id="nw-stack" class="chart"></div>
+    </section>
+  </div>
+
+  <div class="nw-grid">
+    <section class="panel balances">
+      <div class="panel-head">
+        <h2>Balances for {{ month|month_label }}</h2>
+        <a href="{{ url_for('main.accounts_page') }}">Add or close accounts</a>
+      </div>
+      {% if open_accounts %}
+      <form method="post">
+        <input type="hidden" name="month" value="{{ month }}">
+        {% for group in groups %}
+        {% set rows = open_accounts|selectattr('group', 'equalto', group)|list %}
+        {% if rows %}
+        <fieldset>
+          <legend>{{ group }}</legend>
+          {% for a in rows %}
+          {% set last = previous.get(a.id) %}
+          <div class="bal-row">
+            <label for="acct-{{ a.id }}">
+              {{ a.name }}
+              <small>{{ a.kind_label }}{% if last %}; {{ last[0]|money }} in {{ last[1]|month_label }}{% endif %}</small>
+            </label>
+            <input id="acct-{{ a.id }}" name="acct-{{ a.id }}" inputmode="decimal" autocomplete="off"
+                   value="{{ '%.2f'|format(current[a.id]) if a.id in current else '' }}"
+                   {% if last %}data-last="{{ '%.2f'|format(last[0]) }}" placeholder="{{ '{:,.2f}'.format(last[0]) }}"{% endif %}>
+          </div>
+          {% endfor %}
+        </fieldset>
+        {% endif %}
+        {% endfor %}
+        <p class="note">For credit cards and loans, enter what you owe as a positive number. Leave a box blank to keep last month's number in the totals.</p>
+        <div class="form-actions">
+          <button class="btn primary">Save balances</button>
+          <button type="button" class="btn" id="copy-last">Fill blanks from last month</button>
+        </div>
+      </form>
+      {% else %}
+      <p class="muted">None of your accounts were open in {{ month|month_label }}.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Month by month</h2></div>
+      <div class="table-wrap">
+        <table class="ledger">
+          <thead><tr><th>Month</th><th class="num">Own</th><th class="num">Owe</th><th class="num">Net worth</th><th class="num">Change</th></tr></thead>
+          <tbody id="nw-table"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if accounts %}
+<script type="application/json" id="nw-data">{{ payload|tojson }}</script>
+<script src="{{ url_for('static', filename='networth.js') }}"></script>
+{% endif %}
+{% endblock %}
