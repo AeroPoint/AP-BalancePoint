@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Plan{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Plan</h1>
+    <p class="sub">
+      Where the next 12 months leave you if you stick to a plan. Start from a normal stretch of months, set what a month
+      should look like, then add the changes you expect, like time off work, overtime or a big purchase.
+    </p>
+  </div>
+</header>
+
+{% set p = projection %}
+{% if p %}
+{% set acct_name = names.get(p.account, 'the plan account') %}
+{% set backup_name = names.get(p.backup, 'backup savings') %}
+{% set last = p.rows[-1] %}
+<section class="statement">
+  <h1>
+    On this plan, {{ acct_name }} goes from <b>{{ p.start_balance|money(false) }}</b> today
+    {%- if p.first_draw %} to your {{ (settings.plan_buffer or 0)|money(false) }} cushion by <b>{{ p.first_draw|month_label }}</b>,
+      and you'd draw <b>{{ p.drawn|money(false) }}</b> from {{ backup_name }} over the year.
+    {%- else %} to <b>{{ last.balance|money(false) }}</b> by {{ last.key|month_label }}.{% endif %}
+  </h1>
+  <p class="compare">
+    A planned month runs {{ p.average_net|abs|money(false) }} {{ 'ahead' if p.average_net >= 0 else 'short' }} on average.
+    {% if p.first_short %}{{ backup_name }} runs out in {{ p.first_short|month_label }}.
+    {% elif p.drawn %}{{ backup_name }} would have {{ last.reserve|money(false) }} left.{% endif %}
+  </p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Next 12 months</h2>
+    <p class="muted">Balances at each month's end. When {{ acct_name }} would drop below the cushion, the difference comes from {{ backup_name }}.</p>
+  </div>
+  <div id="runway" class="chart"></div>
+  <div class="table-wrap">
+    <table class="ledger plan-table">
+      <thead>
+        <tr><th>Month</th><th class="num">Planned</th><th>Changes</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th class="num">From {{ backup_name }}</th><th class="num">{{ backup_name }} left</th></tr>
+      </thead>
+      <tbody>
+        {% for r in p.rows %}
+        <tr{% if r.short %} class="is-short"{% endif %}>
+          <td>{{ r.key|month_label }}</td>
+          <td class="num">{{ (r.net - r.adjust)|money(false) }}</td>
+          <td>{% for i in r['items'] %}<span class="chip">{{ i.label }} {{ '+' if i.amount > 0 }}{{ i.amount|money(false) }}</span> {% endfor %}</td>
+          <td class="num {{ 'in' if r.net > 0 }}">{{ '+' if r.net > 0 }}{{ r.net|money(false) }}</td>
+          <td class="num">{{ r.balance|money(false) }}</td>
+          <td class="num">{{ r.draw|money(false) if r.draw else '' }}</td>
+          <td class="num">{{ r.reserve|money(false) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<div class="split">
+<section class="panel">
+  <div class="panel-head">
+    <h2>A planned month</h2>
+    <p class="muted">Take-home pay, after the 401(k) and benefits come out. Suggestions come from the months on the right.</p>
+  </div>
+  <form method="post" action="{{ url_for('main.save_plan_settings') }}" class="stack plan-form">
+    {% set b = base %}
+    {% for key, label, suggest, help in [
+      ('plan_income', 'Regular income', b.regular_income if b else None, 'paychecks, rent and side income'),
+      ('plan_fixed', 'Fixed spending', b.fixed if b else None, 'mortgage, bills, insurance'),
+      ('flex_target', 'Flexible target', b.flexible if b else None, 'groceries, dining, shopping, kids, gas...'),
+      ('plan_nonmonthly', 'Non-monthly set-aside', b.nonmonthly_year if b else None, 'projects, travel, taxes, averaged over a year'),
+    ] %}
+    <div class="plan-row">
+      <label class="field"><span>{{ label }} <small class="muted">{{ help }}</small></span>
+        <input name="{{ key }}" inputmode="decimal" value="{{ '%.0f'|format(settings[key]) if settings[key] is not none else '' }}"
+               placeholder="{{ '%.0f'|format(suggest) if suggest is not none else '' }}">
+      </label>
+      {% if suggest is not none %}
+      <button type="button" class="btn small quiet use-suggestion" data-value="{{ '%.0f'|format(suggest) }}">Use {{ suggest|money(false) }}</button>
+      {% endif %}
+    </div>
+    {% endfor %}
+    <div class="plan-row">
+      <label class="field"><span>Spend from</span>
+        <select name="plan_account">{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == plan_account %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
+      </label>
+      <label class="field"><span>Keep at least</span>
+        <input name="plan_buffer" inputmode="decimal" value="{{ '%.0f'|format(settings.plan_buffer) if settings.plan_buffer is not none else '' }}" placeholder="1,500">
+      </label>
+    </div>
+    <div class="plan-row">
+      <label class="field"><span>Then draw from</span>
+        <select name="plan_backup_account"><option value="">Nothing</option>{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == backup_account %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
+      </label>
+    </div>
+    <div class="form-actions"><button class="btn primary">Save plan</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>What a normal month looked like</h2>
+  </div>
+  <form method="get" class="inline">
+    <label class="field"><span>Months</span>
+      <select name="months">{% for n in [3, 4, 6, 12] %}<option{% if n == count %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    </label>
+    <label class="field"><span>Ending</span><input type="month" name="through" value="{{ through }}"></label>
+    <button class="btn">Show</button>
+  </form>
+  {% if base %}
+  <p class="muted plan-span">Monthly averages, {{ (base.months[0][0] ~ '-' ~ '%02d'|format(base.months[0][1]))|month_label }} to {{ through|month_label }}.</p>
+  <table class="ledger">
+    <tbody>
+      {% for s in base.sources %}
+      <tr><td>{{ s.name }}{% if s.category not in ('Paycheck', 'Rental Income', 'Side Income') %} <span class="source-tag">not counted as regular</span>{% endif %}</td><td class="num in">{{ s.monthly|money(false) }}</td></tr>
+      {% endfor %}
+      <tr class="subtotal"><td>Regular income</td><td class="num">{{ base.regular_income|money(false) }}</td></tr>
+      <tr><td>Fixed</td><td class="num">{{ base.fixed|money(false) }}</td></tr>
+      <tr><td>Flexible</td><td class="num">{{ base.flexible|money(false) }}</td></tr>
+      <tr><td>Non-monthly <span class="source-tag">12-month average {{ base.nonmonthly_year|money(false) }}</span></td><td class="num">{{ base.nonmonthly|money(false) }}</td></tr>
+      <tr><td>One-offs</td><td class="num">{{ base.one_off|money(false) }}</td></tr>
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No months with data yet.</p>
+  {% endif %}
+</section>
+</div>
+
+<section class="panel" id="changes">
+  <div class="panel-head">
+    <h2>Changes you expect</h2>
+    <p class="muted">Anything that makes a month different from the plan above: income that stops or starts, a cost that ends, a planned purchase (same first and last month).</p>
+  </div>
+  {% if p and p['items'] %}
+  <div class="table-wrap">
+    <table class="ledger rules">
+      <thead><tr><th>Change</th><th class="num">Per month</th><th>From</th><th>Through</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+        {% for i in p['items'] %}
+        <tr>
+          <td><input form="item-{{ i.id }}" name="label" value="{{ i.label }}" aria-label="Change"></td>
+          <td><input form="item-{{ i.id }}" name="amount" inputmode="decimal" value="{{ '%.0f'|format(i.amount) }}" aria-label="Amount per month; negative is less money"></td>
+          <td><input form="item-{{ i.id }}" type="month" name="start_month" value="{{ i.start_month }}" aria-label="From"></td>
+          <td><input form="item-{{ i.id }}" type="month" name="end_month" value="{{ i.end_month or '' }}" aria-label="Through"></td>
+          <td class="actions">
+            <form id="item-{{ i.id }}" method="post" action="{{ url_for('main.save_plan_item') }}">
+              <input type="hidden" name="id" value="{{ i.id }}">
+              <button class="btn small">Save</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delete_plan_item', iid=i.id) }}">
+              <button class="btn small quiet danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('main.save_plan_item') }}" class="inline plan-add">
+    <label class="field grow"><span>Change</span><input name="label" required placeholder="New car payment"></label>
+    <label class="field"><span>Means</span>
+      <select name="direction"><option value="less">less money</option><option value="more">more money</option></select>
+    </label>
+    <label class="field"><span>Per month</span><input name="amount" inputmode="decimal" required placeholder="450"></label>
+    <label class="field"><span>From</span><input type="month" name="start_month" required value="{{ this_month }}"></label>
+    <label class="field"><span>Through</span><input type="month" name="end_month"></label>
+    <button class="btn primary">Add change</button>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll(".use-suggestion").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = button.closest(".plan-row").querySelector("input");
+      input.value = button.dataset.value;
+      input.focus();
+    });
+  });
+</script>
+{% if projection %}
+<script type="application/json" id="data-runway">{{ projection.rows|tojson }}</script>
+<script>
+  (function () {
+    const rows = JSON.parse(document.getElementById("data-runway").textContent);
+    const labels = rows.map((r) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(r.key.slice(5)) - 1]);
+    const series = [{ name: {{ names.get(projection.account, 'Plan account')|tojson }}, values: rows.map((r) => r.balance) }];
+    {% if projection.backup %}series.push({ name: {{ names.get(projection.backup, 'Backup')|tojson }}, values: rows.map((r) => r.reserve) });{% endif %}
+    Charts.lines(document.getElementById("runway"), { labels, titles: rows.map((r) => r.key), series });
+  })();
+</script>
+{% endif %}
+{% endblock %}

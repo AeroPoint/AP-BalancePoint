@@ -104,7 +104,7 @@
   <div class="panel-head"><h2>Every year</h2></div>
   <div class="table-wrap">
     <table class="ledger">
-      <thead><tr><th>Year</th><th class="num">Income</th><th class="num">Spending</th><th class="num">Kept</th><th class="num">Savings rate</th></tr></thead>
+      <thead><tr><th>Year</th><th class="num">Income</th><th class="num">Spending</th><th class="num">Kept</th><th class="num">Paycheck retirement</th><th class="num" title="Kept plus paycheck retirement savings, over income plus those savings">Savings rate</th></tr></thead>
       <tbody>
         {% for y in yearly|reverse %}
         <tr>
@@ -112,6 +112,7 @@
           <td class="num">{{ y.income|money(false) }}</td>
           <td class="num">{{ y.spending|money(false) }}</td>
           <td class="num">{{ y.net|money(false) }}</td>
+          <td class="num">{{ y.work|money(false) if y.work else '—' }}</td>
           <td class="num">{{ ((y.rate * 100)|round|int ~ '%') if y.rate is not none else '—' }}</td>
         </tr>
         {% endfor %}

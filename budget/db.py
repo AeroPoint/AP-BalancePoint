@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS categories (
     name          TEXT NOT NULL UNIQUE,
     kind          TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer')),
     sort          INTEGER NOT NULL DEFAULT 0,
-    snap_to_month INTEGER NOT NULL DEFAULT 0   -- 1 = count on the nearest 1st (rent paid a day early)
+    snap_to_month INTEGER NOT NULL DEFAULT 0,  -- 1 = count on the nearest 1st (rent paid a day early)
+    grp           TEXT                         -- spending: fixed | flexible | nonmonthly; transfers: saving
 );
 
 -- The merchant dictionary + auto-categorization rules.
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     -- rule = dictionary/keyword, mcc = guessed from card type, none = uncategorized
     category_source TEXT NOT NULL DEFAULT 'none',
     notes           TEXT,
+    one_off         INTEGER NOT NULL DEFAULT 0, -- 1 = a big one-time purchase, kept out of its category's group
     dedupe_key      TEXT NOT NULL UNIQUE
 );
 CREATE INDEX IF NOT EXISTS ix_transactions_date ON transactions(date);
@@ -88,6 +90,33 @@ CREATE TABLE IF NOT EXISTS balances (
 CREATE TABLE IF NOT EXISTS replaced_rows (
     dedupe_key  TEXT PRIMARY KEY,
     replaced_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
+-- What each paycheck puts into a retirement account before it reaches the bank. An entry applies to
+-- paychecks from start_date until the next entry for the same pattern (a raise, a new rate).
+CREATE TABLE IF NOT EXISTS paycheck_savings (
+    id            INTEGER PRIMARY KEY,
+    pattern       TEXT NOT NULL,                -- text in the paycheck's bank description
+    account_id    INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
+    start_date    TEXT NOT NULL,                -- YYYY-MM-DD
+    base_pay      REAL NOT NULL,                -- pay per paycheck the percentages apply to
+    employee_pct  REAL NOT NULL,                -- your contribution, % of base pay
+    match_rate    REAL NOT NULL DEFAULT 0,      -- employer adds this % of your contribution...
+    match_cap_pct REAL NOT NULL DEFAULT 0       -- ...on contributions up to this % of base pay
+);
+
+-- Changes the plan expects, per month: negative = less money (lost income, a new cost).
+CREATE TABLE IF NOT EXISTS plan_items (
+    id          INTEGER PRIMARY KEY,
+    label       TEXT NOT NULL,
+    amount      REAL NOT NULL,
+    start_month TEXT NOT NULL,                  -- YYYY-MM
+    end_month   TEXT                            -- YYYY-MM, inclusive; NULL = ongoing
 );
 
 -- Fixed-term loans. From counts_from on, an account's balance is calculated from its loans
@@ -199,9 +228,18 @@ def migrate(conn):
         conn.execute("ALTER TABLE balances ADD COLUMN as_of TEXT")
     conn.execute("UPDATE balances SET as_of = date(month || '-01', '+1 month', '-1 day') WHERE as_of IS NULL")
 
-    if conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+    if "grp" not in _columns(conn, "categories"):
+        conn.execute("ALTER TABLE categories ADD COLUMN grp TEXT")
+    if "one_off" not in _columns(conn, "transactions"):
+        conn.execute("ALTER TABLE transactions ADD COLUMN one_off INTEGER NOT NULL DEFAULT 0")
+
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version < 1:
         _fold_old_categories(conn)
-        conn.execute("PRAGMA user_version = 1")
+    if version < 2:
+        for row in conn.execute("SELECT id, name, kind FROM categories WHERE grp IS NULL").fetchall():
+            conn.execute("UPDATE categories SET grp = ? WHERE id = ?", (seed.category_group(row["name"], row["kind"]), row["id"]))
+    conn.execute("PRAGMA user_version = 2")
 
 
 def merge_category(conn, source_id, target_id):

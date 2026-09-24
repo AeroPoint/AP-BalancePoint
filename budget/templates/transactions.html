@@ -12,6 +12,31 @@
   </div>
 </header>
 
+<details class="panel add-txn"{% if not accounts %} hidden{% endif %}>
+  <summary>Add a transaction by hand</summary>
+  <p class="muted">
+    For money no bank export shows, like spending from cash on hand. Keep cash in its own account: taking cash out of the bank
+    is a Transfer (it's still yours), and what you spend from it goes here with its real category.
+  </p>
+  <form method="post" action="{{ url_for('main.add_transaction') }}" class="inline">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <label class="field"><span>Account</span>
+      <select name="account_id">
+        {% for acct in accounts if not acct.closed %}<option value="{{ acct.id }}"{% if acct.kind == 'cash' %} selected{% endif %}>{{ acct.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Date</span><input type="date" name="date" required></label>
+    <label class="field grow"><span>What</span><input name="name" required placeholder="Farmers market, paid in cash"></label>
+    <label class="field"><span>Money</span>
+      <select name="direction"><option value="out">went out</option><option value="in">came in</option></select>
+    </label>
+    <label class="field"><span>Amount</span><input name="amount" inputmode="decimal" required placeholder="250.00"></label>
+    <label class="field"><span>Category</span><select name="category_id">{{ category_options(categories, None, 'Use my rules') }}</select></label>
+    <label class="field grow"><span>Notes</span><input name="notes"></label>
+    <button class="btn primary">Add</button>
+  </form>
+</details>
+
 {% set a = request.args %}
 <form class="filters" method="get">
   <input type="search" name="q" value="{{ a.get('q', '') }}" placeholder="Search merchant, bank text or notes" aria-label="Search">
@@ -57,7 +82,7 @@
   <div class="table-wrap">
     <table class="ledger txns">
       <thead>
-        <tr><th>Date</th><th>Merchant</th><th>Category</th><th>Account</th><th class="num">Amount</th></tr>
+        <tr><th>Date</th><th>Merchant</th><th>Category</th><th>Account</th><th class="num">Amount</th><th><span title="A big one-time purchase, kept out of fixed and flexible spending">One-off</span></th></tr>
       </thead>
       <tbody>
         {% for t in rows %}
@@ -69,6 +94,13 @@
           <td class="merchant">
             <button type="button" class="name-edit" title="Rename">{{ t.name }}</button>
             {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}
+            {% if t.import_id is none %}
+            <form class="manual-tag" method="post" action="{{ url_for('main.delete_transaction', tid=t.id) }}" data-confirm="Delete “{{ t.name }}”?">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
+              <span class="raw">added by hand{% if t.notes %} · {{ t.notes }}{% endif %}</span>
+              <button class="btn small quiet danger">Delete</button>
+            </form>
+            {% endif %}
           </td>
           <td>
             <select class="cat-select" aria-label="Category for {{ t.name }}">{{ category_options(categories, t.category_id) }}</select>
@@ -76,6 +108,7 @@
           </td>
           <td class="source-tag">{{ t.account_name }}</td>
           <td class="num {{ 'in' if t.amount > 0 }}">{{ '+' if t.amount > 0 }}{{ t.amount|money }}</td>
+          <td class="oneoff-cell">{% if t.amount < 0 %}<input type="checkbox" class="oneoff-check" aria-label="{{ t.name }} is a one-off"{% if t.one_off %} checked{% endif %}>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

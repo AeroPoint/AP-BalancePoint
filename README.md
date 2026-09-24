@@ -68,6 +68,44 @@ Loans with fixed terms (*Accounts → Loan schedules*) are calculated every mont
 spreadsheet import sets them up from an `=-FV(rate/12, DATEDIF(...), PMT(...), amount)` balance formula.
 Overview and Year trends have the same account filter for spending and income.
 
+## Judging a month, and planning ahead
+
+A single month's savings rate swings with every big purchase, so the Overview judges a month on
+**flexible spending** against a monthly target you set together. Each spending category counts as
+one of three groups (set on the Categories page):
+
+- **Fixed**: bills that barely change (mortgage, utilities, insurance)
+- **Flexible**: day-to-day spending you steer (groceries, dining, shopping, hobbies, gas)
+- **Non-monthly**: lumpy costs (projects, travel, taxes)
+
+Mark a big one-time purchase as a **one-off** (on the Transactions page, or from the Overview's
+large-charges list) and it's kept out of its group, though it still counts as spending. The Overview
+shows which flexible categories ran above or below a usual month (the median of the previous six).
+
+A 401(k) comes out of a paycheck before the bank sees it. Add it under **Accounts → Paycheck
+retirement savings** (base pay per paycheck, your %, the employer match) and it counts as saving in
+the Overview and in yearly savings rates. For a raise or a new rate, add an entry from that date on.
+
+The **Plan** page projects the account you spend from over the next 12 months: planned income,
+fixed and non-monthly spending, the flexible target, and changes you expect (time off work,
+overtime, a planned purchase). When the account would drop below the cushion you set, the
+shortfall comes from a backup account, and the page shows when that starts and how much it takes.
+
+## Cash
+
+Bank exports only see cash leave the bank. Keep cash you hold onto in its own account (type Cash):
+
+- Cash taken out for one specific purchase (a contractor, a vet bill): categorize the withdrawal
+  as that purchase. Nothing else to enter.
+- Cash taken out to hold (cash on hand, a bankroll): categorize the withdrawal as Transfer, then add
+  the matching money-in on the cash account with *Transactions → Add a transaction by hand*.
+  What you spend from it goes there too, with its real category; putting it back is a Transfer.
+- Don't enter a purchase plus a "paid in cash" offset: the offset looks like a deposit and hides
+  where the money came from.
+
+Transactions added by hand can be deleted from the Transactions page; bank rows can't (remove their
+upload instead).
+
 ## How naming and categorizing works
 
 Each transaction goes through these steps:
@@ -107,6 +145,8 @@ budget/
   csv_import.py         CSV parsing and de-duplicated inserts
   excel_import.py       spreadsheet import (ledger, hand-sorted categories, balances)
   reports.py            monthly/yearly aggregations
+  balances.py           account balances on any date, loan schedules
+  budgeting.py          month scorecard, paycheck retirement savings, the plan
   views.py              pages and JSON endpoints
   templates/, static/
 data/                   (git-ignored) budget.db, personal.toml, uploads/, source/

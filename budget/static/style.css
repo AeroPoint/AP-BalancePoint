@@ -335,3 +335,44 @@ tr.is-closed input:not([type="month"]), tr.is-closed select { color: var(--muted
 @media (prefers-reduced-motion: reduce) {
   .saved-flash td { animation: none; }
 }
+
+/* ------------------------------------------------------------ month scorecard and plan */
+.statement .good, .why .good { color: var(--in); }
+.statement .over, .why .over { color: var(--error); }
+.target-form .field input { width: 8rem; }
+.groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 800px) { .groups { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tile { display: grid; align-content: start; gap: 4px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 8px; }
+.tile.main { border-color: var(--accent); background: var(--accent-wash); }
+.tile-name { color: var(--ink-2); font-size: 0.85rem; font-weight: 600; }
+.tile-amt { font-size: 1.45rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.tile-help { color: var(--muted); font-size: 0.8rem; }
+.meter { position: relative; height: 8px; margin: 4px 0 2px; border-radius: 4px; background: var(--grid); }
+.meter-fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--accent); }
+.meter-fill.over { background: var(--error); }
+.meter-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); }
+.why-title { margin: 22px 0 2px; }
+.why-help { margin-bottom: 10px; font-size: 0.85rem; }
+.why { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.why li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.why li a { min-width: 10rem; }
+.why li span:not(.muted) { min-width: 4.5rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+.why li .muted { font-size: 0.85rem; }
+.big-charges td { vertical-align: middle; }
+.oneoff-cell { text-align: center; }
+.paychecks-table input { width: 7rem; min-width: 0; }
+.paychecks-table input[name="pattern"] { width: 13rem; }
+.paychecks-table .num small { display: block; color: var(--muted); font-size: 0.78rem; }
+.plan-form .plan-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.plan-form .field { flex: 1 1 14rem; }
+.plan-form .field small { font-weight: 400; }
+.plan-span { margin: 12px 0 4px; font-size: 0.85rem; }
+.plan-table { margin-top: 12px; }
+.plan-table .chip { display: inline-block; margin: 1px 0; font-size: 0.78rem; white-space: nowrap; }
+.plan-table tr.is-short td { color: var(--error); }
+tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
+.add-txn summary { color: var(--accent); cursor: pointer; font-weight: 600; }
+.add-txn[open] summary { margin-bottom: 8px; }
+.add-txn > p { max-width: 70ch; margin-bottom: 12px; font-size: 0.875rem; }
+.manual-tag { display: flex; align-items: center; gap: 8px; }
+.manual-tag .raw { display: inline; }

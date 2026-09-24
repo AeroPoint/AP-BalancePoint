@@ -231,6 +231,35 @@
     showToast(filled ? `Filled ${plural(filled, "blank")} with the estimates. Change any that differ from the bank, then save.` : "No blank balances to fill.");
   });
 
+  // ---------------------------------------------------------------- one-off purchases
+  document.querySelectorAll("tr[data-id] .oneoff-check").forEach((box) => {
+    box.addEventListener("change", async () => {
+      const row = box.closest("tr");
+      try {
+        await postJSON(`/api/transactions/${row.dataset.id}`, { one_off: box.checked });
+        flashRow(row);
+        showToast(box.checked ? "Marked as a one-off: it no longer counts against fixed or flexible spending." : "Counts as normal spending again.");
+      } catch (err) {
+        box.checked = !box.checked;
+        showToast(err.message);
+      }
+    });
+  });
+
+  // The Overview's large-charges list: the month's numbers change, so reload to show them.
+  document.querySelectorAll("tr[data-id] .oneoff-toggle").forEach((button) => {
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        await postJSON(`/api/transactions/${button.closest("tr").dataset.id}`, { one_off: button.dataset.on === "1" });
+        window.location.reload();
+      } catch (err) {
+        button.disabled = false;
+        showToast(err.message);
+      }
+    });
+  });
+
   // ---------------------------------------------------------------- confirmations
   document.querySelectorAll("form[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (e) => {

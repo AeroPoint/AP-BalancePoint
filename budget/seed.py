@@ -35,6 +35,30 @@ CATEGORIES = [
     ("Savings & Investments", "transfer"),
 ]
 
+# How spending counts toward a month (see budgeting.py). Expense categories not listed are flexible.
+SPENDING_GROUPS = [
+    ("fixed", "Fixed", "bills that barely change: mortgage, utilities, insurance"),
+    ("flexible", "Flexible", "day-to-day spending you steer: groceries, dining, shopping, hobbies"),
+    ("nonmonthly", "Non-monthly", "lumpy costs: projects, travel, taxes"),
+]
+CATEGORY_GROUPS = {
+    "Mortgage & HOA": "fixed",
+    "Bills & Utilities": "fixed",
+    "Home & Garden": "nonmonthly",
+    "Travel": "nonmonthly",
+    "Taxes & Fees": "nonmonthly",
+    "Savings & Investments": "saving",  # a transfer that counts as money invested
+}
+
+
+def category_group(name, kind):
+    if kind == "expense":
+        return CATEGORY_GROUPS.get(name, "flexible")
+    if kind == "transfer":
+        return CATEGORY_GROUPS.get(name)
+    return None
+
+
 # Categories from earlier versions, folded into the broader ones above. Databases are migrated once
 # (db.migrate), and personal.toml files that still use an old name keep working.
 MERGED = {
@@ -533,8 +557,8 @@ def seed_defaults(conn, personal=None):
     extra = list(personal.categories) if personal else []
     for sort, (name, kind) in enumerate(CATEGORIES + [(category_name(n), k) for n, k in extra]):
         conn.execute(
-            "INSERT OR IGNORE INTO categories (name, kind, sort, snap_to_month) VALUES (?, ?, ?, ?)",
-            (name, kind, sort, int(name in SNAP_TO_MONTH)),
+            "INSERT OR IGNORE INTO categories (name, kind, sort, snap_to_month, grp) VALUES (?, ?, ?, ?, ?)",
+            (name, kind, sort, int(name in SNAP_TO_MONTH), category_group(name, kind)),
         )
     cat_ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM categories")}
     for pattern, rename_to, category in BUILTIN_RULES:

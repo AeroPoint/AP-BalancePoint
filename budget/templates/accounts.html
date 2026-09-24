@@ -169,4 +169,70 @@
   <p class="muted">Add a loan or mortgage account above first.</p>
   {% endif %}
 </section>
+
+<section class="panel" id="paychecks">
+  <div class="panel-head">
+    <h2>Paycheck retirement savings</h2>
+    <p class="muted">
+      A 401(k) comes out of a paycheck before it reaches the bank, so no export shows it. Enter it here and it counts as saving
+      on the Overview and in savings rates. Each entry applies to paychecks from its start date until the next entry with the same
+      paycheck text, so for a raise or a new rate, add an entry instead of editing the old one. The match is the employer's %
+      of your contribution, on contributions up to the cap (75% up to 8% means 8% of yours earns 6%).
+    </p>
+  </div>
+  {% if paychecks %}
+  <div class="table-wrap">
+    <table class="ledger rules paychecks-table">
+      <thead>
+        <tr>
+          <th>Paycheck text</th><th>Into</th><th>From</th><th class="num">Base pay per paycheck</th><th class="num">You %</th>
+          <th class="num">Match % of yours</th><th class="num">Up to % of pay</th><th class="num">Per paycheck</th>
+          <th><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in paychecks %}
+        <tr>
+          <td><input form="pay-{{ p.id }}" name="pattern" value="{{ p.pattern }}" aria-label="Paycheck text"></td>
+          <td>
+            <select form="pay-{{ p.id }}" name="account_id" aria-label="Retirement account">
+              <option value="">—</option>
+              {% for a in retirement_accounts %}<option value="{{ a.id }}"{% if a.id == p.account_id %} selected{% endif %}>{{ a.name }}</option>{% endfor %}
+            </select>
+          </td>
+          <td><input form="pay-{{ p.id }}" type="date" name="start_date" value="{{ p.start_date }}" aria-label="From"></td>
+          <td><input form="pay-{{ p.id }}" name="base_pay" inputmode="decimal" value="{{ '%.2f'|format(p.base_pay) }}" aria-label="Base pay per paycheck"></td>
+          <td><input form="pay-{{ p.id }}" name="employee_pct" inputmode="decimal" value="{{ p.employee_pct|round(2) }}" aria-label="Your contribution percent"></td>
+          <td><input form="pay-{{ p.id }}" name="match_rate" inputmode="decimal" value="{{ p.match_rate|round(2) }}" aria-label="Employer match percent of yours"></td>
+          <td><input form="pay-{{ p.id }}" name="match_cap_pct" inputmode="decimal" value="{{ p.match_cap_pct|round(2) }}" aria-label="Match up to percent of pay"></td>
+          <td class="num">{{ p.yours|money }} + {{ p.employer|money }}<small>you + match</small></td>
+          <td class="actions">
+            <form id="pay-{{ p.id }}" method="post" action="{{ url_for('main.save_paycheck') }}">
+              <input type="hidden" name="id" value="{{ p.id }}">
+              <button class="btn small">Save</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delete_paycheck', pid=p.id) }}" data-confirm="Delete this paycheck entry?">
+              <button class="btn small quiet danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <h3 class="h-sm loan-add-title">{{ 'Add a change (raise or new rate)' if paychecks else 'Add a paycheck' }}</h3>
+  <form method="post" action="{{ url_for('main.save_paycheck') }}" class="inline">
+    <label class="field"><span>Paycheck text</span><input name="pattern" required placeholder="ACME CORP PAYROLL" value="{{ paychecks[-1].pattern if paychecks else '' }}"></label>
+    <label class="field"><span>Into</span>
+      <select name="account_id"><option value="">—</option>{% for a in retirement_accounts %}<option value="{{ a.id }}"{% if paychecks and a.id == paychecks[-1].account_id %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="field"><span>From</span><input type="date" name="start_date" required></label>
+    <label class="field"><span>Base pay per paycheck</span><input name="base_pay" inputmode="decimal" required placeholder="4,000.00" value="{{ '%.2f'|format(paychecks[-1].base_pay) if paychecks else '' }}"></label>
+    <label class="field"><span>You %</span><input name="employee_pct" inputmode="decimal" required placeholder="6"></label>
+    <label class="field"><span>Match % of yours</span><input name="match_rate" inputmode="decimal" placeholder="50" value="{{ paychecks[-1].match_rate|round(2) if paychecks else '' }}"></label>
+    <label class="field"><span>Up to % of pay</span><input name="match_cap_pct" inputmode="decimal" placeholder="6" value="{{ paychecks[-1].match_cap_pct|round(2) if paychecks else '' }}"></label>
+    <button class="btn primary">Add</button>
+  </form>
+</section>
 {% endblock %}

@@ -30,12 +30,40 @@
   {{ empty_upload("Nothing recorded for " ~ label) }}
 {% else %}
 <section class="statement">
+  {% if card %}
+  <h1>
+    Flexible spending in {{ label }} was <b>{{ card.flexible|money(false) }}</b>
+    {%- if card.target %}{% set d = card.flexible - card.target %},
+      {% if d <= 0 %}<b class="good">{{ (-d)|money(false) }} under</b>{% else %}<b class="over">{{ d|money(false) }} over</b>{% endif %} your {{ card.target|money(false) }} target.
+    {%- elif card.typical_flexible %}; a typical month is {{ card.typical_flexible|money(false) }}.
+    {%- else %}.{% endif %}
+  </h1>
+  <p class="compare">
+    In all you brought in {{ card.income|money(false) }} and spent {{ card.spending|money(false) }}, so cash
+    {{ 'grew' if card.cash_flow >= 0 else 'shrank' }} by <b>{{ card.cash_flow|abs|money(false) }}</b>.
+    {%- if card.work.total %} Paychecks also put {{ card.work.total|money(false) }} into retirement, {{ card.work.employer|money(false) }} of it your employer's match.{% endif %}
+    {%- if card.rate is not none and card.work.total %} Counting that, you saved {{ card.saved|money(false) }}, {{ (card.rate * 100)|round|int }}% of income.{% endif %}
+  </p>
+  {% else %}
   <h1>
     In {{ label }} you brought in <b>{{ current.income|money(false) }}</b>
-    {%- if current.net >= 0 %}, spent <b>{{ current.spending|money(false) }}</b> and kept <b>{{ current.net|money(false) }}</b>{% if current.rate is not none %} ({{ (current.rate * 100)|round|int }}% of income){% endif %}.
+    {%- if current.net >= 0 %}, spent <b>{{ current.spending|money(false) }}</b> and kept <b>{{ current.net|money(false) }}</b>.
     {%- else %} and spent <b>{{ current.spending|money(false) }}</b>, which is <b>{{ (-current.net)|money(false) }}</b> more than came in.{% endif %}
   </h1>
-  {% if previous.count %}
+  {% if year_groups and (year_groups.one_off or year_groups.nonmonthly) %}
+  {% set everyday = year_groups.fixed + year_groups.flexible %}
+  <p class="compare">
+    Of that, {{ year_groups.one_off|money(false) }} was one-offs and {{ year_groups.nonmonthly|money(false) }} non-monthly (projects, travel, taxes).
+    Everyday fixed and flexible spending was {{ everyday|money(false) }}{% if current.income %}, {{ (everyday / current.income * 100)|round|int }}% of income{% endif %}.
+  </p>
+  {% endif %}
+  {% if saving.work %}
+  <p class="compare">
+    Paychecks also put {{ saving.work|money(false) }} into retirement. Counting that, you saved {{ saving.saved|money(false) }}{% if saving.rate is not none %}, {{ (saving.rate * 100)|round|int }}% of income{% endif %}.
+  </p>
+  {% endif %}
+  {% endif %}
+  {% if previous.count and not card %}
   {% set diff = current.spending - previous.spending %}
   <p class="compare">
     Spending is {{ 'up' if diff > 0 else 'down' }} {{ diff|abs|money(false) }} from {{ prev_label }}{% if previous.spending %} ({{ (diff|abs / previous.spending * 100)|round|int }}%){% endif %}.
@@ -49,6 +77,78 @@
   </p>
   {% endif %}
 </section>
+
+{% if card %}
+<section class="panel scorecard">
+  <div class="panel-head">
+    <h2>How the month went</h2>
+    <form method="post" action="{{ url_for('main.save_flex_target') }}" class="inline target-form">
+      <input type="hidden" name="next" value="{{ request.full_path }}">
+      <label class="field"><span>Flexible target per month</span>
+        <input name="flex_target" inputmode="decimal" value="{{ '%.0f'|format(card.target) if card.target else '' }}"
+               placeholder="{{ '%.0f'|format(card.typical_flexible) if card.typical_flexible else '5,000' }}">
+      </label>
+      <button class="btn small">Set</button>
+    </form>
+  </div>
+  <div class="groups">
+    {% for key, name, help in [('fixed', 'Fixed', 'bills that barely change'), ('flexible', 'Flexible', 'what you steer day to day'),
+                               ('nonmonthly', 'Non-monthly', 'projects, travel, taxes'), ('one_off', 'One-offs', 'big purchases you marked')] %}
+    <div class="tile{{ ' main' if key == 'flexible' }}">
+      <span class="tile-name">{{ name }}</span>
+      <span class="tile-amt">{{ card[key]|money(false) }}</span>
+      {% if key == 'flexible' and (card.target or card.typical_flexible) %}
+        {% set goal = card.target or card.typical_flexible %}
+        {% set top = [card.flexible, goal]|max %}
+        <span class="meter" data-tip="{{ 'Target' if card.target else 'Typical month' }}: {{ goal|money(false) }}">
+          <span class="meter-fill{{ ' over' if card.flexible > goal }}" style="width: {{ (card.flexible / top * 100)|round(2) }}%"></span>
+          <span class="meter-mark" style="left: {{ (goal / top * 100)|round(2) }}%"></span>
+        </span>
+        <span class="tile-help">{{ 'target' if card.target else 'typical' }} {{ goal|money(false) }}</span>
+      {% else %}
+        <span class="tile-help">{{ help }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if card.over or card.under %}
+  <h3 class="h-sm why-title">Why: flexible spending compared with a usual month</h3>
+  <p class="muted why-help">A usual month is the median of the {{ card.typical_months }} months before, leaving out one-offs.</p>
+  <ul class="why">
+    {% for d in card.over %}
+    <li><a href="{{ url_for('main.transactions', category=d.id if d.id else 'none', period=period_filter, account=acct) }}">{{ d.name }}</a>
+      <span class="over">+{{ d.diff|money(false) }}</span><span class="muted">{{ d.total|money(false) }} vs usual {{ d.typical|money(false) }}</span></li>
+    {% endfor %}
+    {% for d in card.under %}
+    <li><a href="{{ url_for('main.transactions', category=d.id if d.id else 'none', period=period_filter, account=acct) }}">{{ d.name }}</a>
+      <span class="good">−{{ d.diff|abs|money(false) }}</span><span class="muted">{{ d.total|money(false) }} vs usual {{ d.typical|money(false) }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if card.big %}
+  <h3 class="h-sm why-title">Large charges</h3>
+  <p class="muted why-help">Mark a big one-time purchase as a one-off so it doesn't count against flexible or fixed spending. It still counts as spending.</p>
+  <table class="ledger big-charges">
+    <tbody>
+      {% for b in card.big %}
+      <tr data-id="{{ b.id }}">
+        <td class="date">{{ b.date }}</td>
+        <td>{{ b.name }} <span class="source-tag">{{ b.category }}</span></td>
+        <td class="num">{{ b.amount|money(false) }}</td>
+        <td class="actions">
+          <button type="button" class="btn small{{ ' quiet' if b.one_off }} oneoff-toggle" data-on="{{ 0 if b.one_off else 1 }}">
+            {{ 'Count normally' if b.one_off else 'Mark one-off' }}
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}
 
 <section class="panel">
   <div class="panel-head">

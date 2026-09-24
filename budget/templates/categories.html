@@ -7,6 +7,8 @@
     <p class="sub">
       Transfers, like card payments, moving money between your accounts, and investing, are left out of income and spending totals.
       Categories that count on the nearest 1st, like rent and mortgage, land in the month they're for even when paid a few days early or late.
+      “Counts as” sorts spending for the Overview's month check: fixed bills that barely change, flexible spending you steer day to day
+      (the part judged against your monthly target), and non-monthly costs like projects, travel and taxes.
     </p>
   </div>
 </header>
@@ -46,7 +48,7 @@
   <div class="table-wrap">
     <table class="ledger rules">
       <thead>
-        <tr><th>Name</th><th>Type</th><th>Count on nearest 1st</th><th class="num">Transactions</th><th class="num">Dictionary entries</th><th class="num">All-time total</th><th><span class="visually-hidden">Actions</span></th></tr>
+        <tr><th>Name</th><th>Type</th><th>Counts as</th><th>Count on nearest 1st</th><th class="num">Transactions</th><th class="num">Dictionary entries</th><th class="num">All-time total</th><th><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {% for c in rows %}
@@ -58,6 +60,18 @@
               <option value="{{ value }}" {{ 'selected' if c.kind == value }}>{{ label }}</option>
               {% endfor %}
             </select>
+          </td>
+          <td>
+            {% if c.kind == 'expense' %}
+            <select form="cat-{{ c.id }}" name="grp" aria-label="How {{ c.name }} counts">
+              {% for value, label, help in groups %}<option value="{{ value }}" title="{{ help }}" {{ 'selected' if c.grp == value }}>{{ label }}</option>{% endfor %}
+            </select>
+            {% elif c.kind == 'transfer' %}
+            <select form="cat-{{ c.id }}" name="grp" aria-label="How {{ c.name }} counts">
+              <option value="">Moving money</option>
+              <option value="saving" {{ 'selected' if c.grp == 'saving' }}>Investing</option>
+            </select>
+            {% else %}<span class="muted">Income</span>{% endif %}
           </td>
           <td>
             <label class="check">

@@ -3,11 +3,12 @@ import re
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import personal, reports, seed
+from . import budgeting, personal, reports, seed
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import CsvFormatError, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -183,8 +184,10 @@ def dashboard():
     spending = reports.by_category(conn, start, end, "expense", acct)
     for row in spending:
         row["average"] = averages.get(row["id"])
+    card = budgeting.scorecard(conn, year, month, acct) if view == "month" else None
     return render_template(
-        "dashboard.html",
+        "dashboard.html", card=card, saving=budgeting.savings_rate(conn, start, end, acct),
+        year_groups=budgeting.by_group(conn, start, end, acct)[0] if view == "year" else None,
         view=view, year=year, month=month, months=MONTHS, acct=acct, accounts=_accounts(conn),
         years=sorted(set(reports.years(conn)) | {year}, reverse=True),
         label=label, prev_label=prev_label, prev_link=prev_link, next_link=next_link,
@@ -207,7 +210,7 @@ def trends():
     yearly = []
     for y in sorted(all_years):
         t = reports.totals(conn, *reports.bounds(y), acct)
-        t["year"] = y
+        t.update(budgeting.savings_rate(conn, *reports.bounds(y), acct), year=y)
         yearly.append(t)
     return render_template(
         "trends.html",
@@ -217,6 +220,84 @@ def trends():
         stacked=reports.stacked_by_category(conn, year, accounts=acct),
         flow=reports.monthly(conn, year, 1, 12, acct), yearly=yearly,
     )
+
+
+@bp.post("/settings/flex-target")
+def save_flex_target():
+    conn = get_db()
+    target = _money_input(request.form.get("flex_target"))
+    budgeting.set_setting(conn, "flex_target", round(target, 2) if target and target > 0 else None)
+    conn.commit()
+    flash(f"Flexible spending target: {money_filter(target, False)} a month." if target else "Cleared the flexible spending target.", "ok")
+    return redirect(request.form.get("next") or url_for(".dashboard"))
+
+
+@bp.route("/plan")
+def plan():
+    conn = get_db()
+    count = min(max(_int(request.args.get("months"), 4), 1), 12)
+    through = request.args.get("through", "")
+    before = None
+    if MONTH_INPUT.fullmatch(through):
+        ny, nm = reports.add_months(int(through[:4]), int(through[5:]), 1)
+        before = date(ny, nm, 1)
+    months = budgeting.complete_months(conn, count, before)
+    accounts = _accounts(conn)
+    return render_template(
+        "plan.html", base=budgeting.baseline(conn, months), projection=budgeting.project(conn),
+        count=count, through=f"{months[-1][0]}-{months[-1][1]:02d}" if months else "",
+        accounts=accounts, names={a["id"]: a["name"] for a in accounts},
+        settings={k: budgeting.get_setting(conn, k) for k in budgeting.PLAN_KEYS},
+        plan_account=budgeting.get_setting(conn, "plan_account", cast=int),
+        backup_account=budgeting.get_setting(conn, "plan_backup_account", cast=int),
+        this_month=date.today().strftime("%Y-%m"),
+    )
+
+
+@bp.post("/plan/settings")
+def save_plan_settings():
+    conn = get_db()
+    for key in budgeting.PLAN_KEYS:
+        if key in request.form:
+            value = _money_input(request.form.get(key))
+            budgeting.set_setting(conn, key, round(value, 2) if value is not None else None)
+    for key in ("plan_account", "plan_backup_account"):
+        if key in request.form:
+            budgeting.set_setting(conn, key, _int(request.form.get(key)))
+    conn.commit()
+    flash("Saved the plan.", "ok")
+    return redirect(url_for(".plan", **request.args))
+
+
+@bp.post("/plan/items/save")
+def save_plan_item():
+    conn = get_db()
+    form = request.form
+    label = " ".join(form.get("label", "").split())
+    amount = _money_input(form.get("amount"))
+    if form.get("direction") == "less" and amount:
+        amount = -abs(amount)
+    start, end = _month_input(form.get("start_month")), _month_input(form.get("end_month"))
+    if not (label and amount and start):
+        flash("A plan change needs a name, an amount per month and a first month.", "error")
+        return redirect(url_for(".plan") + "#changes")
+    iid = _int(form.get("id"))
+    if iid:
+        conn.execute("UPDATE plan_items SET label = ?, amount = ?, start_month = ?, end_month = ? WHERE id = ?",
+                     (label, amount, start, end, iid))
+    else:
+        conn.execute("INSERT INTO plan_items (label, amount, start_month, end_month) VALUES (?, ?, ?, ?)",
+                     (label, amount, start, end))
+    conn.commit()
+    return redirect(url_for(".plan") + "#changes")
+
+
+@bp.post("/plan/items/<int:iid>/delete")
+def delete_plan_item(iid):
+    conn = get_db()
+    conn.execute("DELETE FROM plan_items WHERE id = ?", (iid,))
+    conn.commit()
+    return redirect(url_for(".plan") + "#changes")
 
 
 # ---------------------------------------------------------------- transactions
@@ -251,6 +332,8 @@ def transactions():
     if args.get("name"):
         where.append("t.name = ?")
         params.append(args["name"])
+    if args.get("one_off") == "1":
+        where.append("t.one_off = 1")
 
     clause = " AND ".join(where)
     page = max(_int(args.get("page"), 1), 1)
@@ -271,6 +354,46 @@ def transactions():
         categories=_categories(conn), accounts=_accounts(conn),
         periods=periods, years=sorted({p[:4] for p in periods}, reverse=True),
     )
+
+
+@bp.post("/transactions/add")
+def add_transaction():
+    """A transaction no bank export will show, like spending from cash on hand."""
+    conn = get_db()
+    form = request.form
+    back = form.get("next") or url_for(".transactions")
+    account_id, day = _int(form.get("account_id")), _date_input(form.get("date"))
+    name, amount = " ".join(form.get("name", "").split()), _money_input(form.get("amount"))
+    if not (account_id and day and name and amount):
+        flash("A transaction needs an account, a date, what it was and an amount.", "error")
+        return redirect(back)
+    amount = abs(amount) if form.get("direction") == "in" else -abs(amount)
+    category_id, source = _int(form.get("category_id")), "manual"
+    if not category_id:
+        match = RuleEngine(conn).resolve(name, None, name, amount)
+        category_id, source = match.category_id, match.source if match.category_id else "none"
+    conn.execute(
+        """INSERT INTO transactions (account_id, import_id, date, effective_date, amount, raw_description, name,
+               name_locked, category_id, category_source, notes, dedupe_key)
+           VALUES (?, NULL, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
+        (account_id, day, day, amount, name, name, category_id, source,
+         " ".join(form.get("notes", "").split()) or None, f"manual|{uuid4().hex}"),
+    )
+    sync_dates(conn, "account_id = ?", (account_id,))
+    conn.commit()
+    flash(f"Added {name}: {money_filter(amount)} on {day}.", "ok")
+    return redirect(back)
+
+
+@bp.post("/transactions/<int:tid>/delete")
+def delete_transaction(tid):
+    conn = get_db()
+    # Only hand-entered rows: bank rows come back on the next upload, so remove their import instead.
+    removed = conn.execute("DELETE FROM transactions WHERE id = ? AND import_id IS NULL", (tid,)).rowcount
+    conn.commit()
+    flash("Deleted the transaction." if removed else "Only transactions you added by hand can be deleted here.",
+          "ok" if removed else "error")
+    return redirect(request.form.get("next") or url_for(".transactions"))
 
 
 @bp.post("/api/transactions/<int:tid>")
@@ -315,6 +438,9 @@ def update_transaction(tid):
 
     if "notes" in data:
         conn.execute("UPDATE transactions SET notes = ? WHERE id = ?", (str(data["notes"]).strip() or None, tid))
+
+    if "one_off" in data:
+        conn.execute("UPDATE transactions SET one_off = ? WHERE id = ?", (1 if data["one_off"] else 0, tid))
 
     sync_dates(conn, "id = ?", (tid,))
     conn.commit()
@@ -461,7 +587,7 @@ def categories_page():
            FROM categories c LEFT JOIN transactions t ON t.category_id = c.id
            GROUP BY c.id ORDER BY CASE c.kind WHEN 'expense' THEN 0 WHEN 'income' THEN 1 ELSE 2 END, c.name"""
     ).fetchall()
-    return render_template("categories.html", rows=rows)
+    return render_template("categories.html", rows=rows, groups=seed.SPENDING_GROUPS)
 
 
 @bp.post("/categories/save")
@@ -474,15 +600,24 @@ def save_category():
         return redirect(url_for(".categories_page"))
     cid = _int(request.form.get("id"))
     snap = int(request.form.get("snap_to_month") == "1")
+    grp = request.form.get("grp")
+    if kind == "expense":
+        grp = grp if grp in {g for g, _, _ in seed.SPENDING_GROUPS} else "flexible"
+    elif kind == "transfer":
+        grp = "saving" if grp == "saving" else None
+    else:
+        grp = None
     try:
         if cid:
             conn.execute(
-                "UPDATE categories SET name = ?, kind = ?, snap_to_month = ? WHERE id = ?", (name, kind, snap, cid)
+                "UPDATE categories SET name = ?, kind = ?, snap_to_month = ?, grp = ? WHERE id = ?",
+                (name, kind, snap, grp, cid),
             )
             sync_dates(conn, "category_id = ?", (cid,))
         else:
             conn.execute(
-                "INSERT INTO categories (name, kind, sort, snap_to_month) VALUES (?, ?, 999, ?)", (name, kind, snap)
+                "INSERT INTO categories (name, kind, sort, snap_to_month, grp) VALUES (?, ?, 999, ?, ?)",
+                (name, kind, snap, grp),
             )
         conn.commit()
         flash(f"Saved category “{name}”.", "ok")
@@ -563,8 +698,17 @@ def accounts_page():
             loan["principal"], loan["annual_rate"], loan["term_months"], loan["start_date"], today
         )
         loans.append(loan)
+    paychecks = []
+    for row in conn.execute(
+        "SELECT p.*, a.name AS account_name FROM paycheck_savings p LEFT JOIN accounts a ON a.id = p.account_id "
+        "ORDER BY p.pattern, p.start_date"
+    ):
+        entry = dict(row)
+        entry["yours"], entry["employer"] = budgeting.contribution(row)
+        paychecks.append(entry)
     return render_template(
         "accounts.html", accounts=accounts, kinds=seed.ACCOUNT_KINDS, groups=seed.ACCOUNT_GROUPS, loans=loans,
+        paychecks=paychecks, retirement_accounts=[a for a in accounts if a["side"] == "asset"],
         liability_accounts=[a for a in accounts if a["side"] == "liability"],
     )
 
@@ -603,6 +747,55 @@ def save_loan():
     conn.commit()
     flash(f"Saved the loan: {money_filter(loan_payment(principal, rate, term_months))} a month in principal and interest.", "ok")
     return redirect(url_for(".accounts_page") + "#loans")
+
+
+def _percent(value):
+    try:
+        return float(str(value or "").replace("%", "").strip())
+    except ValueError:
+        return None
+
+
+@bp.post("/paychecks/save")
+def save_paycheck():
+    conn = get_db()
+    form = request.form
+    pattern = " ".join(form.get("pattern", "").upper().split())
+    base = _money_input(form.get("base_pay"))
+    pct, rate, cap = _percent(form.get("employee_pct")), _percent(form.get("match_rate")), _percent(form.get("match_cap_pct"))
+    start = _date_input(form.get("start_date"))
+    if not (pattern and base and base > 0 and pct is not None and start):
+        flash("A paycheck entry needs the paycheck's bank text, base pay per paycheck, your % and a start date.", "error")
+        return redirect(url_for(".accounts_page") + "#paychecks")
+    values = (pattern, _int(form.get("account_id")), start, base, pct, rate or 0, cap or 0)
+    pid = _int(form.get("id"))
+    if pid:
+        conn.execute(
+            """UPDATE paycheck_savings SET pattern = ?, account_id = ?, start_date = ?, base_pay = ?, employee_pct = ?,
+                   match_rate = ?, match_cap_pct = ? WHERE id = ?""",
+            (*values, pid),
+        )
+    else:
+        conn.execute(
+            """INSERT INTO paycheck_savings (pattern, account_id, start_date, base_pay, employee_pct, match_rate, match_cap_pct)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            values,
+        )
+    conn.commit()
+    yours, employer = budgeting.contribution(dict(zip(
+        ("base_pay", "employee_pct", "match_rate", "match_cap_pct"), (base, pct, rate or 0, cap or 0))))
+    flash(f"Saved: each paycheck puts {money_filter(yours)} of yours and {money_filter(employer)} from your employer "
+          f"into retirement from {start} on.", "ok")
+    return redirect(url_for(".accounts_page") + "#paychecks")
+
+
+@bp.post("/paychecks/<int:pid>/delete")
+def delete_paycheck(pid):
+    conn = get_db()
+    conn.execute("DELETE FROM paycheck_savings WHERE id = ?", (pid,))
+    conn.commit()
+    flash("Deleted the paycheck entry.", "ok")
+    return redirect(url_for(".accounts_page") + "#paychecks")
 
 
 @bp.post("/loans/<int:lid>/delete")
