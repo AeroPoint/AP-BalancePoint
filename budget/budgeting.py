@@ -190,6 +190,7 @@ def savings_rate(conn, start, end, accounts=None):
 # ---------------------------------------------------------------- the plan
 
 PLAN_KEYS = ("plan_income", "plan_fixed", "plan_nonmonthly", "flex_target", "plan_buffer")
+BACKUP_KEYS = ("plan_backup_account", "plan_backup_account_2")  # drawn from in this order
 
 
 def complete_months(conn, count, before=None):
@@ -244,7 +245,8 @@ def project(conn, months=12, today=None):
     """Month-by-month projection of the plan account from next month on.
 
     Each month: planned income - fixed - flexible target - non-monthly + plan items. When the plan
-    account would drop below the buffer, the difference is drawn from the backup account.
+    account would drop below the buffer, the difference is drawn from the backup accounts in order
+    (BACKUP_KEYS): the first until it's empty, then the next.
     """
     today = today or date.today()
     values = {k: get_setting(conn, k) for k in PLAN_KEYS}
@@ -252,16 +254,16 @@ def project(conn, months=12, today=None):
         return None
     ledgers = load_ledgers(conn)
     account = get_setting(conn, "plan_account", cast=int)
-    backup = get_setting(conn, "plan_backup_account", cast=int)
     iso = today.isoformat()
+    backups = [b for b in (get_setting(conn, k, cast=int) for k in BACKUP_KEYS) if b in ledgers]
     balance = ledgers[account].on(iso) if account in ledgers else 0.0
-    reserve = ledgers[backup].on(iso) if backup in ledgers else 0.0
+    left = {b: ledgers[b].on(iso) for b in backups}
     buffer = values["plan_buffer"] or 0.0
     items = [dict(r) for r in conn.execute("SELECT * FROM plan_items ORDER BY start_month, id")]
 
-    rows, drawn = [], 0.0
+    rows, drawn = [], {b: 0.0 for b in backups}
     y, m = today.year, today.month
-    start_balance, start_reserve = balance, reserve
+    start_balance, start_left = balance, dict(left)
     for _ in range(months):
         y, m = reports.add_months(y, m, 1)
         key = f"{y}-{m:02d}"
@@ -270,20 +272,25 @@ def project(conn, months=12, today=None):
         spend = (values["plan_fixed"] or 0) + (values["flex_target"] or 0) + (values["plan_nonmonthly"] or 0)
         net = values["plan_income"] + adjust - spend
         balance += net
-        draw = 0.0
-        if balance < buffer:
-            draw = min(buffer - balance, max(reserve, 0.0))
-            balance += draw
-            reserve -= draw
-            drawn += draw
+        draws = {}
+        for b in backups:
+            if balance >= buffer:
+                break
+            take = min(buffer - balance, max(left[b], 0.0))
+            if take > 0:
+                draws[b] = take
+                balance += take
+                left[b] -= take
+                drawn[b] += take
+        draw, reserve = sum(draws.values()), sum(left.values())
         rows.append({
             "key": key, "income": values["plan_income"] + sum(i["amount"] for i in active if i["amount"] > 0),
             "adjust": adjust, "items": active, "spend": spend, "net": net, "balance": balance,
-            "draw": draw, "reserve": reserve, "short": balance < buffer - 0.005,
+            "draw": draw, "draws": draws, "reserve": reserve, "left": dict(left), "short": balance < buffer - 0.005,
         })
     return {
-        "values": values, "items": items, "rows": rows, "start_balance": start_balance, "start_reserve": start_reserve,
-        "account": account, "backup": backup, "drawn": drawn,
+        "values": values, "items": items, "rows": rows, "start_balance": start_balance, "start_left": start_left,
+        "account": account, "backups": backups, "drawn": drawn, "total_drawn": sum(drawn.values()),
         "average_net": sum(r["net"] for r in rows) / len(rows) if rows else 0.0,
         "first_draw": next((r["key"] for r in rows if r["draw"] > 0), None),
         "first_short": next((r["key"] for r in rows if r["short"]), None),

@@ -249,7 +249,7 @@ def plan():
         accounts=accounts, names={a["id"]: a["name"] for a in accounts},
         settings={k: budgeting.get_setting(conn, k) for k in budgeting.PLAN_KEYS},
         plan_account=budgeting.get_setting(conn, "plan_account", cast=int),
-        backup_account=budgeting.get_setting(conn, "plan_backup_account", cast=int),
+        backup_accounts=[budgeting.get_setting(conn, k, cast=int) for k in budgeting.BACKUP_KEYS],
         this_month=date.today().strftime("%Y-%m"),
     )
 
@@ -261,7 +261,7 @@ def save_plan_settings():
         if key in request.form:
             value = _money_input(request.form.get(key))
             budgeting.set_setting(conn, key, round(value, 2) if value is not None else None)
-    for key in ("plan_account", "plan_backup_account"):
+    for key in ("plan_account", *budgeting.BACKUP_KEYS):
         if key in request.form:
             budgeting.set_setting(conn, key, _int(request.form.get(key)))
     conn.commit()

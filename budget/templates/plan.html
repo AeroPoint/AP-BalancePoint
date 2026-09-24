@@ -14,19 +14,20 @@
 {% set p = projection %}
 {% if p %}
 {% set acct_name = names.get(p.account, 'the plan account') %}
-{% set backup_name = names.get(p.backup, 'backup savings') %}
+{% set backup_names = [] %}{% for b in p.backups %}{% set _ = backup_names.append(names[b]) %}{% endfor %}
+{% set backup_name = backup_names|join(', then ') if backup_names else 'backup savings' %}
 {% set last = p.rows[-1] %}
 <section class="statement">
   <h1>
     On this plan, {{ acct_name }} goes from <b>{{ p.start_balance|money(false) }}</b> today
     {%- if p.first_draw %} to your {{ (settings.plan_buffer or 0)|money(false) }} cushion by <b>{{ p.first_draw|month_label }}</b>,
-      and you'd draw <b>{{ p.drawn|money(false) }}</b> from {{ backup_name }} over the year.
+      and you'd draw {% for b in p.backups if p.drawn[b] %}<b>{{ p.drawn[b]|money(false) }}</b> from {{ names[b] }}{{ ' and ' if not loop.last }}{% endfor %} over the year.
     {%- else %} to <b>{{ last.balance|money(false) }}</b> by {{ last.key|month_label }}.{% endif %}
   </h1>
   <p class="compare">
     A planned month runs {{ p.average_net|abs|money(false) }} {{ 'ahead' if p.average_net >= 0 else 'short' }} on average.
     {% if p.first_short %}{{ backup_name }} runs out in {{ p.first_short|month_label }}.
-    {% elif p.drawn %}{{ backup_name }} would have {{ last.reserve|money(false) }} left.{% endif %}
+    {% elif p.total_drawn %}Left at the end: {% for b in p.backups %}{{ names[b] }} {{ last.left[b]|money(false) }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% endif %}
   </p>
 </section>
 
@@ -39,7 +40,7 @@
   <div class="table-wrap">
     <table class="ledger plan-table">
       <thead>
-        <tr><th>Month</th><th class="num">Planned</th><th>Changes</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th class="num">From {{ backup_name }}</th><th class="num">{{ backup_name }} left</th></tr>
+        <tr><th>Month</th><th class="num">Planned</th><th>Changes</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th>Drawn from</th>{% for b in p.backups %}<th class="num">{{ names[b] }} left</th>{% endfor %}</tr>
       </thead>
       <tbody>
         {% for r in p.rows %}
@@ -49,8 +50,8 @@
           <td>{% for i in r['items'] %}<span class="chip">{{ i.label }} {{ '+' if i.amount > 0 }}{{ i.amount|money(false) }}</span> {% endfor %}</td>
           <td class="num {{ 'in' if r.net > 0 }}">{{ '+' if r.net > 0 }}{{ r.net|money(false) }}</td>
           <td class="num">{{ r.balance|money(false) }}</td>
-          <td class="num">{{ r.draw|money(false) if r.draw else '' }}</td>
-          <td class="num">{{ r.reserve|money(false) }}</td>
+          <td>{% for b, amt in r.draws.items() %}<span class="chip">{{ names[b] }} {{ amt|money(false) }}</span> {% endfor %}</td>
+          {% for b in p.backups %}<td class="num">{{ r.left[b]|money(false) }}</td>{% endfor %}
         </tr>
         {% endfor %}
       </tbody>
@@ -92,9 +93,11 @@
       </label>
     </div>
     <div class="plan-row">
-      <label class="field"><span>Then draw from</span>
-        <select name="plan_backup_account"><option value="">Nothing</option>{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == backup_account %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
+      {% for key in ['plan_backup_account', 'plan_backup_account_2'] %}
+      <label class="field"><span>{{ 'Then draw from' if loop.first else 'After that' }}</span>
+        <select name="{{ key }}"><option value="">Nothing</option>{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == backup_accounts[loop.index0] %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
       </label>
+      {% endfor %}
     </div>
     <div class="form-actions"><button class="btn primary">Save plan</button></div>
   </form>
@@ -192,7 +195,7 @@
     const rows = JSON.parse(document.getElementById("data-runway").textContent);
     const labels = rows.map((r) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(r.key.slice(5)) - 1]);
     const series = [{ name: {{ names.get(projection.account, 'Plan account')|tojson }}, values: rows.map((r) => r.balance) }];
-    {% if projection.backup %}series.push({ name: {{ names.get(projection.backup, 'Backup')|tojson }}, values: rows.map((r) => r.reserve) });{% endif %}
+    {% for b in projection.backups %}series.push({ name: {{ names[b]|tojson }}, values: rows.map((r) => r.left[{{ b|tojson }}]) });{% endfor %}
     Charts.lines(document.getElementById("runway"), { labels, titles: rows.map((r) => r.key), series });
   })();
 </script>
