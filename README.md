@@ -104,7 +104,18 @@ Bank exports only see cash leave the bank. Keep cash you hold onto in its own ac
   where the money came from.
 
 Transactions added by hand can be deleted from the Transactions page; bank rows can't (remove their
-upload instead).
+upload instead). The hand-entry form starts on your first cash account, so keep "Cash on hand"
+ahead of other cash accounts.
+
+### Blackjack bankroll
+
+A bankroll is a cash account of its own (e.g. "Blackjack Bankroll"). Money moving between it and the
+bank is a Transfer; session results come from a tracker workbook: *Upload data → Blackjack tracker*,
+or `python run.py import-blackjack "Blackjack Tracker.xlsx" --account "Blackjack Bankroll"`. Every
+sheet with "Date" and "AV Total" columns is read, one Blackjack-category result per dated row (win =
+money in, loss = money out); total rows without a date are skipped. Importing again replaces the
+earlier sessions, so update the tracker and re-import. If the account's balance drifts from the cash
+you actually hold, enter what you hold on the Net worth page.
 
 ## How naming and categorizing works
 
@@ -147,6 +158,7 @@ budget/
   reports.py            monthly/yearly aggregations
   balances.py           account balances on any date, loan schedules
   budgeting.py          month scorecard, paycheck retirement savings, the plan
+  blackjack.py          blackjack tracker sessions into a bankroll account
   views.py              pages and JSON endpoints
   templates/, static/
 data/                   (git-ignored) budget.db, personal.toml, uploads/, source/

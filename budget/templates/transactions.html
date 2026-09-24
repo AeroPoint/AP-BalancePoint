@@ -22,7 +22,8 @@
     <input type="hidden" name="next" value="{{ request.full_path }}">
     <label class="field"><span>Account</span>
       <select name="account_id">
-        {% for acct in accounts if not acct.closed %}<option value="{{ acct.id }}"{% if acct.kind == 'cash' %} selected{% endif %}>{{ acct.name }}</option>{% endfor %}
+        {% set cash = accounts|selectattr('kind', 'equalto', 'cash')|rejectattr('closed')|list %}
+        {% for acct in accounts if not acct.closed %}<option value="{{ acct.id }}"{% if cash and acct.id == cash[0].id %} selected{% endif %}>{{ acct.name }}</option>{% endfor %}
       </select>
     </label>
     <label class="field"><span>Date</span><input type="date" name="date" required></label>

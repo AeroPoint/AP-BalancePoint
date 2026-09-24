@@ -1099,6 +1099,30 @@ def upload_excel():
     return redirect(url_for(".upload"))
 
 
+@bp.post("/upload/blackjack")
+def upload_blackjack():
+    from .blackjack import import_tracker
+
+    conn = get_db()
+    f = request.files.get("tracker")
+    name = " ".join(request.form.get("account", "").split()) or "Blackjack Bankroll"
+    if not f or not f.filename.lower().endswith(".xlsx"):
+        flash("Choose the tracker workbook (.xlsx).", "error")
+        return redirect(url_for(".upload"))
+    path = Path(current_app.config["UPLOAD_DIR"]) / f"{datetime.now():%Y%m%d-%H%M%S}-{secure_filename(f.filename)}"
+    f.save(path)
+    account_id = ensure_account(conn, name, "cash")
+    try:
+        count, net = import_tracker(conn, path, account_id)
+    except Exception as exc:  # a workbook that isn't a tracker
+        conn.rollback()
+        flash(f"{f.filename}: couldn't read it ({exc}).", "error")
+        return redirect(url_for(".upload"))
+    conn.commit()
+    flash(f"{name}: {count} sessions from {f.filename}, net {money_filter(net)}. They replace the previous import.", "ok")
+    return redirect(url_for(".upload"))
+
+
 @bp.post("/imports/<int:iid>/delete")
 def delete_import(iid):
     conn = get_db()

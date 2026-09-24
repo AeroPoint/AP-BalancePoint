@@ -28,6 +28,9 @@ def main():
     csv_cmd.add_argument("path")
     csv_cmd.add_argument("--account", required=True)
     csv_cmd.add_argument("--kind", default="checking", choices=["checking", "credit", "savings"])
+    bj = sub.add_parser("import-blackjack", help="import blackjack sessions from a tracker workbook into a bankroll account")
+    bj.add_argument("path")
+    bj.add_argument("--account", default="Blackjack Bankroll")
     args = parser.parse_args()
 
     app = create_app()
@@ -52,6 +55,15 @@ def main():
         if result["skipped_for_bank_data"]:
             print(f"  skipped {result['skipped_for_bank_data']} entries on dates bank exports already cover")
         conn.close()
+    elif args.command == "import-blackjack":
+        from budget.blackjack import import_tracker
+
+        conn = connect(app.config["DATABASE"])
+        account_id = ensure_account(conn, args.account, "cash")
+        count, net = import_tracker(conn, args.path, account_id)
+        conn.commit()
+        conn.close()
+        print(f"{args.account}: {count} sessions, net {net:+,.2f}")
     elif args.command == "import-csv":
         conn = connect(app.config["DATABASE"])
         account_id = ensure_account(conn, args.account, args.kind)

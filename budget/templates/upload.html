@@ -88,6 +88,21 @@
   <p class="note">Leave the date blank to use the day the file was last saved; rows after that are bills the sheet projects forward.</p>
 </section>
 
+<section class="panel">
+  <div class="panel-head">
+    <h2>Blackjack tracker</h2>
+    <p class="muted">
+      Reads every sheet with “Date” and “AV Total” columns as one result per session, into a bankroll cash account under the
+      Blackjack category. Importing again replaces the earlier sessions. Moving money between the bank and the bankroll is a Transfer.
+    </p>
+  </div>
+  <form method="post" action="{{ url_for('main.upload_blackjack') }}" enctype="multipart/form-data" class="inline">
+    <label class="field grow"><span>Tracker workbook (.xlsx)</span><input type="file" name="tracker" accept=".xlsx" required></label>
+    <label class="field"><span>Bankroll account</span><input name="account" value="Blackjack Bankroll"></label>
+    <button class="btn primary">Import sessions</button>
+  </form>
+</section>
+
 <section class="panel flush">
   <div class="panel-head" style="padding: 16px clamp(14px, 2.5vw, 24px) 0"><h2>Import history</h2></div>
   {% if imports %}
