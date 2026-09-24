@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 
 from budget import create_app, personal
-from budget.csv_import import parse_csv, store_transactions
+from budget.csv_import import parse_csv, replace_spreadsheet_rows, store_transactions
 from budget.db import connect
 from budget.excel_import import ensure_account, import_workbook
 
@@ -47,15 +47,23 @@ def main():
               f"({sorted_by.get('formula', 0)} by formula, {sorted_by.get('color', 0)} by color), "
               f"{result['recategorized']} changed")
         print(f"  month-end balances: {result['balances']}")
+        if result["loans_added"]:
+            print(f"  loan schedules set up from balance formulas: {result['loans_added']}")
+        if result["skipped_for_bank_data"]:
+            print(f"  skipped {result['skipped_for_bank_data']} entries on dates bank exports already cover")
         conn.close()
     elif args.command == "import-csv":
         conn = connect(app.config["DATABASE"])
         account_id = ensure_account(conn, args.account, args.kind)
         text = Path(args.path).read_text(encoding="utf-8-sig", errors="replace")
-        _, read, added, _ = store_transactions(conn, account_id, Path(args.path).name, parse_csv(text))
+        parsed = parse_csv(text)
+        _, read, added, _, _ = store_transactions(conn, account_id, Path(args.path).name, parsed)
+        replaced, carried = replace_spreadsheet_rows(conn, account_id, parsed, Path(args.path).name)
         conn.commit()
         conn.close()
-        print(f"Added {added} of {read} transactions to {args.account}")
+        print(f"Added {added} of {read} transactions to {args.account}"
+              + (f"; replaced {replaced} spreadsheet entries for the same dates" if replaced else "")
+              + (f", carrying their categories to {carried} bank rows" if carried else ""))
     else:
         port = getattr(args, "port", 5000)
         if not getattr(args, "no_browser", False):

@@ -194,6 +194,8 @@ table.ledger { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 .raw { display: block; max-width: 26rem; overflow: hidden; color: var(--muted); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
 .name-edit { padding: 0; border: 0; border-bottom: 1px dashed transparent; background: none; font-weight: 500; text-align: left; cursor: text; }
 .name-edit:hover { border-bottom-color: var(--ink-2); }
+.date-edit { padding: 0; border: 0; border-bottom: 1px dashed transparent; background: none; color: inherit; font-variant-numeric: tabular-nums; cursor: text; }
+.date-edit:hover { border-bottom-color: var(--ink-2); }
 .name-input { width: 100%; max-width: 18rem; }
 .cat-select { max-width: 13.5rem; }
 .guess { margin-left: 6px; padding: 0 5px; border: 1px dashed var(--rule-strong); border-radius: 4px; color: var(--ink-2); font-size: 0.74rem; white-space: nowrap; }
@@ -243,6 +245,9 @@ tr.done select, tr.done input { opacity: 0.6; }
 .bal-row label { font-weight: 500; }
 .bal-row small { display: block; color: var(--muted); font-size: 0.78rem; font-weight: 400; }
 .bal-row input { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.bal-row .calc { padding-right: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+.loans-table input:not([type="date"]) { min-width: 6.5rem; }
+.loan-add-title { margin-top: 18px; }
 .form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .manage { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--rule); }
 .manage summary { color: var(--accent); cursor: pointer; font-weight: 500; }

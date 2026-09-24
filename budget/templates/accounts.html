@@ -8,6 +8,8 @@
     <p class="sub">
       Every account you track, open or closed. Closing an account keeps its transactions and balance history in every report;
       it just stops asking for new balances after the month it closed. If one account shows up under two names, merge them.
+      “Bank exports from” is the month of the last balance you checked against the bank: months before it stay as recorded,
+      and uploaded bank exports are the record from its 1st on.
     </p>
   </div>
 </header>
@@ -29,8 +31,8 @@
     <table class="ledger rules accounts-table">
       <thead>
         <tr>
-          <th>Name</th><th>Type</th><th>Institution</th><th>Opened</th><th>Closed</th><th>Activity</th>
-          <th class="num">Latest balance</th><th><span class="visually-hidden">Actions</span></th>
+          <th>Name</th><th>Type</th><th>Institution</th><th>Opened</th><th>Closed</th><th>Bank exports from</th><th>Activity</th>
+          <th class="num">Balance today</th><th><span class="visually-hidden">Actions</span></th>
         </tr>
       </thead>
       <tbody>
@@ -41,6 +43,7 @@
           <td><input form="acct-{{ a.id }}" name="institution" value="{{ a.institution or '' }}" aria-label="Institution"></td>
           <td><input form="acct-{{ a.id }}" type="month" name="opened" value="{{ a.opened or '' }}" aria-label="Opened"></td>
           <td><input form="acct-{{ a.id }}" type="month" name="closed" value="{{ a.closed or '' }}" aria-label="Closed"></td>
+          <td><input form="acct-{{ a.id }}" type="month" name="bank_from" value="{{ a.bank_from or '' }}" aria-label="Bank exports from"></td>
           <td class="activity">
             {% if a.n %}
               <a href="{{ url_for('main.transactions', account=a.id) }}">{{ '{:,}'.format(a.n) }} transactions</a>
@@ -57,7 +60,10 @@
             {% endif %}
           </td>
           <td class="num">
-            {% if a.balance_month %}{{ a.balance|money(false) }}<small>{{ a.balance_month|month_label }}</small>{% else %}<span class="muted">—</span>{% endif %}
+            {% if a.today is not none %}
+              {{ a.today|money(false) }}
+              <small>{% if a.from_loans %}from loan terms{% elif a.balance_month %}last entered {{ a.balance_month|month_label }}{% endif %}</small>
+            {% else %}<span class="muted">—</span>{% endif %}
           </td>
           <td class="actions">
             <form id="acct-{{ a.id }}" method="post" action="{{ url_for('main.save_account') }}">
@@ -92,4 +98,75 @@
   </div>
 </div>
 {% endif %}
+
+<section class="panel" id="loans">
+  <div class="panel-head">
+    <h2>Loan schedules</h2>
+    <p class="muted">
+      A loan with fixed terms doesn't need monthly balances: what's owed is worked out from the amount borrowed, the rate,
+      the length and the start date. “Counts from” is when the calculation takes over; months before it keep the balances
+      already recorded. Extra principal payments aren't included, so adjust the terms if you make them.
+    </p>
+  </div>
+  {% if loans %}
+  <div class="table-wrap">
+    <table class="ledger rules loans-table">
+      <thead>
+        <tr>
+          <th>Account</th><th>Label</th><th class="num">Borrowed</th><th class="num">Rate %</th><th class="num">Years</th>
+          <th>Start date</th><th>Counts from</th><th class="num">Monthly payment</th><th class="num">Owed today</th>
+          <th><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in loans %}
+        <tr>
+          <td>
+            <select form="loan-{{ l.id }}" name="account_id" aria-label="Account">
+              {% for a in liability_accounts %}<option value="{{ a.id }}"{% if a.id == l.account_id %} selected{% endif %}>{{ a.name }}</option>{% endfor %}
+            </select>
+          </td>
+          <td><input form="loan-{{ l.id }}" name="label" value="{{ l.label or '' }}" aria-label="Label"></td>
+          <td><input form="loan-{{ l.id }}" name="principal" inputmode="decimal" value="{{ '%.2f'|format(l.principal) }}" aria-label="Amount borrowed"></td>
+          <td><input form="loan-{{ l.id }}" name="annual_rate" inputmode="decimal" value="{{ l.annual_rate|round(4) }}" aria-label="Interest rate percent"></td>
+          <td><input form="loan-{{ l.id }}" name="years" inputmode="decimal" value="{{ (l.term_months / 12)|round(2) }}" aria-label="Length in years"></td>
+          <td><input form="loan-{{ l.id }}" type="date" name="start_date" value="{{ l.start_date }}" aria-label="Start date"></td>
+          <td><input form="loan-{{ l.id }}" type="date" name="counts_from" value="{{ l.counts_from or '' }}" aria-label="Counts from"></td>
+          <td class="num">{{ l.payment|money }}</td>
+          <td class="num">{{ l.balance_today|money(false) }}</td>
+          <td class="actions">
+            <form id="loan-{{ l.id }}" method="post" action="{{ url_for('main.save_loan') }}">
+              <input type="hidden" name="id" value="{{ l.id }}">
+              <button class="btn small">Save</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delete_loan', lid=l.id) }}"
+                  data-confirm="Delete this loan? If it's the account's only loan, the account goes back to balances you enter.">
+              <button class="btn small quiet danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if liability_accounts %}
+  <h3 class="h-sm loan-add-title">Add a loan</h3>
+  <form method="post" action="{{ url_for('main.save_loan') }}" class="inline">
+    <label class="field"><span>Account</span>
+      <select name="account_id">{% for a in liability_accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="field"><span>Label</span><input name="label" placeholder="Car loan"></label>
+    <label class="field"><span>Borrowed</span><input name="principal" inputmode="decimal" required placeholder="32,000"></label>
+    <label class="field"><span>Rate %</span><input name="annual_rate" inputmode="decimal" required placeholder="5.9"></label>
+    <label class="field"><span>Years</span><input name="years" inputmode="decimal" required placeholder="5"></label>
+    <label class="field"><span>Start date</span><input type="date" name="start_date" required></label>
+    <label class="field"><span>Counts from</span><input type="date" name="counts_from"></label>
+    <button class="btn primary">Add loan</button>
+  </form>
+  {% else %}
+  <p class="muted">Add a loan or mortgage account above first.</p>
+  {% endif %}
+</section>
 {% endblock %}

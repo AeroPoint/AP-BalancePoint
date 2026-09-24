@@ -20,13 +20,20 @@ import openpyxl
 from openpyxl.utils import column_index_from_string, get_column_letter
 
 from . import seed
-from .csv_import import mcc_from_memo, store_transactions
+from .balances import month_end
+from .csv_import import bank_start, mcc_from_memo, store_transactions
 from .personal import PersonalConfigError
 from .rules import RuleEngine, merchant_key
 
 MONTHS = {m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
 IGNORED_FRIENDLY = {"PAID", "#N/A", "ERROR", "-", ""}
 CELL_REF = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
+# One loan inside a balance formula: FV(rate/12, DATEDIF(start, date, "m"), PMT(rate/12, term, amount), amount)
+FV_LOAN = re.compile(
+    r"FV\(\s*([\d.]+)\s*/\s*12\s*,\s*DATEDIF\(\s*(\d+)\s*,[^)]*\)\s*,\s*"
+    r"PMT\(\s*[\d.]+\s*/\s*12\s*,\s*([\d.*\s]+?)\s*,\s*([\d.]+)\s*\)",
+    re.IGNORECASE,
+)
 
 
 def _label(text):
@@ -43,8 +50,9 @@ def settings(personal):
     try:
         labels = {}
         for key, entry in raw.get("category_labels", {}).items():
-            keep = None if entry.get("only_if_uncategorized") else {entry["category"], *entry.get("also_ok", [])}
-            labels[_label(key)] = (entry["category"], keep)
+            wanted = seed.category_name(entry["category"])
+            keep = None if entry.get("only_if_uncategorized") else {wanted, *map(seed.category_name, entry.get("also_ok", []))}
+            labels[_label(key)] = (wanted, keep)
         cfg = {
             "ledger_sheet": raw.get("ledger_sheet", "Budget"),
             "name_sheets": list(raw.get("name_sheets", [])),
@@ -96,13 +104,14 @@ def ensure_account(conn, name, kind):
     return conn.execute("INSERT INTO accounts (name, kind) VALUES (?, ?)", (name, kind)).lastrowid
 
 
-def set_balance(conn, account_id, month, amount, source="excel"):
+def set_balance(conn, account_id, month, amount, as_of, source="excel"):
     """Upsert one month's balance. Balances typed into the app are never overwritten by an import."""
     return conn.execute(
-        """INSERT INTO balances (account_id, month, amount, source) VALUES (?, ?, ?, ?)
-           ON CONFLICT (account_id, month) DO UPDATE SET amount = excluded.amount, source = excluded.source
+        """INSERT INTO balances (account_id, month, amount, as_of, source) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (account_id, month) DO UPDATE
+             SET amount = excluded.amount, as_of = excluded.as_of, source = excluded.source
            WHERE balances.source != 'manual'""",
-        (account_id, month, amount, source),
+        (account_id, month, amount, as_of, source),
     ).rowcount
 
 
@@ -253,13 +262,28 @@ def _hand_sorted(values_ws, formulas_ws, legend, labels):
     return sorted_cells
 
 
+def _bank_windows(conn):
+    """{account name: [(first day, last day)]} of the dates bank exports are the record for."""
+    windows = defaultdict(list)
+    for name, since, first, last in conn.execute(
+        """SELECT a.name, a.bank_from, MIN(t.date), MAX(t.date) FROM transactions t
+           JOIN imports i ON i.id = t.import_id JOIN accounts a ON a.id = t.account_id
+           WHERE i.kind = 'csv' GROUP BY t.import_id"""
+    ):
+        windows[name].append((bank_start(since and f"{since}-01", first), last))
+    return windows
+
+
 def import_ledger(conn, values_ws, formulas_ws, filename, through, cfg):
     """Returns (summary dict, month-end balances {(account, kind): {month: amount}})."""
     legend = _legend(values_ws, cfg)
     labels = cfg["category_labels"]
     hand_sorted = _hand_sorted(values_ws, formulas_ws, legend, labels) if legend and labels else {}
     cat_ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM categories")}
-    by_account, month_end, matched = defaultdict(list), defaultdict(dict), Counter()
+    by_account, closing, matched = defaultdict(list), defaultdict(dict), Counter()
+    # Bank exports are the record for the dates they cover (see csv_import.replace_spreadsheet_rows).
+    covered = _bank_windows(conn)
+    skipped = 0
     header = None
     for row in values_ws.iter_rows(max_col=45):
         first = row[0].value
@@ -274,6 +298,9 @@ def import_ledger(conn, values_ws, formulas_ws, filename, through, cfg):
         for i, column in (ledger or header or {}).items():
             amount = row[i].value if i < len(row) else None
             if column not in cfg["ledger_accounts"] or not isinstance(amount, (int, float)) or round(amount, 2) == 0:
+                continue
+            if any(start <= day.isoformat() <= end for start, end in covered[cfg["ledger_accounts"][column][0]]):
+                skipped += 1
                 continue
             item = row[i + 1].value if i + 1 < len(row) else None
             name = str(item).strip() if item not in (None, "") else "Unlabeled"
@@ -296,16 +323,18 @@ def import_ledger(conn, values_ws, formulas_ws, filename, through, cfg):
         for i, target in (balance_cols or {}).items():
             value = row[i].value if i < len(row) else None
             if isinstance(value, (int, float)):  # rows run in date order, so the month's last row wins
-                month_end[target][day.strftime("%Y-%m")] = -value if seed.account_side(target[1]) == "liability" else value
+                amount = -value if seed.account_side(target[1]) == "liability" else value
+                closing[target][day.strftime("%Y-%m")] = (amount, day.isoformat())
 
     engine = RuleEngine(conn)
     summary, recategorized = [], 0
     for (account, kind), rows in by_account.items():
         account_id = ensure_account(conn, account, kind)
-        _, read, added, hinted = store_transactions(conn, account_id, f"{filename} ({account})", rows, "excel", engine)
+        _, read, added, hinted, _ = store_transactions(conn, account_id, f"{filename} ({account})", rows, "excel", engine)
         summary.append((account, read, added))
         recategorized += hinted
-    return {"ledger": summary, "hand_sorted": dict(matched), "recategorized": recategorized}, month_end
+    return {"ledger": summary, "hand_sorted": dict(matched), "recategorized": recategorized,
+            "skipped_for_bank_data": skipped}, closing
 
 
 def _panel_balances(ws, through, panel):
@@ -324,8 +353,63 @@ def _panel_balances(ws, through, panel):
             if not isinstance(value, (int, float)) or idx >= len(date_rows) or date_rows[idx][1].replace(day=1) > through:
                 continue
             month = date_rows[idx][1].strftime("%Y-%m")
-            found[target][month] = abs(value) if seed.account_side(target[1]) == "liability" else value
+            amount = abs(value) if seed.account_side(target[1]) == "liability" else value
+            found[target][month] = (amount, min(month_end(month), through.isoformat()))
     return found
+
+
+def _loan_terms(formulas_ws, values_ws, through, panel):
+    """Loan terms from panel cells that calculate a balance with =-FV(...) instead of a typed number.
+
+    Returns {(account, kind): (terms, first day of the first month the formula was used)}; the
+    calculation takes over from that month, so earlier typed-in balances stay as recorded.
+    """
+    if not panel:
+        return {}
+    date_rows = [(c.row, c.value.date()) for (c,) in values_ws.iter_rows(min_row=4, max_col=1) if isinstance(c.value, dt.datetime)]
+    row_numbers = [r for r, _ in date_rows]
+    found = {}
+    for row in formulas_ws.iter_rows(min_row=4, min_col=24):
+        for cell in row:
+            target = panel.get(_label(cell.value)) if isinstance(cell.value, str) else None
+            if not target:
+                continue
+            formula = formulas_ws.cell(cell.row, cell.column - 1).value
+            idx = bisect.bisect_left(row_numbers, cell.row)
+            if not isinstance(formula, str) or idx >= len(date_rows) or date_rows[idx][1].replace(day=1) > through:
+                continue
+            terms = []
+            for m in FV_LOAN.finditer(formula):
+                months = 1.0
+                for factor in m.group(3).split("*"):
+                    months *= float(factor)
+                terms.append({
+                    "annual_rate": round(float(m.group(1)) * 100, 6),
+                    "start_date": (dt.date(1899, 12, 30) + dt.timedelta(days=int(m.group(2)))).isoformat(),
+                    "term_months": int(round(months)),
+                    "principal": float(m.group(4)),
+                })
+            if terms:
+                first = found[target][1] if target in found else date_rows[idx][1].replace(day=1).isoformat()
+                found[target] = (terms, first)  # rows run top to bottom: newest terms, first month used
+    return found
+
+
+def _write_loans(conn, loans):
+    added = 0
+    for (name, kind), (terms, counts_from) in loans.items():
+        account_id = ensure_account(conn, name, kind)
+        if conn.execute("SELECT 1 FROM loan_terms WHERE account_id = ?", (account_id,)).fetchone():
+            continue  # already set up, possibly edited in the app: leave it alone
+        for t in terms:
+            conn.execute(
+                """INSERT INTO loan_terms (account_id, label, principal, annual_rate, term_months, start_date, counts_from)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (account_id, f"${t['principal']:,.0f} loan", t["principal"], t["annual_rate"],
+                 t["term_months"], t["start_date"], counts_from),
+            )
+            added += 1
+    return added
 
 
 # ---------------------------------------------------------------- investments sheet
@@ -364,36 +448,47 @@ def _write_balances(conn, found):
     for (name, kind), months in found.items():
         account_id = ensure_account(conn, name, kind)
         items = sorted(months.items())
-        for idx, (month, amount) in enumerate(items):
+        for idx, (month, (amount, as_of)) in enumerate(items):
             # A 0 between two real balances is a cell nobody updated that month, not an empty account.
-            if round(amount, 2) == 0 and 0 < idx < len(items) - 1 and items[idx - 1][1] and items[idx + 1][1]:
+            if round(amount, 2) == 0 and 0 < idx < len(items) - 1 and items[idx - 1][1][0] and items[idx + 1][1][0]:
                 continue
-            written += set_balance(conn, account_id, month, round(amount, 2))
+            written += set_balance(conn, account_id, month, round(amount, 2), as_of)
     return written
 
 
 def import_workbook(conn, path, through=None, personal=None):
     path = Path(path)
     cfg = settings(personal)
-    # Rows after the file was last saved are projected bills, not real transactions.
-    through = through or dt.date.fromtimestamp(path.stat().st_mtime)
-    result = {"configured": cfg["configured"], "through": through.isoformat(), "rules_added": 0,
-              "ledger": [], "hand_sorted": {}, "recategorized": 0, "balances": 0}
+    result = {"configured": cfg["configured"], "through": None, "rules_added": 0,
+              "ledger": [], "hand_sorted": {}, "recategorized": 0, "skipped_for_bank_data": 0, "balances": 0,
+              "loans_added": 0}
     if not cfg["configured"]:
         return result
     values = openpyxl.load_workbook(path, data_only=True)
+    # Rows after the workbook was last saved are projected bills, not real transactions. The save
+    # date stored inside the workbook survives copying and uploading; the file's own date doesn't.
+    saved = values.properties.modified
+    through = through or (saved.date() if saved else dt.date.fromtimestamp(path.stat().st_mtime))
+    result["through"] = through.isoformat()
     result["rules_added"] = import_dictionary(conn, values, cfg)
-    found = defaultdict(dict)
+    found, loans = defaultdict(dict), {}
     if cfg["ledger_sheet"] in values.sheetnames and (cfg["ledger_accounts"] or cfg["panel_accounts"]):
         formulas = openpyxl.load_workbook(path)
         ledger_ws = values[cfg["ledger_sheet"]]
-        summary, month_end = import_ledger(conn, ledger_ws, formulas[cfg["ledger_sheet"]], path.name, through, cfg)
+        summary, closing = import_ledger(conn, ledger_ws, formulas[cfg["ledger_sheet"]], path.name, through, cfg)
         result.update(summary)
-        for source in (month_end, _panel_balances(ledger_ws, through, cfg["panel_accounts"])):
+        for source in (closing, _panel_balances(ledger_ws, through, cfg["panel_accounts"])):
             for target, months in source.items():
                 found[target].update(months)
+        loans = _loan_terms(formulas[cfg["ledger_sheet"]], ledger_ws, through, cfg["panel_accounts"])
     for target, amount in _investment_balances(values, cfg).items():
-        found[target][through.strftime("%Y-%m")] = amount
+        found[target][through.strftime("%Y-%m")] = (amount, through.isoformat())
+    # Where bank exports are the record, the sheet's running balances (typed, unverified) don't apply.
+    for name, spans in _bank_windows(conn).items():
+        first = min(start for start, _ in spans)
+        for target in [t for t in found if t[0] == name]:
+            found[target] = {m: v for m, v in found[target].items() if v[1] < first}
     result["balances"] = _write_balances(conn, found)
+    result["loans_added"] = _write_loans(conn, loans)
     conn.commit()
     return result

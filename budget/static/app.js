@@ -140,6 +140,58 @@
     });
   });
 
+  // ---------------------------------------------------------------- transactions: date it counts on
+  async function setDate(row, button, value) {
+    try {
+      const data = await postJSON(`/api/transactions/${row.dataset.id}`, { date: value });
+      const t = data.transaction;
+      button.textContent = t.effective_date;
+      const note = row.querySelector(".date-note");
+      note.hidden = t.effective_date === t.date;
+      note.textContent = `${t.date_override ? "set by you" : "nearest 1st"}; bank date ${t.date}`;
+      flashRow(row);
+      if (value) {
+        showToast(`This now counts on ${t.effective_date}.`, [
+          { label: "Use the bank date", run: () => setDate(row, button, null) },
+        ]);
+      } else {
+        showToast(`Back to counting on ${t.effective_date}.`);
+      }
+    } catch (err) {
+      showToast(err.message);
+    }
+  }
+
+  document.querySelectorAll("tr[data-id] .date-edit").forEach((button) => {
+    button.addEventListener("click", () => {
+      const row = button.closest("tr");
+      const input = document.createElement("input");
+      input.type = "date";
+      input.value = button.textContent.trim();
+      input.setAttribute("aria-label", "Date this counts on");
+      button.hidden = true;
+      button.after(input);
+      input.focus();
+
+      let finished = false;
+      const finish = (save) => {
+        if (finished) return;
+        finished = true;
+        const value = input.value;
+        const old = button.textContent.trim();
+        input.remove();
+        button.hidden = false;
+        button.focus();
+        if (save && value && value !== old) setDate(row, button, value);
+      };
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") finish(true);
+        if (e.key === "Escape") finish(false);
+      });
+      input.addEventListener("blur", () => finish(true));
+    });
+  });
+
   // ---------------------------------------------------------------- categorize page
   document.querySelectorAll("tr[data-merchant]").forEach((row) => {
     const apply = row.querySelector(".apply");
@@ -176,7 +228,7 @@
         filled += 1;
       }
     });
-    showToast(filled ? `Filled ${plural(filled, "blank balance")} from last time. Update what changed, then save.` : "No blank balances to fill.");
+    showToast(filled ? `Filled ${plural(filled, "blank")} with the estimates. Change any that differ from the bank, then save.` : "No blank balances to fill.");
   });
 
   // ---------------------------------------------------------------- confirmations

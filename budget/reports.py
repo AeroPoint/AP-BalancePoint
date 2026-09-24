@@ -5,6 +5,8 @@ Money-flow conventions:
                reported separately (see uncategorized_deposits) until you categorize them
   * spending = expense categories (refunds net against them), plus uncategorized money going out
   * transfer categories (card payments, moving money, investing) are left out of both
+  * every report counts a transaction on its effective date: a date you set by hand, or the
+    nearest 1st for rent/mortgage-style categories, otherwise the bank's date
 
 Every report takes an optional list of account ids; None or an empty list means all accounts.
 """
@@ -36,10 +38,11 @@ def bounds(year, month=None):
 
 
 def years(conn):
-    return [int(r[0]) for r in conn.execute("SELECT DISTINCT substr(date, 1, 4) FROM transactions ORDER BY 1 DESC")]
+    return [int(r[0]) for r in conn.execute("SELECT DISTINCT substr(effective_date, 1, 4) FROM transactions ORDER BY 1 DESC")]
 
 
 def latest_month(conn, accounts=None):
+    """Month of the most recent bank activity (a rent payment moved to next month doesn't count)."""
     scope, extra = _scope(accounts)
     latest = conn.execute(f"SELECT MAX(t.date) FROM transactions t WHERE 1 = 1{scope}", extra).fetchone()[0]
     if not latest:
@@ -54,7 +57,7 @@ def totals(conn, start, end, accounts=None):
         f"""SELECT COALESCE(SUM(CASE WHEN {IS_INCOME} THEN t.amount END), 0),
                    COALESCE(SUM(CASE WHEN {IS_SPEND} THEN -t.amount END), 0),
                    COUNT(*)
-            {JOIN} WHERE t.date >= ? AND t.date < ?{scope}""",
+            {JOIN} WHERE t.effective_date >= ? AND t.effective_date < ?{scope}""",
         (start, end, *extra),
     ).fetchone()
     net = income - spending
@@ -71,7 +74,7 @@ def uncategorized_deposits(conn, start, end, accounts=None):
     scope, extra = _scope(accounts)
     n, total = conn.execute(
         "SELECT COUNT(*), COALESCE(SUM(t.amount), 0) FROM transactions t "
-        f"WHERE t.category_id IS NULL AND t.amount > 0 AND t.date >= ? AND t.date < ?{scope}",
+        f"WHERE t.category_id IS NULL AND t.amount > 0 AND t.effective_date >= ? AND t.effective_date < ?{scope}",
         (start, end, *extra),
     ).fetchone()
     return {"n": n, "total": total}
@@ -82,7 +85,7 @@ def by_category(conn, start, end, kind="expense", accounts=None):
     cond, sign = (IS_SPEND, -1) if kind == "expense" else (IS_INCOME, 1)
     rows = conn.execute(
         f"""SELECT c.id, COALESCE(c.name, 'Uncategorized') AS name, SUM(t.amount) * ? AS total, COUNT(*) AS n
-            {JOIN} WHERE t.date >= ? AND t.date < ? AND {cond}{scope}
+            {JOIN} WHERE t.effective_date >= ? AND t.effective_date < ? AND {cond}{scope}
             GROUP BY c.id ORDER BY total DESC""",
         (sign, start, end, *extra),
     )
@@ -93,7 +96,7 @@ def by_merchant(conn, start, end, limit=10, accounts=None):
     scope, extra = _scope(accounts)
     rows = conn.execute(
         f"""SELECT t.name, -SUM(t.amount) AS total, COUNT(*) AS n
-            {JOIN} WHERE t.date >= ? AND t.date < ? AND {IS_SPEND}{scope}
+            {JOIN} WHERE t.effective_date >= ? AND t.effective_date < ? AND {IS_SPEND}{scope}
             GROUP BY t.name HAVING total > 0 ORDER BY total DESC LIMIT ?""",
         (start, end, *extra, limit),
     )
@@ -106,10 +109,10 @@ def monthly(conn, start_year, start_month, count, accounts=None):
     months = [add_months(start_year, start_month, i) for i in range(count)]
     start, end = bounds(*months[0])[0], bounds(*months[-1])[1]
     rows = conn.execute(
-        f"""SELECT substr(t.date, 1, 7) AS m,
+        f"""SELECT substr(t.effective_date, 1, 7) AS m,
                    SUM(CASE WHEN {IS_INCOME} THEN t.amount ELSE 0 END) AS income,
                    SUM(CASE WHEN {IS_SPEND} THEN -t.amount ELSE 0 END) AS spending
-            {JOIN} WHERE t.date >= ? AND t.date < ?{scope} GROUP BY m""",
+            {JOIN} WHERE t.effective_date >= ? AND t.effective_date < ?{scope} GROUP BY m""",
         (start, end, *extra),
     )
     found = {r["m"]: r for r in rows}
@@ -137,7 +140,8 @@ def category_averages(conn, year, month, months=12, accounts=None):
     sy, sm = add_months(year, month, -months)
     start, end = bounds(sy, sm)[0], bounds(year, month)[0]
     n = conn.execute(
-        f"SELECT COUNT(DISTINCT substr(t.date, 1, 7)) FROM transactions t WHERE t.date >= ? AND t.date < ?{scope}",
+        "SELECT COUNT(DISTINCT substr(t.effective_date, 1, 7)) FROM transactions t "
+        f"WHERE t.effective_date >= ? AND t.effective_date < ?{scope}",
         (start, end, *extra),
     ).fetchone()[0]
     if not n:
@@ -152,8 +156,8 @@ def category_matrix(conn, year, accounts=None):
     grid = {}
     rows = conn.execute(
         f"""SELECT c.id, COALESCE(c.name, 'Uncategorized') AS name,
-                   CAST(substr(t.date, 6, 2) AS INTEGER) AS m, -SUM(t.amount) AS total
-            {JOIN} WHERE t.date >= ? AND t.date < ? AND {IS_SPEND}{scope}
+                   CAST(substr(t.effective_date, 6, 2) AS INTEGER) AS m, -SUM(t.amount) AS total
+            {JOIN} WHERE t.effective_date >= ? AND t.effective_date < ? AND {IS_SPEND}{scope}
             GROUP BY c.id, m""",
         (start, end, *extra),
     )
@@ -164,8 +168,8 @@ def category_matrix(conn, year, accounts=None):
     active = [
         int(r[0])
         for r in conn.execute(
-            f"SELECT DISTINCT CAST(substr(t.date, 6, 2) AS INTEGER) FROM transactions t "
-            f"WHERE t.date >= ? AND t.date < ?{scope} ORDER BY 1",
+            "SELECT DISTINCT CAST(substr(t.effective_date, 6, 2) AS INTEGER) FROM transactions t "
+            f"WHERE t.effective_date >= ? AND t.effective_date < ?{scope} ORDER BY 1",
             (start, end, *extra),
         )
     ]
@@ -214,8 +218,8 @@ def stacked_by_category(conn, year, top_n=7, accounts=None):
     series = {cid: [0.0] * 12 for cid in top_ids}
     other = [0.0] * 12
     rows = conn.execute(
-        f"""SELECT c.id, CAST(substr(t.date, 6, 2) AS INTEGER) AS m, -SUM(t.amount) AS total
-            {JOIN} WHERE t.date >= ? AND t.date < ? AND {IS_SPEND}{scope} GROUP BY c.id, m""",
+        f"""SELECT c.id, CAST(substr(t.effective_date, 6, 2) AS INTEGER) AS m, -SUM(t.amount) AS total
+            {JOIN} WHERE t.effective_date >= ? AND t.effective_date < ? AND {IS_SPEND}{scope} GROUP BY c.id, m""",
         (start, end, *extra),
     )
     for r in rows:

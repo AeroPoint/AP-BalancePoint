@@ -1,4 +1,6 @@
-/* Net worth page: pick accounts, see where money sits, and how balances moved over time. */
+/* Net worth page: pick accounts, see where money sits, and how balances moved over time.
+   The server sends each account's balance at the end of every month (today for this month),
+   already rolled forward from the last balance entered with the transactions since. */
 (function () {
   const app = document.getElementById("nw-app");
   const dataEl = document.getElementById("nw-data");
@@ -33,59 +35,20 @@
     },
   };
 
-  // ---------------------------------------------------------------- data
-  const accounts = data.accounts.map((a) => ({ ...a, values: new Map(), months: [] }));
-  const byId = new Map(accounts.map((a) => [a.id, a]));
-  for (const [id, month, amount] of data.balances) {
-    const account = byId.get(id);
-    if (account) account.values.set(month, amount);
-  }
-  for (const a of accounts) a.months = [...a.values.keys()].sort();
-
-  function monthRange(from, to) {
-    const out = [];
-    let [y, m] = from.split("-").map(Number);
-    const [ty, tm] = to.split("-").map(Number);
-    while (y < ty || (y === ty && m <= tm)) {
-      out.push(`${y}-${String(m).padStart(2, "0")}`);
-      m += 1;
-      if (m > 12) {
-        m = 1;
-        y += 1;
-      }
-    }
-    return out;
-  }
-
-  const recorded = [...new Set(data.balances.map((b) => b[1]))].sort();
-  const cap = data.month < data.today ? data.month : data.today;
-  const lastRecorded = recorded[recorded.length - 1];
-  const allMonths = recorded.length ? monthRange(recorded[0], lastRecorded > cap ? lastRecorded : cap) : [];
-
-  // A balance carries forward until the next one you enter, and counts only while the account is open.
-  function valueAt(a, month) {
-    if ((a.opened && month < a.opened) || (a.closed && month > a.closed)) return 0;
-    let value = 0;
-    for (const m of a.months) {
-      if (m > month) break;
-      value = a.values.get(m);
-    }
-    return value;
-  }
-
-  function lastEntered(a, month) {
-    let found = null;
-    for (const m of a.months) {
-      if (m > month) break;
-      found = m;
-    }
-    return found;
-  }
+  const months = data.months;
+  const monthIndex = new Map(months.map((m, i) => [m, i]));
+  const thisMonth = data.today.slice(0, 7);
+  const accounts = data.accounts;
+  const valueAt = (a, month) => {
+    const i = monthIndex.get(month);
+    const v = i === undefined ? null : a.values[i];
+    return v == null ? 0 : v;
+  };
 
   // Colors follow the account, not the selection: the biggest asset accounts overall get the slots.
   const bySize = accounts
     .filter((a) => a.side === "asset")
-    .map((a) => ({ a, peak: Math.max(0, ...[...a.values.values()].map(Math.abs)) }))
+    .map((a) => ({ a, peak: Math.max(0, ...a.values.map((v) => Math.abs(v || 0))) }))
     .sort((x, y) => y.peak - x.peak)
     .map((x) => x.a);
   const slot = new Map(bySize.slice(0, 7).map((a, i) => [a.id, i]));
@@ -167,27 +130,27 @@
       }
       return cache.get(month);
     };
-    const months = range === "all" ? allMonths : allMonths.slice(-Number(range));
-    const focus = allMonths.includes(data.month) ? data.month : allMonths[allMonths.length - 1];
+    const shown = range === "all" ? months : months.slice(-Number(range));
+    const focus = monthIndex.has(data.month) ? data.month : months[months.length - 1];
 
     renderStatement(chosen, focus, totalsAt);
-    document.getElementById("nw-charts").hidden = !allMonths.length;
-    if (!allMonths.length) {
+    document.getElementById("nw-charts").hidden = !months.length;
+    if (!months.length) {
       document.getElementById("nw-table").innerHTML = "";
       return;
     }
     renderSits(chosen, focus);
     Charts.lines(document.getElementById("nw-lines"), {
-      labels: months.map(short),
-      titles: months.map(long),
+      labels: shown.map(short),
+      titles: shown.map((m) => (m === thisMonth ? "Today" : `End of ${long(m)}`)),
       series: [
-        { name: "Own", values: months.map((m) => totalsAt(m).own) },
-        { name: "Owe", values: months.map((m) => totalsAt(m).owe) },
-        { name: "Net worth", values: months.map((m) => totalsAt(m).net) },
+        { name: "Own", values: shown.map((m) => totalsAt(m).own) },
+        { name: "Owe", values: shown.map((m) => totalsAt(m).owe) },
+        { name: "Net worth", values: shown.map((m) => totalsAt(m).net) },
       ],
     });
-    renderStack(chosen, months);
-    renderTable(months, totalsAt);
+    renderStack(chosen, shown);
+    renderTable(shown, totalsAt);
   }
 
   function renderStatement(chosen, focus, totalsAt) {
@@ -195,22 +158,24 @@
     el.innerHTML = "";
     const h = document.createElement("h1");
     if (!focus) {
-      h.textContent = "Enter this month's balances below to start tracking your net worth.";
+      h.textContent = "Enter a balance for each account below to start tracking your net worth.";
       el.appendChild(h);
       return;
     }
+    const now = focus === thisMonth;
     const t = totalsAt(focus);
     const b = document.createElement("b");
     b.textContent = money(t.net);
-    const who = excluded.size ? `the ${chosen.length} accounts you picked came to` : "your net worth was";
-    h.append(`At the end of ${long(focus)} ${who} `, b, ".");
+    const picked = excluded.size ? `the ${chosen.length} accounts you picked` : null;
+    if (now) h.append(picked ? `Today ${picked} come to ` : "Today your net worth is ", b, ".");
+    else h.append(`At the end of ${long(focus)} ${picked ? `${picked} came to` : "your net worth was"} `, b, ".");
     const p = document.createElement("p");
     p.className = "compare";
-    let text = `You owned ${money(t.own)} and owed ${money(t.owe)}.`;
-    const idx = allMonths.indexOf(focus);
+    let text = now ? `You own ${money(t.own)} and owe ${money(t.owe)}.` : `You owned ${money(t.own)} and owed ${money(t.owe)}.`;
+    const idx = months.indexOf(focus);
     if (idx > 0) {
-      const diff = t.net - totalsAt(allMonths[idx - 1]).net;
-      text = `${diff >= 0 ? "Up" : "Down"} ${money(Math.abs(diff))} since ${long(allMonths[idx - 1])}. ${text}`;
+      const diff = t.net - totalsAt(months[idx - 1]).net;
+      text = `${diff >= 0 ? "Up" : "Down"} ${money(Math.abs(diff))} since the end of ${long(months[idx - 1])}. ${text}`;
     }
     p.textContent = text;
     el.append(h, p);
@@ -218,7 +183,8 @@
 
   function renderSits(chosen, focus) {
     const el = document.getElementById("nw-sits");
-    document.getElementById("nw-sits-title").textContent = `Where it sits in ${long(focus)}`;
+    document.getElementById("nw-sits-title").textContent =
+      focus === thisMonth ? "Where it sits today" : `Where it sat at the end of ${long(focus)}`;
     el.innerHTML = "";
     for (const side of ["asset", "liability"]) {
       const rows = chosen
@@ -241,8 +207,7 @@
         name.textContent = a.name;
         const track = document.createElement("span");
         track.className = "cb-track";
-        const entered = lastEntered(a, focus);
-        track.dataset.tip = `${a.name}: ${money(v)}${entered && entered !== focus ? `, last entered ${long(entered)}` : ""}`;
+        track.dataset.tip = `${a.name}: ${money(v)}`;
         const fill = document.createElement("span");
         fill.className = "cb-fill";
         fill.style.width = `${(Math.abs(v) / max) * 100}%`;
@@ -262,7 +227,7 @@
     if (!el.children.length) el.textContent = "No balances for the accounts you picked in this month.";
   }
 
-  function renderStack(chosen, months) {
+  function renderStack(chosen, shown) {
     const el = document.getElementById("nw-stack");
     const assets = chosen.filter((a) => a.side === "asset");
     const named = bySize.filter((a) => slot.has(a.id) && !excluded.has(a.id));
@@ -270,14 +235,14 @@
     const series = [];
     const colors = [];
     for (const a of named) {
-      const values = months.map((m) => valueAt(a, m));
+      const values = shown.map((m) => valueAt(a, m));
       if (values.some((v) => v)) {
         series.push({ name: a.name, values });
         colors.push(colorOf(a));
       }
     }
     if (rest.length) {
-      const values = months.map((m) => rest.reduce((s, a) => s + valueAt(a, m), 0));
+      const values = shown.map((m) => rest.reduce((s, a) => s + valueAt(a, m), 0));
       if (values.some((v) => v)) {
         series.push({ name: "Other accounts", values });
         colors.push(Charts.token("--s-other"));
@@ -288,23 +253,30 @@
       el.textContent = "None of the accounts you picked hold money in this range.";
       return;
     }
-    Charts.columns(el, { labels: months.map(short), titles: months.map(long), stacked: true, series, colors, height: 280 });
+    Charts.columns(el, {
+      labels: shown.map(short),
+      titles: shown.map((m) => (m === thisMonth ? "Today" : `End of ${long(m)}`)),
+      stacked: true,
+      series,
+      colors,
+      height: 280,
+    });
   }
 
-  function renderTable(months, totalsAt) {
+  function renderTable(shown, totalsAt) {
     const body = document.getElementById("nw-table");
     body.innerHTML = "";
-    for (const m of [...months].reverse()) {
+    for (const m of [...shown].reverse()) {
       const t = totalsAt(m);
-      const idx = allMonths.indexOf(m);
+      const idx = months.indexOf(m);
       let change = "—";
       if (idx > 0) {
-        const diff = t.net - totalsAt(allMonths[idx - 1]).net;
+        const diff = t.net - totalsAt(months[idx - 1]).net;
         change = `${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))}`;
       }
       const tr = document.createElement("tr");
       tr.innerHTML =
-        `<td><a href="?month=${m}">${long(m)}</a></td>` +
+        `<td><a href="?month=${m}">${long(m)}${m === thisMonth ? " (today)" : ""}</a></td>` +
         `<td class="num">${money(t.own)}</td><td class="num">${money(t.owe)}</td>` +
         `<td class="num strong">${money(t.net)}</td><td class="num">${change}</td>`;
       body.appendChild(tr);

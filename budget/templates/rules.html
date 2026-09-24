@@ -38,6 +38,7 @@
 <p class="tab-help">
   {% if tab == 'raw' %}
     The match text is looked for inside the bank's description; capitals don't matter. Leave “Show as” blank to only set a category.
+    Set an amount to match only transactions for exactly that much, like a rent deposit that's always the same; leave it blank for any amount.
   {% else %}
     Keywords are looked for inside the cleaned-up merchant name, so “Gas” files “Costco Gas” and “Shell Gas” under Auto &amp; Gas.
     A keyword only applies when no bank-name entry already chose a category, except merchants you set with “Always”, which win outright.
@@ -55,6 +56,7 @@
     </label>
     {% if tab == 'raw' %}
     <label class="field grow"><span>Show as</span><input name="rename_to" placeholder="Shell"></label>
+    <label class="field"><span>Only this amount</span><input name="amount" inputmode="decimal" placeholder="any"></label>
     {% endif %}
     <label class="field"><span>Category</span><select name="category_id">{{ category_options(categories, None, 'No category') }}</select></label>
     <button class="btn primary">Add entry</button>
@@ -80,7 +82,7 @@
       <thead>
         <tr>
           <th>{{ 'Bank text contains' if tab == 'raw' else 'Name contains' }}</th>
-          {% if tab == 'raw' %}<th>Show as</th>{% endif %}
+          {% if tab == 'raw' %}<th>Show as</th><th>Only this amount</th>{% endif %}
           <th>Category</th>
           <th>Source</th>
           <th><span class="visually-hidden">Actions</span></th>
@@ -90,7 +92,11 @@
         {% for r in rules[:limit] %}
         <tr>
           <td><input form="rule-{{ r.id }}" name="pattern" value="{{ r.pattern }}" aria-label="Match text"></td>
-          {% if tab == 'raw' %}<td><input form="rule-{{ r.id }}" name="rename_to" value="{{ r.rename_to or '' }}" aria-label="Show as"></td>{% endif %}
+          {% if tab == 'raw' %}
+          <td><input form="rule-{{ r.id }}" name="rename_to" value="{{ r.rename_to or '' }}" aria-label="Show as"></td>
+          <td><input form="rule-{{ r.id }}" name="amount" inputmode="decimal" placeholder="any"
+                     value="{{ '%.2f'|format(r.amount) if r.amount is not none else '' }}" aria-label="Only this amount"></td>
+          {% endif %}
           <td><select form="rule-{{ r.id }}" name="category_id" aria-label="Category">{{ category_options(categories, r.category_id, 'No category') }}</select></td>
           <td class="source-tag">{{ {'user': 'You', 'config': 'personal.toml', 'excel': 'Spreadsheet', 'builtin': 'Built in'}.get(r.source, r.source) }}</td>
           <td class="actions">
@@ -107,7 +113,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="muted">No entries match.</td></tr>
+        <tr><td colspan="6" class="muted">No entries match.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -7,7 +7,7 @@
     <h1>Transactions</h1>
     <p class="sub">
       {{ '{:,}'.format(summary.n) }} {{ 'transaction' if summary.n == 1 else 'transactions' }}, adding up to {{ summary.total|money }}.
-      Click a merchant name to rename it. Change a category and you can make it apply to that merchant every time.
+      Click a merchant name to rename it, or a date to change which month it counts in. Change a category and you can make it apply to that merchant every time.
     </p>
   </div>
 </header>
@@ -62,7 +62,10 @@
       <tbody>
         {% for t in rows %}
         <tr data-id="{{ t.id }}" data-name="{{ t.name }}" data-source="{{ t.category_source }}">
-          <td class="date">{{ t.date }}</td>
+          <td class="date">
+            <button type="button" class="date-edit" data-bank="{{ t.date }}" title="Change which date this counts on">{{ t.effective_date }}</button>
+            <span class="raw date-note"{% if t.effective_date == t.date %} hidden{% endif %}>{{ 'set by you' if t.date_override else 'nearest 1st' }}; bank date {{ t.date }}</span>
+          </td>
           <td class="merchant">
             <button type="button" class="name-edit" title="Rename">{{ t.name }}</button>
             {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}

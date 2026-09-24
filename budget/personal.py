@@ -18,7 +18,7 @@ class PersonalConfigError(ValueError):
 class Personal:
     path: Path | None = None
     categories: list = field(default_factory=list)   # [(name, kind)]
-    merchants: list = field(default_factory=list)    # [(match, name or None, category or None)]
+    merchants: list = field(default_factory=list)    # [(match, name, category, exact amount or None)]
     keywords: list = field(default_factory=list)     # [(keyword, category)]
     spreadsheet: dict = field(default_factory=dict)  # raw [spreadsheet] table, read by excel_import
 
@@ -39,7 +39,7 @@ def load(path):
                 )
             categories.append((entry["name"], kind))
         merchants = [
-            (entry["match"], entry.get("name"), entry.get("category"))
+            (entry["match"], entry.get("name"), entry.get("category"), entry.get("amount"))
             for entry in raw.get("merchant", [])
             if entry.get("name") or entry.get("category")
         ]

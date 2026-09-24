@@ -28,7 +28,11 @@ startup, so restart after editing. Changes you make in the app win over the file
 
 - **US Bank CSV:** in the app, open *Upload data*, choose one or more CSV files and
   the account they belong to. Re-uploading overlapping date ranges is safe;
-  duplicates are skipped.
+  duplicates are skipped. A bank export replaces entries imported from an old spreadsheet for
+  the same account and dates, since the bank's record is the one to keep. The spreadsheet's
+  category, date and notes for each entry move to the bank row with the same amount nearest in
+  date. To keep spreadsheet months you already checked against the bank, set the account's
+  *Bank exports from* month on the Accounts page: export rows before it are left out.
 - **Old budget spreadsheet:** describe its layout in the `[spreadsheet]` section of
   `data/personal.toml`, then use *Upload data → Old budget workbook*, or:
 
@@ -57,7 +61,11 @@ account comes in under two names, merge them.
 
 *Net worth* shows where money sits in a month, own/owe/net over time, and each account's
 balance history. Tick accounts on or off, or use a preset (cash only, investments only, leave
-out home and cars). A balance you don't update carries forward until the next one you enter.
+out home and cars). Balances are for a day. For accounts with transactions, the app estimates
+today's balance from the last one entered plus everything that posted since; type the bank's
+number now and then to correct it. Accounts without transactions carry their last balance forward.
+Loans with fixed terms (*Accounts → Loan schedules*) are calculated every month instead, and the
+spreadsheet import sets them up from an `=-FV(rate/12, DATEDIF(...), PMT(...), amount)` balance formula.
 Overview and Year trends have the same account filter for spending and income.
 
 ## How naming and categorizing works
@@ -71,6 +79,13 @@ Each transaction goes through these steps:
 3. **Category keywords**: words in the clean name, like `Gas` → Auto & Gas.
 4. **Card type**: US Bank card exports include a merchant category code; it's used as a
    last-resort guess, marked “guess” in the app.
+
+Zelle and Venmo payments are named after the person, like “Zelle to Pat Smith”, so each person
+can have their own category.
+
+Every transaction keeps the bank's date but counts on an effective date. Categories marked
+“count on nearest 1st” (rent and mortgage by default) move to the nearest first of the month, and
+you can set any transaction's date by hand on the Transactions page.
 
 Categories you pick by hand on a single transaction, and ones hand-sorted in an imported
 spreadsheet, are never overwritten by rules. Transfer categories (card payments, moving

@@ -1,6 +1,7 @@
 """Merchant name cleanup and the rule engine that renames + categorizes transactions."""
 import re
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 from . import seed
 
@@ -11,6 +12,17 @@ PROCESSOR_PREFIX = re.compile(
     r"^(SQ ?\*|TST ?\*|SP |PAYPAL ?\*|PY ?\*|CKE ?\*|FH ?\*|WF ?\*|ICP ?\*|GLOSS ?\*|CPI ?\*|"
     r"BCF |SSA |RTA |DD ?\*|EB ?\*|POS PURCHASE |DEBIT PURCHASE )"
 )
+# Checking-account exports put the transaction type in front of the merchant.
+BANK_PREFIX = re.compile(
+    r"^(RECURRING DEBIT PURCHASE|DEBIT PURCHASE RET - VISA|DEBIT PURCHASE -VISA|DEBIT PURCHASE|"
+    r"ELECTRONIC WITHDRAWAL|ELECTRONIC DEPOSIT|WEB AUTHORIZED PMT|REAL TIME PAYMENT FROM|REAL TIME PAYMENT TO)\s+"
+)
+# Person-to-person payments: keep who the money went to or came from in the name.
+PERSON_PAYMENTS = [
+    ("Zelle", re.compile(r"\bZELLE\b.*?\b(TO|FROM)\s+(.+?)(?:\s{2,}\S*|\s+\S*\d\S*)?\s*$", re.IGNORECASE)),
+    ("Venmo", re.compile(r"\bVENMO\s*\*\s*(.+?)(?=VISA DIRECT|\s{2,}|\d{3}-\d{3}-\d{4}|NEW YORK|$)", re.IGNORECASE)),
+]
+GENERIC_PAYMENT_NAMES = {"Zelle", "Venmo"}
 SOURCE_RANK = {"user": 0, "config": 1, "excel": 2, "builtin": 3}
 
 
@@ -41,7 +53,7 @@ def merchant_key(raw):
     Used to suggest dictionary patterns and to group raw names together.
     """
     s = normalize(merchant_part(raw))
-    s = PROCESSOR_PREFIX.sub("", s)
+    s = PROCESSOR_PREFIX.sub("", BANK_PREFIX.sub("", s))
     if "*" in s:
         head, _, tail = s.partition("*")
         s = head if len(head.strip()) >= 3 else tail
@@ -60,6 +72,20 @@ def suggest_name(raw):
             words.append(w.capitalize())
     name = " ".join(words)
     return re.sub(r"'S\b", "'s", name).replace(".Com", ".com")
+
+
+def person_payment_name(raw):
+    """'ZELLE INSTANT PMT TO PAT SMITH   USBx7Kd2mQpZ' -> 'Zelle to Pat Smith'."""
+    text = str(raw or "").strip()
+    for app, rx in PERSON_PAYMENTS:
+        m = rx.search(text)
+        if not m:
+            continue
+        direction, person = (m.group(1).lower(), m.group(2)) if app == "Zelle" else ("to", m.group(1))
+        person = " ".join(word.capitalize() for word in person.split())
+        if person:
+            return f"{app} {direction} {person}"
+    return None
 
 
 def compile_pattern(pattern):
@@ -84,8 +110,9 @@ class RuleEngine:
                 rx = compile_pattern(r["pattern"])
             except re.error:
                 continue
-            # Most specific (longest) pattern first; user rules beat Excel beat built-in on ties.
-            compiled.append(((-len(r["pattern"]), SOURCE_RANK.get(r["source"], 3)), rx, dict(r)))
+            # Amount-specific rules first, then longest pattern; user beats Excel beats built-in.
+            rank = (0 if r["amount"] is not None else 1, -len(r["pattern"]), SOURCE_RANK.get(r["source"], 3))
+            compiled.append((rank, rx, dict(r)))
         compiled.sort(key=lambda c: c[0])
         self.raw_rules = [(rx, r) for _, rx, r in compiled if r["match_on"] == "raw"]
         self.name_rules = [(rx, r) for _, rx, r in compiled if r["match_on"] == "name" and r["category_id"]]
@@ -93,7 +120,7 @@ class RuleEngine:
         self.pinned = {
             normalize(r["pattern"]): r["category_id"]
             for _, r in self.name_rules
-            if r["source"] == "user" and not r["pattern"].startswith("re:")
+            if r["source"] == "user" and r["amount"] is None and not r["pattern"].startswith("re:")
         }
         # Friendly name -> category, so "Groc Mart" typed in the old spreadsheet still categorizes.
         self.name_to_category = {}
@@ -101,7 +128,13 @@ class RuleEngine:
             if r["rename_to"] and r["category_id"]:
                 self.name_to_category.setdefault(normalize(r["rename_to"]), r["category_id"])
 
-    def resolve(self, raw, mcc=None, fixed_name=None):
+    @staticmethod
+    def _matches(rule, rx, text, key, amount):
+        if rule["amount"] is not None and (amount is None or round(amount, 2) != round(rule["amount"], 2)):
+            return False
+        return bool(rx.search(text) or rx.search(key))
+
+    def resolve(self, raw, mcc=None, fixed_name=None, amount=None):
         text = normalize(raw)
         # Patterns are matched against the raw text and against its cleaned key, so an entry
         # like "SAFEWAY FUEL" still matches "SAFEWAY #1234 FUEL SPRINGFIELD IL".
@@ -110,13 +143,16 @@ class RuleEngine:
         for rx, r in self.raw_rules:
             wants_name = name is None and r["rename_to"]
             wants_category = raw_category is None and r["category_id"]
-            if (wants_name or wants_category) and (rx.search(text) or rx.search(key)):
+            if (wants_name or wants_category) and self._matches(r, rx, text, key, amount):
                 if wants_name:
                     name = r["rename_to"]
                 if wants_category:
                     raw_category = r["category_id"]
             if name is not None and raw_category is not None:
                 break
+        if fixed_name is None and (name is None or name in GENERIC_PAYMENT_NAMES):
+            # "Zelle to Pat Smith" beats plain "Zelle", so each person can get a category.
+            name = person_payment_name(raw) or name
         if name is None:
             name = suggest_name(raw)
 
@@ -125,7 +161,9 @@ class RuleEngine:
             self.pinned.get(upper)
             or raw_category
             or self.name_to_category.get(upper)
-            or next((r["category_id"] for rx, r in self.name_rules if rx.search(upper)), None)
+            or next(
+                (r["category_id"] for rx, r in self.name_rules if self._matches(r, rx, upper, upper, amount)), None
+            )
         )
         if category_id is not None:
             return Match(name, category_id, "rule")
@@ -144,13 +182,13 @@ def reapply(conn, where="1=1", params=()):
     """
     engine = RuleEngine(conn)
     rows = conn.execute(
-        f"SELECT id, raw_description, mcc, name, name_locked, category_id, category_source "
+        f"SELECT id, raw_description, mcc, amount, name, name_locked, category_id, category_source "
         f"FROM transactions WHERE {where}",
         params,
     ).fetchall()
     changed = 0
     for t in rows:
-        m = engine.resolve(t["raw_description"], t["mcc"], t["name"] if t["name_locked"] else None)
+        m = engine.resolve(t["raw_description"], t["mcc"], t["name"] if t["name_locked"] else None, t["amount"])
         name = t["name"] if t["name_locked"] else m.name
         if t["category_source"] in ("manual", "sheet"):
             category_id, source = t["category_id"], t["category_source"]
@@ -162,4 +200,31 @@ def reapply(conn, where="1=1", params=()):
                 (name, category_id, source, t["id"]),
             )
             changed += 1
+    sync_dates(conn, where, params)
     return changed
+
+
+def nearest_month_start(iso_date):
+    """'2026-08-30' -> '2026-09-01'; '2026-09-03' -> '2026-09-01'."""
+    day = date.fromisoformat(iso_date)
+    this_first = day.replace(day=1)
+    next_first = (this_first + timedelta(days=32)).replace(day=1)
+    return (next_first if next_first - day < day - this_first else this_first).isoformat()
+
+
+def sync_dates(conn, where="1=1", params=()):
+    """Recompute the date each transaction counts on. Returns how many moved.
+
+    A date you set by hand wins; otherwise categories marked "count on nearest 1st" (rent,
+    mortgage) snap to the nearest first of the month; everything else uses the bank's date.
+    """
+    snap = {r[0] for r in conn.execute("SELECT id FROM categories WHERE snap_to_month = 1")}
+    moved = []
+    for t in conn.execute(
+        f"SELECT id, date, date_override, category_id, effective_date FROM transactions WHERE {where}", params
+    ).fetchall():
+        effective = t[2] or (nearest_month_start(t[1]) if t[3] in snap else t[1])
+        if effective != t[4]:
+            moved.append((effective, t[0]))
+    conn.executemany("UPDATE transactions SET effective_date = ? WHERE id = ?", moved)
+    return len(moved)

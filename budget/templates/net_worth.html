@@ -16,7 +16,7 @@
 {% if not accounts %}
 <section class="empty">
   <h1>No accounts yet</h1>
-  <p>Add the accounts you want to track, like checking, savings, retirement, your home and any loans. Then enter their balances once a month.</p>
+  <p>Add the accounts you want to track, like checking, savings, retirement, your home and any loans. Then enter a balance for each one.</p>
   <a class="btn primary" href="{{ url_for('main.accounts_page') }}">Add accounts</a>
 </section>
 {% else %}
@@ -58,7 +58,7 @@
     <section class="panel">
       <div class="panel-head">
         <h2>Money in each account over time</h2>
-        <p class="muted">What you own, stacked by account. Your seven biggest accounts keep their colors; the rest are grouped.</p>
+        <p class="muted">What you own at the end of each month (today for this month), stacked by account. Your seven biggest accounts keep their colors; the rest are grouped.</p>
       </div>
       <div id="nw-stack" class="chart"></div>
     </section>
@@ -67,36 +67,48 @@
   <div class="nw-grid">
     <section class="panel balances">
       <div class="panel-head">
-        <h2>Balances for {{ month|month_label }}</h2>
+        <h2>Balances</h2>
         <a href="{{ url_for('main.accounts_page') }}">Add or close accounts</a>
       </div>
-      {% if open_accounts %}
+      {% if rows %}
       <form method="post">
-        <input type="hidden" name="month" value="{{ month }}">
+        <label class="field">
+          <span>As of</span>
+          <input type="date" name="as_of" value="{{ as_of }}"
+                 onchange="if (this.value) location.search = '?month=' + this.value.slice(0, 7) + '&as_of=' + this.value">
+        </label>
+        <p class="note">
+          Each gray number is the app's estimate: the last balance entered, plus the account's transactions since.
+          Type the bank's number wherever it differs; that becomes the new starting point.
+        </p>
         {% for group in groups %}
-        {% set rows = open_accounts|selectattr('group', 'equalto', group)|list %}
-        {% if rows %}
+        {% set group_rows = rows|selectattr('group', 'equalto', group)|list %}
+        {% if group_rows %}
         <fieldset>
           <legend>{{ group }}</legend>
-          {% for a in rows %}
-          {% set last = previous.get(a.id) %}
+          {% for a in group_rows %}
           <div class="bal-row">
             <label for="acct-{{ a.id }}">
               {{ a.name }}
-              <small>{{ a.kind_label }}{% if last %}; {{ last[0]|money }} in {{ last[1]|month_label }}{% endif %}</small>
+              <small>{{ a.hint }}</small>
             </label>
+            {% if a.scheduled %}
+            <span class="calc" title="Change the loan terms on the Accounts page">{{ a.estimate|money }}</span>
+            {% else %}
+            {% if a.exact is not none %}<input type="hidden" name="had-{{ a.id }}" value="1">{% endif %}
             <input id="acct-{{ a.id }}" name="acct-{{ a.id }}" inputmode="decimal" autocomplete="off"
-                   value="{{ '%.2f'|format(current[a.id]) if a.id in current else '' }}"
-                   {% if last %}data-last="{{ '%.2f'|format(last[0]) }}" placeholder="{{ '{:,.2f}'.format(last[0]) }}"{% endif %}>
+                   value="{{ '%.2f'|format(a.exact) if a.exact is not none else '' }}"
+                   {% if a.estimate is not none %}data-last="{{ '%.2f'|format(a.estimate) }}" placeholder="{{ '{:,.2f}'.format(a.estimate) }}"{% endif %}>
+            {% endif %}
           </div>
           {% endfor %}
         </fieldset>
         {% endif %}
         {% endfor %}
-        <p class="note">For credit cards and loans, enter what you owe as a positive number. Leave a box blank to keep last month's number in the totals.</p>
+        <p class="note">For credit cards and loans, enter what you owe as a positive number.</p>
         <div class="form-actions">
           <button class="btn primary">Save balances</button>
-          <button type="button" class="btn" id="copy-last">Fill blanks from last month</button>
+          <button type="button" class="btn" id="copy-last">Fill blanks with estimates</button>
         </div>
       </form>
       {% else %}

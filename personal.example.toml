@@ -20,12 +20,19 @@ kind = "expense"
 [[merchant]]
 match = "MAPLE STREET BAKERY"
 name = "Maple Street Bakery"
-category = "Eating Out"
+category = "Dining & Drinks"
 
 [[merchant]]
 match = "ACME CORP PAYROLL"
 name = "Paycheck"
 category = "Paycheck"
+
+# amount matches only that exact amount, for a deposit that's always the same, like rent.
+[[merchant]]
+match = "CASH APP"
+amount = 950
+name = "Rent"
+category = "Rental Income"
 
 # ------------------------------------------------------------------ category keywords
 # A word in the cleaned-up merchant name -> category.
@@ -67,7 +74,7 @@ investments_sheet = "Investments"
 # also_ok: categories the automatic rules may keep instead.
 # only_if_uncategorized: use the label only when nothing else categorized the transaction.
 [spreadsheet.category_labels]
-"Food" = { category = "Eating Out", also_ok = ["Groceries", "Drinks & Bars"] }
+"Food" = { category = "Dining & Drinks", also_ok = ["Groceries"] }
 "Misc" = { category = "Other", only_if_uncategorized = true }
 
 # Investments sheet: a section title alone on its row -> account, and the column holding values

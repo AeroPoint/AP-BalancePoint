@@ -8,10 +8,11 @@ from flask import Blueprint, current_app, flash, jsonify, redirect, render_templ
 from werkzeug.utils import secure_filename
 
 from . import personal, reports, seed
-from .csv_import import CsvFormatError, parse_csv, store_transactions
-from .db import get_db
+from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
+from .csv_import import CsvFormatError, parse_csv, replace_spreadsheet_rows, store_transactions
+from .db import get_db, merge_category
 from .excel_import import ensure_account, import_workbook
-from .rules import RuleEngine, compile_pattern, merchant_key, normalize, reapply
+from .rules import RuleEngine, compile_pattern, merchant_key, normalize, reapply, sync_dates
 
 bp = Blueprint("main", __name__)
 MONTHS = reports.MONTH_NAMES
@@ -45,6 +46,13 @@ def _month_input(value):
     return value if MONTH_INPUT.fullmatch(value) else None
 
 
+def _date_input(value):
+    try:
+        return date.fromisoformat((value or "").strip()).isoformat()
+    except ValueError:
+        return None
+
+
 def _months_between(earlier, later):
     return (int(later[:4]) * 12 + int(later[5:7])) - (int(earlier[:4]) * 12 + int(earlier[5:7]))
 
@@ -72,7 +80,9 @@ def _back(default_endpoint, **values):
 
 
 def upsert_rule(conn, match_on, pattern, rename_to=None, category_id=None):
-    existing = conn.execute("SELECT id FROM rules WHERE match_on = ? AND pattern = ?", (match_on, pattern)).fetchone()
+    existing = conn.execute(
+        "SELECT id FROM rules WHERE match_on = ? AND pattern = ? AND amount IS NULL", (match_on, pattern)
+    ).fetchone()
     if existing:
         sets, vals = ["source = 'user'"], []
         if rename_to is not None:
@@ -100,7 +110,7 @@ def rename_merchant(conn, txn, old, new_name):
     """Rename a merchant everywhere and teach the dictionary the new name."""
     conn.execute("UPDATE rules SET rename_to = ?, source = 'user' WHERE rename_to = ?", (new_name, old))
     conn.execute("UPDATE OR IGNORE rules SET pattern = ? WHERE match_on = 'name' AND pattern = ?", (new_name, old))
-    if RuleEngine(conn).resolve(txn["raw_description"], txn["mcc"]).name != new_name:
+    if RuleEngine(conn).resolve(txn["raw_description"], txn["mcc"], amount=txn["amount"]).name != new_name:
         upsert_rule(conn, "raw", merchant_key(txn["raw_description"]), rename_to=new_name)
     changed = conn.execute("UPDATE transactions SET name = ? WHERE name = ?", (new_name, old)).rowcount
     return changed + reapply(conn, "name_locked = 0")
@@ -108,7 +118,8 @@ def rename_merchant(conn, txn, old, new_name):
 
 def _txn_json(conn, tid):
     row = conn.execute(
-        """SELECT t.id, t.name, t.category_id, t.category_source, t.notes, c.name AS category_name
+        """SELECT t.id, t.name, t.category_id, t.category_source, t.notes, c.name AS category_name,
+                  t.date, t.date_override, t.effective_date
            FROM transactions t LEFT JOIN categories c ON c.id = t.category_id WHERE t.id = ?""",
         (tid,),
     ).fetchone()
@@ -127,6 +138,12 @@ def money_filter(value, cents=True):
 def month_label(key):
     y, m = str(key).split("-")[:2]
     return f"{MONTHS[int(m) - 1]} {y}"
+
+
+@bp.app_template_filter("day_label")
+def day_label(iso):
+    d = date.fromisoformat(str(iso)[:10])
+    return f"{MONTHS[d.month - 1]} {d.day}, {d.year}"
 
 
 @bp.app_context_processor
@@ -226,7 +243,7 @@ def transactions():
     period = args.get("period", "")
     if re.fullmatch(r"\d{4}(-\d{2})?", period):
         start, end = reports.bounds(int(period[:4]), int(period[5:]) if len(period) == 7 else None)
-        where.append("t.date >= ? AND t.date < ?")
+        where.append("t.effective_date >= ? AND t.effective_date < ?")
         params += [start, end]
     if args.get("source") in ("mcc", "manual", "sheet", "rule", "none"):
         where.append("t.category_source = ?")
@@ -244,10 +261,10 @@ def transactions():
         f"""SELECT t.*, a.name AS account_name, c.name AS category_name
             FROM transactions t JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
-            WHERE {clause} ORDER BY t.date DESC, t.id DESC LIMIT ? OFFSET ?""",
+            WHERE {clause} ORDER BY t.effective_date DESC, t.date DESC, t.id DESC LIMIT ? OFFSET ?""",
         (*params, PER_PAGE, (page - 1) * PER_PAGE),
     ).fetchall()
-    periods = [r[0] for r in conn.execute("SELECT DISTINCT substr(date, 1, 7) FROM transactions ORDER BY 1 DESC")]
+    periods = [r[0] for r in conn.execute("SELECT DISTINCT substr(effective_date, 1, 7) FROM transactions ORDER BY 1 DESC")]
     return render_template(
         "transactions.html",
         rows=rows, summary=summary, page=page, pages=max(1, -(-summary["n"] // PER_PAGE)),
@@ -286,9 +303,20 @@ def update_transaction(tid):
             (category_id, ("rule" if remember else "manual") if category_id else "none", tid),
         )
 
+    if "date" in data:
+        # The bank's date is kept; this only changes which date the transaction counts on.
+        new_date = str(data["date"] or "").strip()
+        if new_date:
+            try:
+                date.fromisoformat(new_date)
+            except ValueError:
+                return jsonify(error="Use a date like 2026-09-01."), 400
+        conn.execute("UPDATE transactions SET date_override = ? WHERE id = ?", (new_date or None, tid))
+
     if "notes" in data:
         conn.execute("UPDATE transactions SET notes = ? WHERE id = ?", (str(data["notes"]).strip() or None, tid))
 
+    sync_dates(conn, "id = ?", (tid,))
     conn.commit()
     return jsonify(ok=True, changed=changed, transaction=_txn_json(conn, tid))
 
@@ -325,6 +353,7 @@ def categorize_merchant():
             "WHERE name = ? AND category_source IN ('none', 'mcc')",
             (category_id, name),
         ).rowcount
+        sync_dates(conn, "name = ?", (name,))
     conn.commit()
     return jsonify(ok=True, changed=changed)
 
@@ -374,6 +403,7 @@ def save_rule():
         pattern = normalize(pattern)
     rename_to = " ".join(form.get("rename_to", "").split()) or None
     category_id = _int(form.get("category_id"))
+    amount = _money_input(form.get("amount"))  # blank matches any amount
     if not pattern:
         flash("A rule needs text to match.", "error")
         return _back(".rules_page", tab=match_on)
@@ -390,13 +420,14 @@ def save_rule():
     try:
         if rid:
             conn.execute(
-                "UPDATE rules SET pattern = ?, rename_to = ?, category_id = ?, source = 'user' WHERE id = ?",
-                (pattern, rename_to, category_id, rid),
+                "UPDATE rules SET pattern = ?, rename_to = ?, category_id = ?, amount = ?, source = 'user' WHERE id = ?",
+                (pattern, rename_to, category_id, amount, rid),
             )
         else:
             conn.execute(
-                "INSERT INTO rules (match_on, pattern, rename_to, category_id, source) VALUES (?, ?, ?, ?, 'user')",
-                (match_on, pattern, rename_to, category_id),
+                """INSERT INTO rules (match_on, pattern, rename_to, category_id, amount, source)
+                   VALUES (?, ?, ?, ?, ?, 'user')""",
+                (match_on, pattern, rename_to, category_id, amount),
             )
     except sqlite3.IntegrityError:
         flash(f"A rule for “{pattern}” already exists — edit that one instead.", "error")
@@ -442,15 +473,37 @@ def save_category():
         flash("A category needs a name and a type.", "error")
         return redirect(url_for(".categories_page"))
     cid = _int(request.form.get("id"))
+    snap = int(request.form.get("snap_to_month") == "1")
     try:
         if cid:
-            conn.execute("UPDATE categories SET name = ?, kind = ? WHERE id = ?", (name, kind, cid))
+            conn.execute(
+                "UPDATE categories SET name = ?, kind = ?, snap_to_month = ? WHERE id = ?", (name, kind, snap, cid)
+            )
+            sync_dates(conn, "category_id = ?", (cid,))
         else:
-            conn.execute("INSERT INTO categories (name, kind, sort) VALUES (?, ?, 999)", (name, kind))
+            conn.execute(
+                "INSERT INTO categories (name, kind, sort, snap_to_month) VALUES (?, ?, 999, ?)", (name, kind, snap)
+            )
         conn.commit()
         flash(f"Saved category “{name}”.", "ok")
     except sqlite3.IntegrityError:
         flash(f"There's already a category named “{name}”.", "error")
+    return redirect(url_for(".categories_page"))
+
+
+@bp.post("/categories/merge")
+def merge_categories():
+    conn = get_db()
+    source, target = _int(request.form.get("source")), _int(request.form.get("target"))
+    names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM categories")}
+    if source not in names or target not in names or source == target:
+        flash("Pick two different categories to merge.", "error")
+        return redirect(url_for(".categories_page"))
+    n = conn.execute("SELECT COUNT(*) FROM transactions WHERE category_id = ?", (source,)).fetchone()[0]
+    merge_category(conn, source, target)
+    sync_dates(conn, "category_id = ?", (target,))
+    conn.commit()
+    flash(f"Merged “{names[source]}” into “{names[target]}” ({n:,} transactions).", "ok")
     return redirect(url_for(".categories_page"))
 
 
@@ -483,6 +536,8 @@ def accounts_page():
                   (SELECT MAX(month) FROM balances b WHERE b.account_id = a.id AND ABS(amount) >= 0.5) AS last_nonzero
            FROM accounts a ORDER BY a.closed IS NOT NULL, a.sort, a.name"""
     ).fetchall()
+    today = date.today().isoformat()
+    ledgers = load_ledgers(conn)
     accounts = []
     for r in rows:
         a = dict(r)
@@ -491,8 +546,72 @@ def accounts_page():
         a["quiet_since"] = activity if (
             not r["closed"] and activity and latest and _months_between(activity, latest) >= 4
         ) else None
+        a["today"] = ledgers[r["id"]].on(today)
+        a["from_loans"] = bool(ledgers[r["id"]].scheduled_loans(today))
+        a["side"] = seed.account_side(r["kind"])
+        # Loan calculations replace quiet-account hints: a mortgage with no new balances isn't closed.
+        if ledgers[r["id"]].loans:
+            a["quiet_since"] = None
         accounts.append(a)
-    return render_template("accounts.html", accounts=accounts, kinds=seed.ACCOUNT_KINDS, groups=seed.ACCOUNT_GROUPS)
+    loans = []
+    for row in conn.execute(
+        "SELECT l.*, a.name AS account_name FROM loan_terms l JOIN accounts a ON a.id = l.account_id ORDER BY a.name, l.start_date"
+    ):
+        loan = dict(row)
+        loan["payment"] = loan_payment(loan["principal"], loan["annual_rate"], loan["term_months"])
+        loan["balance_today"] = loan_balance(
+            loan["principal"], loan["annual_rate"], loan["term_months"], loan["start_date"], today
+        )
+        loans.append(loan)
+    return render_template(
+        "accounts.html", accounts=accounts, kinds=seed.ACCOUNT_KINDS, groups=seed.ACCOUNT_GROUPS, loans=loans,
+        liability_accounts=[a for a in accounts if a["side"] == "liability"],
+    )
+
+
+@bp.post("/loans/save")
+def save_loan():
+    conn = get_db()
+    form = request.form
+    account_id = _int(form.get("account_id"))
+    principal = _money_input(form.get("principal"))
+    try:
+        rate = float(str(form.get("annual_rate", "")).replace("%", "").strip())
+        years = float(str(form.get("years", "")).strip())
+    except ValueError:
+        rate = years = None
+    start = _date_input(form.get("start_date"))
+    counts_from = _date_input(form.get("counts_from"))
+    if not (account_id and principal and principal > 0 and rate is not None and rate >= 0 and years and years > 0 and start):
+        flash("A loan needs its account, the amount borrowed, the interest rate, the length in years and a start date.", "error")
+        return redirect(url_for(".accounts_page") + "#loans")
+    term_months = round(years * 12)
+    values = (account_id, " ".join(form.get("label", "").split()) or None, principal, rate, term_months, start, counts_from)
+    lid = _int(form.get("id"))
+    if lid:
+        conn.execute(
+            """UPDATE loan_terms SET account_id = ?, label = ?, principal = ?, annual_rate = ?, term_months = ?,
+                   start_date = ?, counts_from = ? WHERE id = ?""",
+            (*values, lid),
+        )
+    else:
+        conn.execute(
+            """INSERT INTO loan_terms (account_id, label, principal, annual_rate, term_months, start_date, counts_from)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            values,
+        )
+    conn.commit()
+    flash(f"Saved the loan: {money_filter(loan_payment(principal, rate, term_months))} a month in principal and interest.", "ok")
+    return redirect(url_for(".accounts_page") + "#loans")
+
+
+@bp.post("/loans/<int:lid>/delete")
+def delete_loan(lid):
+    conn = get_db()
+    conn.execute("DELETE FROM loan_terms WHERE id = ?", (lid,))
+    conn.commit()
+    flash("Deleted the loan. If it was the account's last one, the account goes back to balances you enter.", "ok")
+    return redirect(url_for(".accounts_page") + "#loans")
 
 
 @bp.post("/accounts/save")
@@ -503,6 +622,7 @@ def save_account():
     kind = form.get("kind") if form.get("kind") in seed.KIND else "other"
     institution = " ".join(form.get("institution", "").split()) or None
     opened, closed = _month_input(form.get("opened")), _month_input(form.get("closed"))
+    since = _month_input(form.get("bank_from"))
     if not name:
         flash("An account needs a name.", "error")
         return redirect(url_for(".accounts_page"))
@@ -513,13 +633,14 @@ def save_account():
     try:
         if aid:
             conn.execute(
-                "UPDATE accounts SET name = ?, kind = ?, institution = ?, opened = ?, closed = ? WHERE id = ?",
-                (name, kind, institution, opened, closed, aid),
+                "UPDATE accounts SET name = ?, kind = ?, institution = ?, opened = ?, closed = ?, bank_from = ? "
+                "WHERE id = ?",
+                (name, kind, institution, opened, closed, since, aid),
             )
         else:
             conn.execute(
-                "INSERT INTO accounts (name, kind, institution, opened, closed) VALUES (?, ?, ?, ?, ?)",
-                (name, kind, institution, opened, closed),
+                "INSERT INTO accounts (name, kind, institution, opened, closed, bank_from) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, kind, institution, opened, closed, since),
             )
         conn.commit()
         flash(f"Saved “{name}”." + (f" Marked closed as of {month_label(closed)}." if closed else ""), "ok")
@@ -563,6 +684,7 @@ def merge_account(aid):
         (target, aid),
     )
     conn.execute("UPDATE imports SET account_id = ? WHERE account_id = ?", (target, aid))
+    conn.execute("UPDATE loan_terms SET account_id = ? WHERE account_id = ?", (target, aid))
     conn.execute("DELETE FROM accounts WHERE id = ?", (aid,))
     conn.commit()
     flash(
@@ -593,10 +715,15 @@ def delete_account(aid):
 @bp.route("/net-worth", methods=["GET", "POST"])
 def net_worth():
     conn = get_db()
-    month = _month_input(request.values.get("month")) or date.today().strftime("%Y-%m")
+    today = date.today().isoformat()
+    month = _month_input(request.values.get("month")) or today[:7]
+    # Balances are for a day: today in the current month, otherwise the month's last day.
+    as_of = _date_input(request.values.get("as_of")) or (today if month == today[:7] else month_end(month))
+    month = as_of[:7]
+    ledgers = load_ledgers(conn)
     accounts = []
-    for row in _accounts(conn):
-        a = dict(row)
+    for ledger in ledgers.values():
+        a = dict(ledger.account)
         info = seed.KIND.get(a["kind"], seed.KIND["other"])
         a.update(side=info["side"], group=info["group"], kind_label=info["label"])
         accounts.append(a)
@@ -613,43 +740,67 @@ def net_worth():
                 continue
             value = _money_input(field)
             if value is None:
-                cleared += conn.execute(
-                    "DELETE FROM balances WHERE account_id = ? AND month = ?", (a["id"], month)
-                ).rowcount
-            else:
-                conn.execute(
-                    """INSERT INTO balances (account_id, month, amount, source) VALUES (?, ?, ?, 'manual')
-                       ON CONFLICT (account_id, month) DO UPDATE SET amount = excluded.amount, source = 'manual'""",
-                    (a["id"], month, value),
-                )
-                saved += 1
+                if request.form.get(f"had-{a['id']}"):  # a box that showed a saved balance was emptied
+                    cleared += conn.execute(
+                        "DELETE FROM balances WHERE account_id = ? AND month = ? AND as_of = ?", (a["id"], month, as_of)
+                    ).rowcount
+                continue
+            conn.execute(
+                """INSERT INTO balances (account_id, month, amount, as_of, source) VALUES (?, ?, ?, ?, 'manual')
+                   ON CONFLICT (account_id, month) DO UPDATE
+                     SET amount = excluded.amount, as_of = excluded.as_of, source = 'manual'""",
+                (a["id"], month, value, as_of),
+            )
+            saved += 1
         conn.commit()
         flash(
-            f"Saved {saved} balance{'s' if saved != 1 else ''} for {month_label(month)}."
+            f"Saved {saved} balance{'s' if saved != 1 else ''} as of {day_label(as_of)}."
             + (f" Cleared {cleared}." if cleared else ""),
             "ok",
         )
-        return redirect(url_for(".net_worth", month=month))
+        return redirect(url_for(".net_worth", month=month, as_of=as_of))
 
-    balances = conn.execute("SELECT account_id, month, amount FROM balances ORDER BY month").fetchall()
-    current = {r["account_id"]: r["amount"] for r in balances if r["month"] == month}
-    previous = {}
-    for r in balances:
-        if r["month"] < month:
-            previous[r["account_id"]] = (r["amount"], r["month"])
+    rows = []
+    for a in open_accounts:
+        ledger = ledgers[a["id"]]
+        stored = conn.execute(
+            "SELECT amount, as_of FROM balances WHERE account_id = ? AND month = ?", (a["id"], month)
+        ).fetchone()
+        anchor, since = ledger.since_anchor(as_of)
+        scheduled = ledger.scheduled_loans(as_of)
+        if scheduled:
+            hint = (f"Calculated from {len(scheduled)} loan{'s' if len(scheduled) != 1 else ''}, "
+                    f"{money_filter(ledger.monthly_payment(as_of))} a month")
+        elif anchor is None:
+            hint = "No balance entered yet"
+        elif anchor[0] == as_of:
+            hint = "Entered for this day"
+        elif ledger.has_transactions:
+            hint = (f"{money_filter(anchor[1])} on {day_label(anchor[0])}, "
+                    f"plus {since} transaction{'s' if since != 1 else ''} since")
+        else:
+            hint = f"Last entered {money_filter(anchor[1])} on {day_label(anchor[0])}"
+        rows.append(dict(
+            a, hint=hint, estimate=ledger.on(as_of), scheduled=bool(scheduled),
+            exact=stored["amount"] if stored and stored["as_of"] == as_of and not scheduled else None,
+        ))
+
+    first = conn.execute(
+        "SELECT MIN(m) FROM (SELECT MIN(month) AS m FROM balances UNION ALL SELECT MIN(substr(date, 1, 7)) FROM transactions)"
+    ).fetchone()[0]
+    months = month_range(first, today[:7]) if first else []
+    series = []
+    for a in accounts:
+        values = [ledgers[a["id"]].on(min(month_end(m), today)) for m in months]
+        if any(v is not None for v in values):
+            series.append({**{k: a[k] for k in ("id", "name", "kind", "side", "group", "opened", "closed")}, "values": values})
     year, mon = int(month[:4]), int(month[5:])
     py, pm = reports.add_months(year, mon, -1)
     ny, nm = reports.add_months(year, mon, 1)
-    payload = {
-        "month": month,
-        "today": date.today().strftime("%Y-%m"),
-        "accounts": [{k: a[k] for k in ("id", "name", "kind", "side", "group", "opened", "closed")} for a in accounts],
-        "balances": [[r["account_id"], r["month"], r["amount"]] for r in balances],
-    }
     return render_template(
         "net_worth.html",
-        month=month, accounts=accounts, open_accounts=open_accounts, groups=seed.ACCOUNT_GROUPS,
-        current=current, previous=previous, payload=payload,
+        month=month, as_of=as_of, accounts=accounts, rows=rows, groups=seed.ACCOUNT_GROUPS,
+        payload={"month": month, "today": today, "months": months, "accounts": series},
         prev_month=f"{py}-{pm:02d}", next_month=f"{ny}-{nm:02d}",
     )
 
@@ -685,8 +836,16 @@ def upload():
             except CsvFormatError as exc:
                 flash(f"{f.filename}: {exc}", "error")
                 continue
-            _, read, added, _ = store_transactions(conn, account_id, f.filename, parsed)
-            flash(f"{f.filename}: added {added} of {read} transactions ({read - added} were already imported).", "ok")
+            _, read, added, _, before = store_transactions(conn, account_id, f.filename, parsed)
+            replaced, carried = replace_spreadsheet_rows(conn, account_id, parsed, f.filename)
+            flash(
+                f"{f.filename}: added {added} of {read} transactions ({read - added - before} were already imported)."
+                + (f" Skipped {before} from before the account's “bank exports from” month." if before else "")
+                + (f" Replaced {replaced} spreadsheet entries for the same account and dates" if replaced else "")
+                + (f", keeping your categories, dates and notes on {carried} matching bank rows." if carried
+                   else "." if replaced else ""),
+                "ok",
+            )
         conn.commit()
         return redirect(url_for(".upload"))
 
@@ -737,7 +896,11 @@ def upload_excel():
         f"Imported {path.name} through {result['through']}. {result['rules_added']} dictionary entries; {ledger}. "
         f"{sum(sorted_by.values()):,} transactions matched your spreadsheet categories "
         f"({sorted_by.get('formula', 0):,} from your category formulas, {sorted_by.get('color', 0):,} from cell colors), "
-        f"{result['recategorized']:,} of them changed. {result['balances']:,} month-end balances.",
+        f"{result['recategorized']:,} of them changed. {result['balances']:,} month-end balances."
+        + (f" Skipped {result['skipped_for_bank_data']:,} entries on dates your bank exports already cover."
+           if result["skipped_for_bank_data"] else "")
+        + (f" Set up {result['loans_added']} loan schedule{'s' if result['loans_added'] != 1 else ''} from its balance formulas."
+           if result["loans_added"] else ""),
         "ok",
     )
     return redirect(url_for(".upload"))
