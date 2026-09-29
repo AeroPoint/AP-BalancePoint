@@ -35,6 +35,23 @@ network. Anyone else, even on the same Wi-Fi, gets "Forbidden".
 The computer has to be on with the app running. For always-on access, run the app on a small
 always-on machine at home instead, the same way.
 
+### On a Mac (always-on home server)
+
+1. Copy the whole `Budget` folder, including `data/`, to somewhere **outside** Desktop, Documents
+   and Downloads (macOS blocks background apps there), e.g. `~/Budget`. Stop the app on any other
+   computer first, so only one copy of the database is in use.
+2. Install Tailscale for Mac and sign in to the same account. In System Settings → Energy, turn on
+   *Prevent automatic sleeping* and *Start up automatically after a power failure*.
+3. In Terminal: `cd ~/Budget && chmod +x *.sh && ./install-mac.sh`. It sets up Python (3.11+
+   needed) the first time, starts the app, and makes it start again at every login and after a
+   crash. It prints the address for phones and other computers, e.g. `http://mac-mini:5000`.
+   Allow incoming connections if macOS asks.
+4. Log: `data/server.log`. Remove the auto-start with `./install-mac.sh remove`; run it by hand
+   with `./start-mac.sh`.
+
+For the app to come back after a power cut, the Mac needs to log in to that account on its own
+(System Settings → Users & Groups → automatic login), since it starts at login.
+
 ## Personal settings
 
 Anything specific to your household goes in `data/personal.toml`, never in the code:

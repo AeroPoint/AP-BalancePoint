@@ -20,7 +20,11 @@ def print_phone_address(port):
     import shutil
     import subprocess
 
-    exe = shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"
+    exe = shutil.which("tailscale") or next(
+        (p for p in (r"C:\Program Files\Tailscale\tailscale.exe",
+                     "/Applications/Tailscale.app/Contents/MacOS/Tailscale") if Path(p).exists()),
+        "tailscale",
+    )
     try:
         ip = subprocess.run([exe, "ip", "-4"], capture_output=True, text=True, timeout=10).stdout.split()[0]
         name = subprocess.run([exe, "status", "--self", "--peers=false"], capture_output=True, text=True,
