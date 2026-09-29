@@ -179,6 +179,21 @@ money, investing) are excluded from income and spending.
 The built-in dictionary of national merchants lives in `budget/seed.py`. New entries there are
 added on the next start without touching anything you've edited.
 
+## Working on the code
+
+- **Personal data stays in `data/`**, which is git-ignored here and is its own git repo. Code,
+  comments, examples and commit messages use made-up names (Pat Smith, ACME CORP). Household
+  rules go in `data/personal.toml`, not in `seed.py`. Private notes and to-dos: `data/TODO.md`.
+- **Schema changes** go in `db.migrate()` so existing databases upgrade on startup. One-time data
+  migrations are gated on `PRAGMA user_version` (currently 2: folded categories, spending groups).
+- **Reports count transactions on `effective_date`** (a date set by hand, else the nearest 1st for
+  "count on nearest 1st" categories, else the bank date); `rules.sync_dates` keeps it current.
+- **Balances** come from `balances.AccountLedger`: the latest recorded balance on or before a day,
+  plus transactions after it (loan schedules override for loans).
+- **Try data changes on a copy** first: copy `data/` somewhere, point `BUDGET_DATA_DIR` at it, and
+  run the app or a script against that. Check an account by comparing its ledger balance at month
+  ends with the bank export's running balance.
+
 ## Layout
 
 ```
