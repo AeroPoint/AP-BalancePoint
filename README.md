@@ -17,6 +17,24 @@ python -m venv .venv
 .venv\Scripts\python.exe run.py            # opens http://127.0.0.1:5000
 ```
 
+### On your phone
+
+The app has no login, so it only answers this computer, and, when started with
+`start-phones.bat` (`run.py serve --phones`), devices on your own [Tailscale](https://tailscale.com)
+network. Anyone else, even on the same Wi-Fi, gets "Forbidden".
+
+1. Install Tailscale on this computer and sign in (Google or Microsoft account is fine).
+2. Install the Tailscale app on each phone and sign in with the same account (or invite your
+   partner's account from the Tailscale admin page).
+3. Start the app with `start-phones.bat`. It prints the phone address, like
+   `http://your-pc-name:5000`. The first time, allow Python through the Windows firewall on
+   **private** networks.
+4. Open that address on the phone and use *Add to Home Screen* (Safari's share menu, or Chrome's
+   menu) to get a Ledger icon that opens full screen.
+
+The computer has to be on with the app running. For always-on access, run the app on a small
+always-on machine at home instead, the same way.
+
 ## Personal settings
 
 Anything specific to your household goes in `data/personal.toml`, never in the code:

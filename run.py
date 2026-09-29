@@ -1,6 +1,7 @@
 """Start the budget app, or run a one-off import from the command line.
 
     python run.py                          # serve at http://127.0.0.1:5000
+    python run.py serve --phones           # also reachable from your phones over Tailscale
     python run.py import-excel data/source/budget.xlsx [--through 2024-12-31]
     python run.py import-csv path/to/export.csv --account "US Bank Credit" [--kind credit]
 """
@@ -15,12 +16,29 @@ from budget.db import connect
 from budget.excel_import import ensure_account, import_workbook
 
 
+def print_phone_address(port):
+    import shutil
+    import subprocess
+
+    exe = shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"
+    try:
+        ip = subprocess.run([exe, "ip", "-4"], capture_output=True, text=True, timeout=10).stdout.split()[0]
+        name = subprocess.run([exe, "status", "--self", "--peers=false"], capture_output=True, text=True,
+                              timeout=10).stdout.split()
+        host = name[1] if len(name) > 1 else ip
+        print(f"On your phones (Tailscale on): http://{host}:{port}  or  http://{ip}:{port}")
+    except (OSError, IndexError, subprocess.SubprocessError):
+        print("Tailscale isn't running on this computer yet, so phones can't reach the app. See README: 'On your phone'.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Personal budget app")
     sub = parser.add_subparsers(dest="command")
     serve = sub.add_parser("serve", help="run the web app (default)")
     serve.add_argument("--port", type=int, default=5000)
     serve.add_argument("--no-browser", action="store_true")
+    serve.add_argument("--phones", action="store_true",
+                       help="also answer devices on your Tailscale network (nobody else, even on the same Wi-Fi)")
     excel = sub.add_parser("import-excel", help="import an old budget workbook (see [spreadsheet] in personal.toml)")
     excel.add_argument("path")
     excel.add_argument("--through", help="ignore ledger rows after this date (YYYY-MM-DD)")
@@ -78,9 +96,14 @@ def main():
               + (f", carrying their categories to {carried} bank rows" if carried else ""))
     else:
         port = getattr(args, "port", 5000)
+        phones = getattr(args, "phones", False)
+        if phones:
+            print_phone_address(port)
         if not getattr(args, "no_browser", False):
             webbrowser.open(f"http://127.0.0.1:{port}")
-        app.run(host="127.0.0.1", port=port, debug=False)
+        # With --phones the server listens on every network, and the app itself turns away anything
+        # that isn't this computer or a Tailscale device (budget.trusted).
+        app.run(host="0.0.0.0" if phones else "127.0.0.1", port=port, debug=False)
 
 
 if __name__ == "__main__":
