@@ -157,10 +157,21 @@ def hours_label(hours):
     return f"{minutes // 60}:{minutes % 60:02d}"
 
 
+def features(conn):
+    """Optional parts of the app. [features] in personal.toml decides; without it, Blackjack is on once
+    there are sessions (so an install that uses it keeps it) and off for a new one."""
+    chosen = current_app.config.get("FEATURES", {})
+    blackjack = chosen.get("blackjack")
+    if blackjack is None:
+        blackjack = conn.execute("SELECT 1 FROM bj_sessions LIMIT 1").fetchone() is not None
+    return {"blackjack": blackjack}
+
+
 @bp.app_context_processor
 def inject_nav():
-    count = get_db().execute("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL").fetchone()[0]
-    return {"uncategorized_count": count, "endpoint": request.endpoint}
+    conn = get_db()
+    count = conn.execute("SELECT COUNT(*) FROM transactions WHERE category_id IS NULL").fetchone()[0]
+    return {"uncategorized_count": count, "endpoint": request.endpoint, "features": features(conn)}
 
 
 # ---------------------------------------------------------------- dashboard & trends

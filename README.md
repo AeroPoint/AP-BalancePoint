@@ -1,11 +1,21 @@
 # Ledger
 
-A local, Monarch-style budget app. It imports US Bank CSV exports (and, optionally, an old
-hand-kept budget spreadsheet), cleans up merchant names with an editable dictionary,
-auto-categorizes transactions, shows money flow by month and by year, and tracks balances
-and net worth across accounts, including ones you've closed.
+A local, Monarch-style budget app. It reads bank CSV exports or syncs banks daily through
+SimpleFIN Bridge (and, optionally, imports an old hand-kept budget spreadsheet), cleans up merchant
+names with an editable dictionary, auto-categorizes transactions, shows money flow by month and by
+year, plans the next 12 months, tracks balances and net worth across accounts (including closed ones),
+keeps business accounts' profit apart, and flags transactions for tax time.
 
 Everything runs on your machine. Data lives in `data/`, which git ignores.
+
+**What it assumes:** US dollars and English. Bank CSVs work from any bank with a date, a description
+and an amount (or debit and credit) column; US Bank exports are understood best (their card memos also
+carry the merchant type, used to guess categories). SimpleFIN Bridge covers most US banks, card
+companies, brokerages and lenders.
+
+**Optional parts** switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
+for tracking blackjack sessions against their expected value). Without a setting, Blackjack is on once
+there are blackjack sessions and off otherwise.
 
 ## Run it
 

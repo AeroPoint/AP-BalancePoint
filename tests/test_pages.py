@@ -74,3 +74,32 @@ def test_plan_shows_the_saved_backup_accounts(demo_conn, client):
     first = re.search(r'name="plan_backup_account">(.*?)</select>', html, re.S).group(1)
     second = re.search(r'name="plan_backup_account_2">(.*?)</select>', html, re.S).group(1)
     assert re.search(r"selected>Savings<", first) and re.search(r"selected>Brokerage<", second)
+
+
+def test_blackjack_is_off_for_a_new_install(client):
+    html = client.get("/").get_data(as_text=True)
+    assert 'href="/bankroll"' not in html and "Blackjack tracker" not in client.get("/upload").get_data(as_text=True)
+    assert 'aria-label="Main"' in html and ">Net worth" in html
+
+
+def test_blackjack_stays_on_once_there_are_sessions(demo_conn, client):
+    """An install that uses it (like the one this came from) keeps it without setting anything."""
+    html = client.get("/").get_data(as_text=True)
+    assert 'href="/bankroll"' in html and "Blackjack tracker" in client.get("/upload").get_data(as_text=True)
+
+
+@pytest.mark.parametrize("setting, sessions, shown", [("false", True, False), ("true", False, True)])
+def test_features_setting_wins(tmp_path, monkeypatch, setting, sessions, shown):
+    from budget import create_app, demo
+    from budget.db import connect
+
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "personal.toml").write_text(f"[features]\nblackjack = {setting}\n")
+    monkeypatch.setenv("BUDGET_DATA_DIR", str(data))
+    app = create_app()
+    if sessions:
+        conn = connect(app.config["DATABASE"])
+        demo.build(conn)
+        conn.close()
+    assert ('href="/bankroll"' in app.test_client().get("/").get_data(as_text=True)) == shown

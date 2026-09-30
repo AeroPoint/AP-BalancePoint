@@ -10,7 +10,7 @@
 {% macro empty_upload(title) -%}
 <section class="empty">
   <h1>{{ title }}</h1>
-  <p>Upload a US Bank CSV export, or import your old budget workbook, to see where your money went.</p>
+  <p>Upload your bank's CSV export, connect a bank with SimpleFIN, or import an old budget workbook to see where your money went.</p>
   <a class="btn primary" href="{{ url_for('main.upload') }}">Upload data</a>
 </section>
 {%- endmacro %}

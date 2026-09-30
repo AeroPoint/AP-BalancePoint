@@ -21,6 +21,7 @@ class Personal:
     merchants: list = field(default_factory=list)    # [(match, name, category, exact amount or None)]
     keywords: list = field(default_factory=list)     # [(keyword, category)]
     spreadsheet: dict = field(default_factory=dict)  # raw [spreadsheet] table, read by excel_import
+    features: dict = field(default_factory=dict)     # [features]: optional parts switched on or off, e.g. blackjack
 
 
 def load(path):
@@ -48,4 +49,5 @@ def load(path):
         raise PersonalConfigError(f"{path} isn't valid TOML: {exc}") from exc
     except KeyError as exc:
         raise PersonalConfigError(f"{path}: an entry is missing its {exc} value.") from exc
-    return Personal(path, categories, merchants, keywords, raw.get("spreadsheet", {}))
+    features = {str(k): bool(v) for k, v in raw.get("features", {}).items()}
+    return Personal(path, categories, merchants, keywords, raw.get("spreadsheet", {}), features)

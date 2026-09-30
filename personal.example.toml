@@ -4,6 +4,13 @@
 # personal.toml ends up in the code repository. The app reads it at startup; restart after editing.
 # Anything you change on the Merchant dictionary page in the app wins over this file.
 
+# ------------------------------------------------------------------ optional features
+# Leave a feature out and the app decides: blackjack is on once there are blackjack sessions (so an
+# install that uses it keeps it) and off for a new one. Set it to switch it on or off for good.
+
+[features]
+blackjack = false
+
 # ------------------------------------------------------------------ extra categories
 # kind is expense, income or transfer (transfers aren't counted as income or spending).
 

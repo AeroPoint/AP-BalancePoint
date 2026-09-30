@@ -23,7 +23,7 @@
   <aside class="side">
     <a class="brand" href="{{ url_for('main.dashboard') }}">Ledger</a>
     <nav aria-label="Main">
-      {% for ep, text in [
+      {% for item in [
         ('main.dashboard', 'Overview'),
         ('main.plan', 'Plan'),
         ('main.trends', 'Year trends'),
@@ -31,12 +31,12 @@
         ('main.transactions', 'Transactions'),
         ('main.categorize', 'Categorize'),
         ('main.net_worth', 'Net worth'),
-        ('main.bankroll', 'Bankroll'),
+        ('main.bankroll', 'Bankroll') if features.blackjack else none,
         ('main.accounts_page', 'Accounts'),
         ('main.upload', 'Upload data'),
         ('main.rules_page', 'Merchant dictionary'),
         ('main.categories_page', 'Categories'),
-      ] %}
+      ] if item %}{% set ep, text = item %}
       <a href="{{ url_for(ep) }}" class="{{ 'on' if endpoint == ep }}" {% if endpoint == ep %}aria-current="page"{% endif %}>
         {{ text }}{% if ep == 'main.categorize' and uncategorized_count %}<span class="count" title="Uncategorized transactions">{{ uncategorized_count }}</span>{% endif %}
       </a>
@@ -49,6 +49,11 @@
     ('main.transactions', 'Transactions', '<path d="M4 6h16M4 12h16M4 18h10"/>'),
     ('main.categorize', 'Categorize', '<path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.5"/>'),
     ('main.bankroll', 'Bankroll', '<rect x="2.6" y="5" width="11" height="15" rx="1.8" transform="rotate(-12 8 12.5)"/><text x="4.2" y="11.6" transform="rotate(-12 8 12.5)" font-size="6.2" font-weight="700" fill="currentColor" stroke="none">A</text><rect x="10.2" y="3.4" width="11" height="15" rx="1.8" transform="rotate(10 15.7 10.9)" fill="var(--panel)"/><text x="11.8" y="10" transform="rotate(10 15.7 10.9)" font-size="6.2" font-weight="700" fill="currentColor" stroke="none">J</text>'),
+  ] if features.blackjack else [
+    ('main.dashboard', 'Overview', '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>'),
+    ('main.transactions', 'Transactions', '<path d="M4 6h16M4 12h16M4 18h10"/>'),
+    ('main.categorize', 'Categorize', '<path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.5"/>'),
+    ('main.net_worth', 'Net worth', '<path d="M4 19V5"/><path d="M4 19h16"/><path d="M7 15l4-4 3 3 5-6"/>'),
   ] %}
   {% set tab_eps = tabs|map(attribute=0)|list %}
   <nav class="tabbar" aria-label="Main">
@@ -63,7 +68,7 @@
       <div class="more-sheet">
         {% for ep, text in [('main.plan', 'Plan'), ('main.trends', 'Year trends'), ('main.business_page', 'Business'),
                             ('main.net_worth', 'Net worth'), ('main.accounts_page', 'Accounts'), ('main.upload', 'Upload data'),
-                            ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories')] %}
+                            ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories')] if ep not in tab_eps %}
         <a href="{{ url_for(ep) }}" class="{{ 'on' if endpoint == ep }}">{{ text }}</a>
         {% endfor %}
       </div>

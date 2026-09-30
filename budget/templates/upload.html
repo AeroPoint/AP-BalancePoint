@@ -33,7 +33,7 @@
       <div class="inline">
         <label class="field grow">
           <span>New account name</span>
-          <input name="new_account" placeholder="US Bank Altitude Go">
+          <input name="new_account" placeholder="Rewards Card">
         </label>
         <label class="field">
           <span>Type</span>
@@ -46,9 +46,9 @@
   </section>
 
   <section class="panel steps">
-    <div class="panel-head"><h2>Getting a CSV from US Bank</h2></div>
+    <div class="panel-head"><h2>Getting a CSV from your bank</h2></div>
     <ol>
-      <li>Sign in at usbank.com and open the checking account or card.</li>
+      <li>Sign in to your bank's website (US Bank: usbank.com) and open the checking account or card.</li>
       <li>On the transactions list, choose the download or export option.</li>
       <li>Pick a date range and the CSV format.</li>
       <li>Upload the file here and choose the matching account.</li>
@@ -88,6 +88,7 @@
   <p class="note">Leave the date blank to use the day the file was last saved; rows after that are bills the sheet projects forward.</p>
 </section>
 
+{% if features.blackjack %}
 <section class="panel">
   <div class="panel-head">
     <h2>Blackjack tracker</h2>
@@ -103,6 +104,7 @@
     <button class="btn primary">Import sessions</button>
   </form>
 </section>
+{% endif %}
 
 <section class="panel flush">
   <div class="panel-head" style="padding: 16px clamp(14px, 2.5vw, 24px) 0"><h2>Import history</h2></div>

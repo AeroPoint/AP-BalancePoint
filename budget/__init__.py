@@ -37,9 +37,11 @@ def create_app():
         MAX_CONTENT_LENGTH=50 * 1024 * 1024,
     )
 
+    settings = personal.load(app.config["PERSONAL_CONFIG"])
+    app.config["FEATURES"] = settings.features
     conn = db.connect(app.config["DATABASE"])
     try:
-        db.init_db(conn, personal.load(app.config["PERSONAL_CONFIG"]))
+        db.init_db(conn, settings)
     finally:
         conn.close()
 
