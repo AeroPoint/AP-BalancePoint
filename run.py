@@ -233,6 +233,9 @@ def main():
                 a["account"] = f"{a['account']} [{a['label']}]"
             problem = "" if a["ok"] else "  (bank reported a problem: will retry these dates next run)"
             print(f"  {a['account']}: {a['added']} new of {a['read']}{balance}{problem}")
+            if a.get("pending") or a.get("settled") or a.get("dropped"):
+                print(f"    pending from last month: {a['pending']} added, {a['settled']} posted and settled, "
+                      f"{a['dropped']} never posted and dropped")
         for e in report["errors"]:
             print(f"  Bridge says: {_sf_error(e)}")
         for name in report["missing"]:

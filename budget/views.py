@@ -1037,9 +1037,20 @@ def net_worth():
     months = month_range(first, today[:7]) if first else []
     series = []
     for a in accounts:
-        values = [ledgers[a["id"]].on(min(month_end(m), today)) for m in months]
-        if any(v is not None for v in values):
-            series.append({**{k: a[k] for k in ("id", "name", "kind", "side", "group", "opened", "closed")}, "values": values})
+        # Each month is pinned to its 1st, so a month's number doesn't drift as the month goes on. An account
+        # with no balance by the 1st (its first one came later that month) counts from that first balance.
+        ledger = ledgers[a["id"]]
+        values = []
+        for m in months:
+            v = ledger.on(f"{m}-01")
+            if v is None:
+                first_in_month = next((d for d, _ in ledger.anchors if d[:7] == m and d <= today), None)
+                v = ledger.on(first_in_month) if first_in_month else None
+            values.append(v)
+        now = ledgers[a["id"]].on(today)
+        if any(v is not None for v in values) or now is not None:  # a new account shows before its first 1st
+            series.append({**{k: a[k] for k in ("id", "name", "kind", "side", "group", "opened", "closed")},
+                           "values": values, "now": now})
     year, mon = int(month[:4]), int(month[5:])
     py, pm = reports.add_months(year, mon, -1)
     ny, nm = reports.add_months(year, mon, 1)

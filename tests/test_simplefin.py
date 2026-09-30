@@ -166,3 +166,45 @@ def test_a_later_typed_balance_wins(bridge, conn, mapped):
                  (mapped["chk"], TODAY.strftime("%Y-%m"), TODAY.isoformat()))
     sf.sync(conn, bridge.url, TODAY)
     assert conn.execute("SELECT amount FROM balances WHERE account_id = ?", (mapped["chk"],)).fetchone()[0] == 2600
+
+
+def _ts(d, hour=18):
+    return int(datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc).timestamp()) + hour * 3600
+
+
+def test_month_end_pending_counts_in_that_month(bridge, conn):
+    first = date(TODAY.year, TODAY.month, 1)
+    last_day = first - timedelta(days=1)
+    chk = account(conn, "Checking")
+    sf.map_account(conn, "ACT-CHK", chk, sync_from=(first - timedelta(days=20)).isoformat())
+    conn.commit()
+    pend = lambda tid, amount, desc, d: {"id": tid, "posted": 0, "transacted_at": _ts(d), "amount": f"{amount:.2f}",  # noqa: E731
+                                         "description": desc, "pending": True}
+    bridge.accounts = [dict(bridge.accounts[0], transactions=[
+        pend("P1", -42.10, "THAI BASIL SPRINGFIELD", last_day),   # dinner on the last day: tip added when it posts
+        pend("P2", -250.00, "HOTEL HOLD", last_day),          # a hold that's released, never posts
+        pend("P3", -9.00, "COFFEE TODAY", first),             # this month: left to post normally
+    ])]
+    r = sf.sync(conn, bridge.url, first)  # the 6:00 run on the 1st
+    assert r["accounts"][0]["pending"] == 2
+    rows = {t["raw_description"]: dict(t) for t in conn.execute("SELECT * FROM transactions WHERE pending = 1")}
+    assert set(rows) == {"THAI BASIL SPRINGFIELD", "HOTEL HOLD"} and rows["HOTEL HOLD"]["effective_date"] == last_day.isoformat()
+    # Running again doesn't duplicate them.
+    assert sf.sync(conn, bridge.url, first)["accounts"][0]["pending"] == 0
+
+    # Two days later dinner posts, with the tip, under a new id and a date in the new month.
+    posted_day = first + timedelta(days=1)
+    bridge.accounts = [dict(bridge.accounts[0], transactions=[
+        {"id": "X1", "posted": _ts(posted_day), "transacted_at": _ts(last_day), "amount": "-50.52",
+         "description": "THAI BASIL SPRINGFIELD", "pending": False},
+        pend("P2", -250.00, "HOTEL HOLD", last_day),
+    ])]
+    r = sf.sync(conn, bridge.url, posted_day + timedelta(days=1))
+    assert r["accounts"][0]["settled"] == 1
+    dinner = conn.execute("SELECT * FROM transactions WHERE raw_description = 'THAI BASIL SPRINGFIELD'").fetchall()
+    assert len(dinner) == 1 and dinner[0]["pending"] == 0 and dinner[0]["amount"] == -50.52
+    assert dinner[0]["effective_date"] == last_day.isoformat()  # still counts in last month
+    # The hold never posts: gone after two weeks, and not added back while the Bridge still lists it.
+    r = sf.sync(conn, bridge.url, last_day + timedelta(days=sf.PENDING_KEEP_DAYS + 2))
+    assert r["accounts"][0]["dropped"] == 1
+    assert not conn.execute("SELECT 1 FROM transactions WHERE pending = 1").fetchone()

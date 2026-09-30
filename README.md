@@ -149,6 +149,11 @@ gap. An account whose bank reported a problem keeps its old date until a clean p
 account not pulled in 2+ days as **STALE**; the usual fix is signing in to that bank again at
 bridge.simplefin.org.
 
+Month ends: a charge that happened last month but is still pending when a new month starts (the 6:00
+run on the 1st, or the first run after) is kept as a *pending* transaction in last month. When the
+bank posts it (same amount, or the same merchant within 30% for a tip), the posted charge replaces it
+and still counts in last month. A pending charge that never posts (a released hold) goes after 14 days.
+
 Synced balances count like ones you type: the latest one in a month is that month's balance. A synced
 balance replaces one you typed only when the bank's date is newer. Pending transactions wait until
 they post. The Bridge asks for no more than 24 requests a day; a daily run uses one (more only when
@@ -161,7 +166,8 @@ balance. Closing an account keeps its history in every report; it just stops ask
 balances afterwards. Accounts that have gone quiet get a "Mark closed" suggestion. If the same
 account comes in under two names, merge them.
 
-*Net worth* shows where money sits in a month, own/owe/net over time, and each account's
+*Net worth* shows where money sits in a month (each month pinned to its 1st, so a month's number doesn't
+drift; an account whose first balance came later that month counts from that balance), own/owe/net over time, and each account's
 balance history. Tick accounts on or off, or use a preset (cash only, investments only, leave
 out home and cars). Accounts typed *Held for someone else* (a child's 529) sit in their own group and
 stay out of every total until you tick them. Balances are for a day. For accounts with transactions, the app estimates

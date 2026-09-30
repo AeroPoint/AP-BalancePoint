@@ -103,7 +103,8 @@
           <td class="merchant">
             <button type="button" class="name-edit" title="Rename">{{ t.name }}</button>
             {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}
-            {% if t.import_id is none %}
+            {% if t.pending %}<span class="guess" data-tip="Still pending at the bank. It counts in the month it happened; the posted charge will replace it.">pending</span>{% endif %}
+            {% if t.import_id is none and not t.pending %}
             <form class="manual-tag" method="post" action="{{ url_for('main.delete_transaction', tid=t.id) }}" data-confirm="Delete “{{ t.name }}”?">
               <input type="hidden" name="next" value="{{ request.full_path }}">
               <span class="raw">added by hand{% if t.notes %} · {{ t.notes }}{% endif %}</span>

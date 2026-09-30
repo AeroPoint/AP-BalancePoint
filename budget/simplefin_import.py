@@ -20,12 +20,15 @@ from pathlib import Path
 
 from . import seed
 from .csv_import import replace_spreadsheet_rows, store_transactions
+from .rules import RuleEngine, normalize, sync_dates
 
 ACCESS_URL_FILE = "simplefin-access-url"  # in the data folder; a credential, so kept out of budget.db
 MAX_WINDOW_DAYS = 45                      # the Bridge's recommended longest span per /accounts call
 OVERLAP_DAYS = 5                          # re-read the last few days every run, for late postings
 STALE_DAYS = 2                            # warn when an account's last good pull is older than this
 TRANSACTION_KINDS = ("checking", "savings", "credit", "cash")  # others sync their balance only
+PENDING_MATCH_DAYS = 10    # a pending charge's posted version shows up within this many days
+PENDING_KEEP_DAYS = 14     # a pending charge that never posts (a released hold) is dropped after this
 # The Bridge sits behind Cloudflare, which turns away Python's default "Python-urllib" client
 # ("error code: 1010") before the request ever reaches SimpleFIN.
 USER_AGENT = "ledger-budget-app/1.0 (+https://www.simplefin.org/protocol.html)"
@@ -143,7 +146,7 @@ def fetch_accounts(access_url, start, end):
     while chunk_start < end:
         chunk_end = min(chunk_start + timedelta(days=MAX_WINDOW_DAYS), end)
         data = _get_json(access_url, "/accounts", {
-            "version": "2", "start-date": _epoch(chunk_start), "end-date": _epoch(chunk_end),
+            "version": "2", "pending": "1", "start-date": _epoch(chunk_start), "end-date": _epoch(chunk_end),
         })
         banks = {c.get("conn_id"): c.get("org_name") or c.get("name") for c in data.get("connections") or []}
         for a in data.get("accounts", []):
@@ -193,6 +196,71 @@ def set_synced_balance(conn, account_id, amount, as_of):
            WHERE balances.source != 'manual' OR COALESCE(balances.as_of, '') < excluded.as_of""",
         (account_id, as_of[:7], amount, as_of),
     )
+
+
+def store_pending(conn, account_id, transactions, sync_from, today):
+    """Charges still pending that happened in a finished month count in that month: each is kept as a
+    pending row (one per SimpleFIN id) until its posted version arrives (settle_pending). Pending charges
+    from the current month are left to post normally. Returns how many were added."""
+    month_start = today.replace(day=1).isoformat()
+    engine = RuleEngine(conn)
+    added = 0
+    for t in transactions:
+        if not t.get("pending") or not t.get("transacted_at"):
+            continue
+        day = _day(t["transacted_at"]).isoformat()
+        if day >= month_start or (sync_from and day < sync_from) or (today - _day(t["transacted_at"])).days > PENDING_KEEP_DAYS:
+            continue
+        amount, raw = round(float(t["amount"]), 2), (t.get("description") or "").strip()
+        m = engine.resolve(raw, None, None, amount, account_id)
+        added += conn.execute(
+            """INSERT OR IGNORE INTO transactions (account_id, date, effective_date, amount, raw_description, name,
+                   category_id, category_source, dedupe_key, pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (account_id, day, day, amount, raw, m.name, m.category_id, m.source, f"sfpending|{account_id}|{t['id']}"),
+        ).rowcount
+    return added
+
+
+def settle_pending(conn, account_id, today):
+    """A pending row gives way to its posted charge, which keeps counting in the pending row's month and
+    takes anything decided on it (a category picked by hand, a checkbox, notes, one-off). The posted
+    charge is the same amount, or the same merchant within 30% (a tip added). A pending row that never
+    posts goes after PENDING_KEEP_DAYS. Returns (settled, dropped)."""
+    settled = dropped = 0
+    used = set()
+    for p in conn.execute("SELECT * FROM transactions WHERE account_id = ? AND pending = 1 ORDER BY date, id", (account_id,)).fetchall():
+        until = (date.fromisoformat(p["date"]) + timedelta(days=PENDING_MATCH_DAYS)).isoformat()
+        candidates = [c for c in conn.execute(
+            """SELECT * FROM transactions WHERE account_id = ? AND pending = 0 AND date >= ? AND date <= ?
+               AND date_override IS NULL ORDER BY date, id""", (account_id, p["date"], until)) if c["id"] not in used]
+        key = normalize(p["raw_description"])[:10]
+        match = next((c for c in candidates if round(c["amount"], 2) == round(p["amount"], 2)), None) or next(
+            (c for c in candidates if normalize(c["raw_description"])[:10] == key
+             and abs(c["amount"] - p["amount"]) <= 0.3 * abs(p["amount"])), None)
+        if match:
+            used.add(match["id"])
+            updates = {}
+            if match["date"][:7] != p["date"][:7]:
+                updates["date_override"] = p["date"]
+                updates["notes"] = match["notes"] or f"Pending on {p['date'][:7]} month end: counts in that month"
+            if p["category_source"] in ("manual", "sheet"):
+                updates.update(category_id=p["category_id"], category_source=p["category_source"])
+            for col in ("flag", "one_off"):
+                if p[col] and not match[col]:
+                    updates[col] = p[col]
+            if p["notes"] and not match["notes"]:
+                updates["notes"] = p["notes"]
+            if updates:
+                conn.execute(f"UPDATE transactions SET {', '.join(f'{k} = ?' for k in updates)} WHERE id = ?",
+                             (*updates.values(), match["id"]))
+            conn.execute("DELETE FROM transactions WHERE id = ?", (p["id"],))
+            settled += 1
+        elif (today - date.fromisoformat(p["date"])).days > PENDING_KEEP_DAYS:
+            conn.execute("DELETE FROM transactions WHERE id = ?", (p["id"],))
+            dropped += 1
+    if settled or dropped:
+        sync_dates(conn, "account_id = ?", (account_id,))
+    return settled, dropped
 
 
 def _failed(errors):
@@ -279,12 +347,15 @@ def sync(conn, access_url, today=None, since=None):
             unmapped.append((a["id"], _org_name(a), a["name"]))
             continue
         seen.add(a["id"])
-        read = added = 0
+        read = added = pending = 0
+        settled = dropped = 0
         if m["transactions"]:
             rows = to_rows(a.get("transactions") or [], m["sync_from"])
             if rows:
                 _, read, added, _, _ = store_transactions(conn, m["account_id"], "SimpleFIN sync", rows, kind="csv")
                 replace_spreadsheet_rows(conn, m["account_id"], rows, "SimpleFIN sync")
+            settled, dropped = settle_pending(conn, m["account_id"], today)
+            pending = store_pending(conn, m["account_id"], a.get("transactions") or [], m["sync_from"], today)
         balance = None
         if a.get("balance") not in (None, ""):
             balance = float(a["balance"])
@@ -302,7 +373,8 @@ def sync(conn, access_url, today=None, since=None):
         if balance is not None and seed.account_side(m["kind"]) == "liability":
             balance = abs(balance)  # shown the way it's stored: what's owed
         results.append({"org": _org_name(a), "label": a["name"], "account": m["account"], "added": added,
-                        "read": read, "balance": balance, "ok": ok})
+                        "read": read, "balance": balance, "ok": ok, "pending": pending, "settled": settled,
+                        "dropped": dropped})
     missing = [m["account"] for ext, m in mapped.items() if ext not in seen]
     for account_id, (total, as_of, kind) in balances.items():
         if any(m["account_id"] == account_id and ext not in seen for ext, m in mapped.items()):

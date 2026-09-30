@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     notes           TEXT,
     one_off         INTEGER NOT NULL DEFAULT 0, -- 1 = a big one-time purchase, kept out of its category's group
     flag            TEXT,                       -- its category's checkbox: 'yes', or 'check' = to look at
+    pending         INTEGER NOT NULL DEFAULT 0, -- 1 = not posted yet (a bank sync keeps it until it posts)
     dedupe_key      TEXT NOT NULL UNIQUE
 );
 CREATE INDEX IF NOT EXISTS ix_transactions_date ON transactions(date);
@@ -306,6 +307,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE transactions ADD COLUMN one_off INTEGER NOT NULL DEFAULT 0")
     if "flag" not in _columns(conn, "transactions"):
         conn.execute("ALTER TABLE transactions ADD COLUMN flag TEXT")
+    if "pending" not in _columns(conn, "transactions"):
+        conn.execute("ALTER TABLE transactions ADD COLUMN pending INTEGER NOT NULL DEFAULT 0")
     if "flag" not in _columns(conn, "categories"):
         conn.execute("ALTER TABLE categories ADD COLUMN flag TEXT")
 

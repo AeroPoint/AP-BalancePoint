@@ -9,6 +9,7 @@
   const data = JSON.parse(dataEl.textContent);
   const NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const short = (m) => `${NAMES[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`;
+  const first = (m) => `${NAMES[Number(m.slice(5, 7)) - 1]} 1, ${m.slice(0, 4)}`;
   const long = (m) => `${NAMES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
   const money = (v) => Charts.money(v);
   // Money held for someone else (a child's 529) is tracked but isn't yours: it starts unticked on every
@@ -151,7 +152,7 @@
     renderSits(chosen, focus);
     Charts.lines(document.getElementById("nw-lines"), {
       labels: shown.map(short),
-      titles: shown.map((m) => (m === thisMonth ? "Today" : `End of ${long(m)}`)),
+      titles: shown.map(first),
       series: [
         { name: "Own", values: shown.map((m) => totalsAt(m).own) },
         { name: "Owe", values: shown.map((m) => totalsAt(m).owe) },
@@ -180,15 +181,20 @@
     const b = document.createElement("b");
     b.textContent = money(t.net);
     const picked = excluded.size || heldOn.size ? `the ${chosen.length} accounts you picked` : null;
-    if (now) h.append(picked ? `Today ${picked} come to ` : "Today your net worth is ", b, ".");
-    else h.append(`At the end of ${long(focus)} ${picked ? `${picked} came to` : "your net worth was"} `, b, ".");
+    h.append(`On ${first(focus)} ${picked ? `${picked} came to` : "your net worth was"} `, b, ".");
     const p = document.createElement("p");
     p.className = "compare";
-    let text = now ? `You own ${money(t.own)} and owe ${money(t.owe)}.` : `You owned ${money(t.own)} and owed ${money(t.owe)}.`;
+    let text = `You owned ${money(t.own)} and owed ${money(t.owe)}.`;
     const idx = months.indexOf(focus);
     if (idx > 0) {
       const diff = t.net - totalsAt(months[idx - 1]).net;
-      text = `${diff >= 0 ? "Up" : "Down"} ${money(Math.abs(diff))} since the end of ${long(months[idx - 1])}. ${text}`;
+      text = `${diff >= 0 ? "Up" : "Down"} ${money(Math.abs(diff))} since ${first(months[idx - 1])}. ${text}`;
+    }
+    if (now) {
+      // Months are pinned to their 1st; today's number, from the latest balances, is here for reference.
+      let net = 0;
+      for (const a of chosen) net += (a.now || 0) * (a.side === "asset" ? 1 : -1);
+      text += ` Today, with the latest balances: ${money(net)}.`;
     }
     p.textContent = text;
     el.append(h, p);
@@ -197,7 +203,7 @@
   function renderSits(chosen, focus) {
     const el = document.getElementById("nw-sits");
     document.getElementById("nw-sits-title").textContent =
-      focus === thisMonth ? "Where it sits today" : `Where it sat at the end of ${long(focus)}`;
+      `Where it sat on ${first(focus)}`;
     el.innerHTML = "";
     for (const side of ["asset", "liability"]) {
       const rows = chosen
@@ -278,7 +284,7 @@
     }
     Charts.columns(el, {
       labels: shown.map(short),
-      titles: shown.map((m) => (m === thisMonth ? "Today" : `End of ${long(m)}`)),
+      titles: shown.map(first),
       stacked: true,
       series,
       colors,
@@ -299,7 +305,7 @@
       }
       const tr = document.createElement("tr");
       tr.innerHTML =
-        `<td class="nowrap"><a href="?month=${m}"><span class="desk-only">${long(m)}</span><span class="phone-only">${short(m)}</span>${m === thisMonth ? " (today)" : ""}</a></td>` +
+        `<td class="nowrap"><a href="?month=${m}">${first(m)}</a></td>` +
         `<td class="num">${money(t.own)}</td><td class="num">${money(t.owe)}</td>` +
         `<td class="num strong">${money(t.net)}</td><td class="num">${change}</td>`;
       body.appendChild(tr);
