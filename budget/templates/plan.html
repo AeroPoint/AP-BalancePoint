@@ -94,8 +94,9 @@
     </div>
     <div class="plan-row">
       {% for key in ['plan_backup_account', 'plan_backup_account_2'] %}
+      {% set i = loop.index0 %}
       <label class="field"><span>{{ 'Then draw from' if loop.first else 'After that' }}</span>
-        <select name="{{ key }}"><option value="">Nothing</option>{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == backup_accounts[loop.index0] %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
+        <select name="{{ key }}"><option value="">Nothing</option>{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == backup_accounts[i] %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
       </label>
       {% endfor %}
     </div>

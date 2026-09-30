@@ -48,6 +48,16 @@
     tip.style.top = `${Math.max(8, top)}px`;
   }
 
+  // Hovering with a mouse and tapping on a phone both show a tooltip: a tap sends pointerdown but no
+  // pointermove. A tap anywhere that isn't a chart or a tip target closes it again.
+  function onPoint(el, handler) {
+    el.addEventListener("pointermove", handler);
+    el.addEventListener("pointerdown", handler);
+  }
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" && !(e.target.closest && e.target.closest(".chart, [data-tip]"))) hideTip();
+  });
+
   function hideTip() {
     const tip = tipEl();
     if (tip) tip.hidden = true;
@@ -66,7 +76,7 @@
   }
 
   // Any element with data-tip gets the same tooltip.
-  document.addEventListener("pointermove", (e) => {
+  onPoint(document, (e) => {
     const target = e.target.closest && e.target.closest("[data-tip]");
     if (target) showTip(escapeHtml(target.dataset.tip), e.clientX, e.clientY);
     else if (dataTipActive) hideTip();
@@ -182,7 +192,7 @@
       });
 
       const hits = svg("rect", { x: m.left, y: m.top, width: plotW, height: plotH, fill: "transparent" }, root);
-      hits.addEventListener("pointermove", (ev) => {
+      onPoint(hits, (ev) => {
         const rect = root.getBoundingClientRect();
         const i = Math.min(labels.length - 1, Math.max(0, Math.floor((ev.clientX - rect.left - m.left) / band)));
         hover.setAttribute("x", m.left + band * i);
@@ -263,7 +273,7 @@
 
       const dots = series.map((_, si) => svg("circle", { r: 4, fill: palette[si], stroke: surface, "stroke-width": 2, opacity: 0 }, root));
       const hits = svg("rect", { x: m.left - step / 2, y: m.top, width: plotW + step, height: plotH, fill: "transparent" }, root);
-      hits.addEventListener("pointermove", (ev) => {
+      onPoint(hits, (ev) => {
         const rect = root.getBoundingClientRect();
         const i = step ? Math.min(labels.length - 1, Math.max(0, Math.round((ev.clientX - rect.left - m.left) / step))) : 0;
         cross.setAttribute("x1", X(i));
@@ -352,7 +362,7 @@
       const wire = (elements, n, side) => {
         const href = side === "right" && link && !n.other && !n.saved ? `${link}&category=${n.id == null ? "none" : n.id}` : null;
         for (const el of elements) {
-          el.addEventListener("pointermove", (ev) => {
+          onPoint(el, (ev) => {
             elements[0].setAttribute("fill-opacity", 0.45);
             showTip(tipRows(n.name, [{ name: side === "left" ? "Came in" : n.saved ? "Kept" : "Spent", value: `${money(n.total)}${pct(n.total)}` }]), ev.clientX, ev.clientY);
           });

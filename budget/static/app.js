@@ -267,3 +267,9 @@
     });
   });
 })();
+
+// Phone tab bar: the More sheet closes on a tap anywhere else.
+document.addEventListener("pointerdown", (e) => {
+  const more = document.querySelector(".tab-more[open]");
+  if (more && !more.contains(e.target)) more.removeAttribute("open");
+});
