@@ -9,7 +9,7 @@ from uuid import uuid4
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import blackjack, budgeting, personal, reports, seed
+from . import blackjack, budgeting, business, personal, reports, seed
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import CsvFormatError, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -1280,3 +1280,11 @@ def save_bj_mile_rate():
     budgeting.set_setting(conn, "bj_mile_rate", rate if rate and rate > 0 else None)
     conn.commit()
     return redirect(url_for(".bankroll") + "#years")
+
+
+# ---------------------------------------------------------------- businesses
+
+@bp.route("/business")
+def business_page():
+    conn = get_db()
+    return render_template("business.html", reports=[business.report(conn, b) for b in business.businesses(conn)])

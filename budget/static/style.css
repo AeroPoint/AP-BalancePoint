@@ -447,3 +447,9 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
   .bj-sessions th:nth-child(5), .bj-sessions td:nth-child(5),
   .bj-sessions th:nth-child(7), .bj-sessions td:nth-child(7) { display: none; }
 }
+
+/* ---------------------------------------------------------------- business */
+.biz-line { margin-bottom: 14px; line-height: 1.6; }
+.biz-line b { font-weight: 650; }
+.biz-recent { margin-top: 14px; }
+.biz-recent summary { color: var(--accent); cursor: pointer; font-weight: 600; margin-bottom: 8px; }

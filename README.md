@@ -153,6 +153,9 @@ A business account (*Accounts → Business accounts*) has its own categories: ev
 its income category (money in) or expense category (money out), whatever the merchant rules say.
 Transfers to and from your other accounts stay Transfers, and a category picked by hand on one
 transaction (a personal charge made on the business card) stays.
+The **Business** page shows each business account's income, costs and profit by month and year, from
+its two categories on any account (a business cost paid on a household card counts), with the money you
+moved in and out of the business account shown apart.
 
 ## Judging a month, and planning ahead
 
@@ -266,6 +269,7 @@ budget/
   reports.py            monthly/yearly aggregations
   balances.py           account balances on any date, loan schedules
   budgeting.py          month scorecard, paycheck retirement savings, the plan
+  business.py           Business page: income, costs and profit per business account
   blackjack.py          Bankroll page: sessions, research, training; results into a bankroll account
   simplefin_import.py   daily bank sync from SimpleFIN Bridge
   views.py              pages and JSON endpoints

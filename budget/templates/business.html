@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Business{% endblock %}
+
+{% macro signed(v) -%}
+<span class="{{ 'in' if v > 0 }}">{{ '+' if v > 0 }}{{ v|money }}</span>
+{%- endmacro %}
+
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Business</h1>
+    <p class="sub">
+      Income, costs and profit for each business account, from its own categories on any account. Money you move between
+      it and your other accounts is shown apart: what you put in and what you took out.
+    </p>
+  </div>
+  {% if reports|length > 1 %}
+  <nav class="inline" aria-label="Businesses">{% for r in reports %}<a class="btn small quiet" href="#b{{ r.account.id }}">{{ r.account.name }}</a>{% endfor %}</nav>
+  {% endif %}
+</header>
+
+{% if not reports %}
+<section class="empty">
+  <h1>No business accounts yet</h1>
+  <p>Give an account its own income and cost categories, and its profit shows up here.</p>
+  <a class="btn primary" href="{{ url_for('main.accounts_page') }}#business">Set up a business account</a>
+</section>
+{% endif %}
+
+{% for r in reports %}
+{% set a, y, all = r.account, r.this_year, r.all %}
+<section class="panel" id="b{{ a.id }}">
+  <div class="panel-head">
+    <h2>{{ a.name }}</h2>
+    <p class="muted">{{ a.income_name or 'No income category' }} and {{ a.cost_name or 'no cost category' }}.
+      <a href="{{ url_for('main.accounts_page') }}#business">Change</a></p>
+  </div>
+  <p class="biz-line">
+    This year: <b>{{ y.income|money }}</b> in, <b>{{ y.costs|money }}</b> out, profit <b>{{ signed(y.profit) }}</b>.
+    <span class="muted">All time {{ signed(all.profit) }} over {{ all.months }} month{{ 's' if all.months != 1 }};
+      you put in {{ all.put_in|money }} and took out {{ all.took_out|money }}.</span>
+  </p>
+  <div id="chart-{{ a.id }}" class="chart"></div>
+  <script type="application/json" id="data-{{ a.id }}">{{ r.chart|tojson }}</script>
+
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead><tr><th>Month</th><th class="num">Income</th><th class="num">Costs</th><th class="num">Profit</th><th class="num">You put in</th><th class="num">You took out</th></tr></thead>
+      <tbody>
+        {% for m in r.months %}
+        <tr>
+          <td>{{ m.month|month_label }}</td>
+          <td class="num">{% if m.income %}<a href="{{ url_for('main.transactions', category=a.default_in_category, period=m.month) }}">{{ m.income|money }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="num">{% if m.costs %}<a href="{{ url_for('main.transactions', category=a.default_out_category, period=m.month) }}">{{ m.costs|money }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="num strong">{{ signed(m.profit) }}</td>
+          <td class="num">{{ m.put_in|money if m.put_in else '—' }}</td>
+          <td class="num">{{ m.took_out|money if m.took_out else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        {% for yr, t in r.years %}
+        <tr><td>{{ yr }}</td><td class="num">{{ t.income|money }}</td><td class="num">{{ t.costs|money }}</td><td class="num">{{ signed(t.profit) }}</td><td class="num">{{ t.put_in|money }}</td><td class="num">{{ t.took_out|money }}</td></tr>
+        {% endfor %}
+      </tfoot>
+    </table>
+  </div>
+
+  {% if r.recent %}
+  <details class="biz-recent">
+    <summary>Latest {{ r.recent|length }} income and costs</summary>
+    <div class="table-wrap">
+      <table class="ledger">
+        <tbody>
+          {% for t in r.recent %}
+          <tr><td class="nowrap">{{ t.effective_date|day_label }}</td><td>{{ t.name }}</td><td class="muted">{{ t.category }}{% if t.account != a.name %} · {{ t.account }}{% endif %}</td><td class="num">{{ signed(t.amount) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('script[id^="data-"]').forEach((el) => {
+    const rows = JSON.parse(el.textContent);
+    const chart = document.getElementById(el.id.replace("data-", "chart-"));
+    if (!chart || !rows.some((r) => r.income || r.costs)) return;
+    const NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    Charts.columns(chart, {
+      labels: rows.map((r) => NAMES[Number(r.month.slice(5)) - 1]),
+      titles: rows.map((r) => `${NAMES[Number(r.month.slice(5)) - 1]} ${r.month.slice(0, 4)}`),
+      series: [
+        { name: "Income", values: rows.map((r) => r.income) },
+        { name: "Costs", values: rows.map((r) => r.costs) },
+      ],
+    });
+  });
+</script>
+{% endblock %}
