@@ -75,6 +75,13 @@
   {% endif %}
   {% if a.get('source') %}<input type="hidden" name="source" value="{{ a.get('source') }}">{% endif %}
   <button class="btn primary">Filter</button>
+  {% if flagged %}
+  <select name="flag" aria-label="Checkbox">
+    <option value="">Any checkbox</option>
+    {% if to_check %}<option value="check" {{ 'selected' if a.get('flag') == 'check' }}>To check ({{ to_check }})</option>{% endif %}
+    {% for c in flagged %}<option value="yes:{{ c.id }}" {{ 'selected' if a.get('flag') == 'yes:' ~ c.id }}>{{ c.flag }}</option>{% endfor %}
+  </select>
+  {% endif %}
   {% if a.get('source') == 'mcc' %}<span class="chip">Showing only categories guessed from the card type</span>{% endif %}
   {% if a %}<a class="btn quiet" href="{{ url_for('main.transactions') }}">Clear filters</a>{% endif %}
 </form>
@@ -107,6 +114,10 @@
           <td class="cat-cell">
             <select class="cat-select" aria-label="Category for {{ t.name }}">{{ category_options(categories, t.category_id) }}</select>
             {% if t.category_source == 'mcc' %}<span class="guess" data-tip="Guessed from the card's merchant type. Pick a category to confirm it.">guess</span>{% endif %}
+            {% if t.category_flag %}
+            <label class="flag-label"><input type="checkbox" class="flag-check"{% if t.flag == 'yes' %} checked{% endif %}> {{ t.category_flag }}</label>
+            {% if t.flag == 'check' %}<button type="button" class="guess flag-dismiss" title="Not {{ t.category_flag|lower }}: stop asking">to check ✕</button>{% endif %}
+            {% endif %}
           </td>
           <td class="source-tag">{{ t.account_name }}</td>
           <td class="num {{ 'in' if t.amount > 0 }}">{{ '+' if t.amount > 0 }}{{ t.amount|money }}</td>

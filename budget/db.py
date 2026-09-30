@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS categories (
     kind          TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer')),
     sort          INTEGER NOT NULL DEFAULT 0,
     snap_to_month INTEGER NOT NULL DEFAULT 0,  -- 1 = count on the nearest 1st (rent paid a day early)
-    grp           TEXT                         -- spending: fixed | flexible | nonmonthly; transfers: saving
+    grp           TEXT,                        -- spending: fixed | flexible | nonmonthly; transfers: saving
+    flag          TEXT                         -- a checkbox its transactions get, e.g. "Rental property" (for taxes)
 );
 
 -- The merchant dictionary + auto-categorization rules.
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     category_source TEXT NOT NULL DEFAULT 'none',
     notes           TEXT,
     one_off         INTEGER NOT NULL DEFAULT 0, -- 1 = a big one-time purchase, kept out of its category's group
+    flag            TEXT,                       -- its category's checkbox: 'yes', or 'check' = to look at
     dedupe_key      TEXT NOT NULL UNIQUE
 );
 CREATE INDEX IF NOT EXISTS ix_transactions_date ON transactions(date);
@@ -302,6 +304,10 @@ def migrate(conn):
         conn.execute("ALTER TABLE categories ADD COLUMN grp TEXT")
     if "one_off" not in _columns(conn, "transactions"):
         conn.execute("ALTER TABLE transactions ADD COLUMN one_off INTEGER NOT NULL DEFAULT 0")
+    if "flag" not in _columns(conn, "transactions"):
+        conn.execute("ALTER TABLE transactions ADD COLUMN flag TEXT")
+    if "flag" not in _columns(conn, "categories"):
+        conn.execute("ALTER TABLE categories ADD COLUMN flag TEXT")
 
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:

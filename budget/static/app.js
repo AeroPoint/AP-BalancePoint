@@ -246,6 +246,33 @@
     });
   });
 
+  // ---------------------------------------------------------------- category checkboxes (Rental property...)
+  document.querySelectorAll("tr[data-id] .flag-check").forEach((box) => {
+    box.addEventListener("change", async () => {
+      const row = box.closest("tr");
+      try {
+        await postJSON(`/api/transactions/${row.dataset.id}`, { flag: box.checked ? "yes" : null });
+        row.querySelector(".flag-dismiss")?.remove();
+        flashRow(row);
+      } catch (err) {
+        box.checked = !box.checked;
+        showToast(err.message);
+      }
+    });
+  });
+  document.querySelectorAll("tr[data-id] .flag-dismiss").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const row = button.closest("tr");
+      try {
+        await postJSON(`/api/transactions/${row.dataset.id}`, { flag: null });
+        button.remove();
+        flashRow(row);
+      } catch (err) {
+        showToast(err.message);
+      }
+    });
+  });
+
   // The Overview's large-charges list: the month's numbers change, so reload to show them.
   document.querySelectorAll("tr[data-id] .oneoff-toggle").forEach((button) => {
     button.addEventListener("click", async () => {

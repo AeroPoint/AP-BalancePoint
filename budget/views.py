@@ -344,6 +344,12 @@ def transactions():
         params.append(args["name"])
     if args.get("one_off") == "1":
         where.append("t.one_off = 1")
+    flag = args.get("flag", "")
+    if flag == "check":
+        where.append("t.flag = 'check'")
+    elif flag.startswith("yes:") and _int(flag[4:]):
+        where.append("t.flag = 'yes' AND t.category_id = ?")
+        params.append(int(flag[4:]))
 
     clause = " AND ".join(where)
     page = max(_int(args.get("page"), 1), 1)
@@ -351,7 +357,7 @@ def transactions():
         f"SELECT COUNT(*) AS n, COALESCE(SUM(t.amount), 0) AS total FROM transactions t WHERE {clause}", params
     ).fetchone()
     rows = conn.execute(
-        f"""SELECT t.*, a.name AS account_name, c.name AS category_name
+        f"""SELECT t.*, a.name AS account_name, c.name AS category_name, c.flag AS category_flag
             FROM transactions t JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
             WHERE {clause} ORDER BY t.effective_date DESC, t.date DESC, t.id DESC LIMIT ? OFFSET ?""",
@@ -363,6 +369,8 @@ def transactions():
         rows=rows, summary=summary, page=page, pages=max(1, -(-summary["n"] // PER_PAGE)),
         categories=_categories(conn), accounts=_accounts(conn),
         periods=periods, years=sorted({p[:4] for p in periods}, reverse=True),
+        flagged=[dict(r) for r in conn.execute("SELECT id, name, flag FROM categories WHERE flag IS NOT NULL ORDER BY sort, name")],
+        to_check=conn.execute("SELECT COUNT(*) FROM transactions WHERE flag = 'check'").fetchone()[0],
     )
 
 
@@ -451,6 +459,9 @@ def update_transaction(tid):
 
     if "one_off" in data:
         conn.execute("UPDATE transactions SET one_off = ? WHERE id = ?", (1 if data["one_off"] else 0, tid))
+
+    if "flag" in data:  # the category's checkbox: 'yes', 'check' (to look at) or cleared
+        conn.execute("UPDATE transactions SET flag = ? WHERE id = ?", (data["flag"] if data["flag"] in ("yes", "check") else None, tid))
 
     sync_dates(conn, "id = ?", (tid,))
     conn.commit()
@@ -611,6 +622,7 @@ def save_category():
     cid = _int(request.form.get("id"))
     snap = int(request.form.get("snap_to_month") == "1")
     grp = request.form.get("grp")
+    flag = " ".join(request.form.get("flag", "").split()) or None
     if kind == "expense":
         grp = grp if grp in {g for g, _, _ in seed.SPENDING_GROUPS} else "flexible"
     elif kind == "transfer":
@@ -620,14 +632,14 @@ def save_category():
     try:
         if cid:
             conn.execute(
-                "UPDATE categories SET name = ?, kind = ?, snap_to_month = ?, grp = ? WHERE id = ?",
-                (name, kind, snap, grp, cid),
+                "UPDATE categories SET name = ?, kind = ?, snap_to_month = ?, grp = ?, flag = ? WHERE id = ?",
+                (name, kind, snap, grp, flag, cid),
             )
             sync_dates(conn, "category_id = ?", (cid,))
         else:
             conn.execute(
-                "INSERT INTO categories (name, kind, sort, snap_to_month, grp) VALUES (?, ?, 999, ?, ?)",
-                (name, kind, snap, grp),
+                "INSERT INTO categories (name, kind, sort, snap_to_month, grp, flag) VALUES (?, ?, 999, ?, ?, ?)",
+                (name, kind, snap, grp, flag),
             )
         conn.commit()
         flash(f"Saved category “{name}”.", "ok")

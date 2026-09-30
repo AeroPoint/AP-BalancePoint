@@ -236,6 +236,10 @@ Categories you pick by hand on a single transaction, and ones hand-sorted in an 
 spreadsheet, are never overwritten by rules. Transfer categories (card payments, moving
 money, investing) are excluded from income and spending.
 
+A category can give its transactions a **checkbox** (Categories page), like "Rental property" on Home &
+Garden or "Should be FSA/HSA" on Health & Fitness, for tax time: filter Transactions by it and a year for
+the total. Transactions marked "to check" have the box and a ✕ to dismiss; the filter lists them too.
+
 The built-in dictionary of national merchants lives in `budget/seed.py`. New entries there are
 added on the next start without touching anything you've edited.
 
