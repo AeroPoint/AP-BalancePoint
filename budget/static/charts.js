@@ -110,7 +110,7 @@
   // Show every Nth x label so labels never run into each other (11px text is ~6.5px per character).
   function labelStep(labels, spacing) {
     const widest = Math.max(1, ...labels.map((l) => String(l).length));
-    return Math.max(1, Math.ceil((widest * 6.5 + 12) / Math.max(spacing, 1)));
+    return Math.max(1, Math.ceil((widest * 7 + 12) / Math.max(spacing, 1)));
   }
 
   function responsive(container, draw) {
@@ -147,7 +147,7 @@
     const palette = colors || series.map((_, i) => seriesColor(i));
     responsive(container, (width) => {
       if (series.length > 1) legend(container, series.map((s, i) => ({ name: s.name, color: palette[i] })));
-      const m = { top: 10, right: 8, bottom: 26, left: 50 };
+      const m = { top: 10, right: 8, bottom: 26, left: width < 480 ? 42 : 50 };
       const plotW = width - m.left - m.right;
       const plotH = height - m.top - m.bottom;
       const totals = labels.map((_, i) =>
@@ -209,15 +209,17 @@
   }
 
   // ---------------------------------------------------------------- lines
-  function lines(container, { labels, series, height = 250, colors, titles }) {
+  function lines(container, { labels, series, height = 250, colors, titles, emphasis, refs = [] }) {
     const palette = colors || series.map((_, i) => seriesColor(i));
     responsive(container, (width) => {
       if (series.length > 1) legend(container, series.map((s, i) => ({ name: s.name, color: palette[i], line: true })));
-      const direct = series.length > 1 && series.length <= 4 && width > 480;
-      const m = { top: 12, right: direct ? 58 : 16, bottom: 26, left: 56 };
+      // Name the line ends when there's room; the margin fits the longest name (the legend has them too).
+      const direct = series.length > 1 && series.length <= 4 && width > 360;
+      const longest = Math.max(...series.map((s) => String(s.name).length));
+      const m = { top: 12, right: direct ? Math.min(130, longest * 7 + 16) : 16, bottom: 26, left: width < 480 ? 46 : 56 };
       const plotW = width - m.left - m.right;
       const plotH = height - m.top - m.bottom;
-      const values = series.flatMap((s) => s.values.filter((v) => v != null));
+      const values = [...series.flatMap((s) => s.values.filter((v) => v != null)), ...refs.map((r) => r.value)];
       const low = Math.min(0, ...values);
       let max = niceMax(Math.max(0, ...values));
       let min = 0;
@@ -238,6 +240,12 @@
         if (i % labelEvery === 0) svg("text", { x: X(i), y: height - 8, "text-anchor": "middle" }, root).textContent = label;
       });
 
+      // Reference lines, like a cushion to stay above: dashed, labeled at the left.
+      for (const r of refs) {
+        const y = Y(r.value);
+        svg("line", { x1: m.left, x2: width - m.right, y1: y, y2: y, stroke: token("--ink-2"), "stroke-width": 1.25, "stroke-dasharray": "5 4" }, root);
+        if (r.label) svg("text", { x: m.left + 4, y: y - 5 }, root).textContent = r.label;
+      }
       const cross = svg("line", { y1: m.top, y2: m.top + plotH, stroke: token("--axis"), "stroke-width": 1, opacity: 0 }, root);
       const surface = token("--panel");
       const ends = [];
@@ -254,7 +262,10 @@
           pen = true;
           last = i;
         });
-        svg("path", { d, fill: "none", stroke: palette[si], "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, root);
+        // With an emphasized series, it's drawn bold and the others step back.
+        const bold = emphasis == null || s.name === emphasis;
+        svg("path", { d, fill: "none", stroke: palette[si], "stroke-width": emphasis == null ? 2 : bold ? 3 : 1.5,
+                      opacity: bold ? 1 : 0.55, "stroke-linejoin": "round", "stroke-linecap": "round" }, root);
         if (last != null) {
           svg("circle", { cx: X(last), cy: Y(s.values[last]), r: 4, fill: palette[si], stroke: surface, "stroke-width": 2 }, root);
           ends.push({ x: X(last), y: Y(s.values[last]), name: s.name });

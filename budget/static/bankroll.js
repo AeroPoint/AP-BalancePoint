@@ -55,6 +55,17 @@
         const key = el.name.replace(/^table\d+-/, "");
         if (rules[key] != null) el.value = rules[key];
       }
+      const note = first.querySelector(".bj-rules-edit .muted");
+      if (note) note.textContent = `Filled in from your last visit to ${place.value}: check they still hold`;
     });
+  }
+})();
+
+// A link to an older session (after saving it, say) shows the whole list.
+(function () {
+  const target = location.hash && document.querySelector(location.hash);
+  if (target && target.classList.contains("bj-older")) {
+    document.getElementById("sessions").classList.add("all");
+    target.scrollIntoView();
   }
 })();

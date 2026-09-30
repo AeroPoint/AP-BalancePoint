@@ -92,6 +92,7 @@
     if (!chart || !rows.some((r) => r.income || r.costs)) return;
     const NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     Charts.columns(chart, {
+      height: rows.length <= 6 ? 170 : 240,
       labels: rows.map((r) => NAMES[Number(r.month.slice(5)) - 1]),
       titles: rows.map((r) => `${NAMES[Number(r.month.slice(5)) - 1]} ${r.month.slice(0, 4)}`),
       series: [

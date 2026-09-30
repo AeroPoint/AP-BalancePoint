@@ -36,22 +36,38 @@
     <h2>Next 12 months</h2>
     <p class="muted">Balances at each month's end. When {{ acct_name }} would drop below the cushion, the difference comes from {{ backup_name }}.</p>
   </div>
-  <div id="runway" class="chart"></div>
+  {# One small chart per account, each on its own scale: a big backup account would otherwise flatten the rest. #}
+  <div class="runway-grid">
+    <figure class="runway-cell">
+      <figcaption><b>{{ acct_name }}</b> {{ p.start_balance|money(false) }} → {{ last.balance|money(false) }}</figcaption>
+      <div id="runway-main" class="chart"></div>
+    </figure>
+    {% for b in p.backups %}
+    <figure class="runway-cell">
+      <figcaption><b>{{ names[b] }}</b> {{ p.start_left[b]|money(false) }} → {{ last.left[b]|money(false) }}</figcaption>
+      <div id="runway-{{ b }}" class="chart"></div>
+    </figure>
+    {% endfor %}
+  </div>
   <div class="table-wrap">
-    <table class="ledger plan-table">
+    <table class="ledger plan-table cards">
       <thead>
-        <tr><th>Month</th><th class="num">Planned</th><th>Changes</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th>Drawn from</th>{% for b in p.backups %}<th class="num">{{ names[b] }} left</th>{% endfor %}</tr>
+        <tr><th>Month</th><th class="num">Planned</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th>Drawn from</th>{% for b in p.backups %}<th class="num">{{ names[b] }} left</th>{% endfor %}</tr>
       </thead>
       <tbody>
         {% for r in p.rows %}
         <tr{% if r.short %} class="is-short"{% endif %}>
-          <td>{{ r.key|month_label }}</td>
-          <td class="num">{{ (r.net - r.adjust)|money(false) }}</td>
-          <td>{% for i in r['items'] %}<span class="chip">{{ i.label }} {{ '+' if i.amount > 0 }}{{ i.amount|money(false) }}</span> {% endfor %}</td>
-          <td class="num {{ 'in' if r.net > 0 }}">{{ '+' if r.net > 0 }}{{ r.net|money(false) }}</td>
-          <td class="num">{{ r.balance|money(false) }}</td>
-          <td>{% for b, amt in r.draws.items() %}<span class="chip">{{ names[b] }} {{ amt|money(false) }}</span> {% endfor %}</td>
-          {% for b in p.backups %}<td class="num">{{ r.left[b]|money(false) }}</td>{% endfor %}
+          {% set before = loop.previtem['items']|map(attribute='label')|list if loop.previtem else [] %}
+          <td class="c-main">
+            <span class="nowrap">{{ r.key|month_label }}</span>
+            {# A change is named in the month it starts, not repeated every month it runs. #}
+            {% for i in r['items'] if i.label not in before %}<br><span class="chip">{{ i.label }} {{ '+' if i.amount > 0 }}{{ i.amount|money(false) }}/mo</span>{% endfor %}
+          </td>
+          <td class="num c-meta" data-label="Planned">{{ (r.net - r.adjust)|money(false) }}</td>
+          <td class="num c-meta {{ 'in' if r.net > 0 }}" data-label="Month">{{ '+' if r.net > 0 }}{{ r.net|money(false) }}</td>
+          <td class="num strong c-side">{{ r.balance|money(false) }}</td>
+          <td class="c-meta{{ ' c-hide' if not r.draws }}" data-label="Drawn from">{% for b, amt in r.draws.items() %}<span class="chip">{{ names[b] }} {{ amt|money(false) }}</span> {% endfor %}</td>
+          {% for b in p.backups %}<td class="num c-meta" data-label="{{ names[b] }} left">{{ r.left[b]|money(false) }}</td>{% endfor %}
         </tr>
         {% endfor %}
       </tbody>
@@ -195,9 +211,19 @@
   (function () {
     const rows = JSON.parse(document.getElementById("data-runway").textContent);
     const labels = rows.map((r) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(r.key.slice(5)) - 1]);
-    const series = [{ name: {{ names.get(projection.account, 'Plan account')|tojson }}, values: rows.map((r) => r.balance) }];
-    {% for b in projection.backups %}series.push({ name: {{ names[b]|tojson }}, values: rows.map((r) => r.left[{{ b|tojson }}]) });{% endfor %}
-    Charts.lines(document.getElementById("runway"), { labels, titles: rows.map((r) => r.key), series });
+    const titles = rows.map((r) => r.key);
+    const cushion = {{ (settings.plan_buffer or 0)|tojson }};
+    Charts.lines(document.getElementById("runway-main"), {
+      labels, titles, height: 150, colors: [Charts.seriesColor(0)],
+      series: [{ name: {{ names.get(projection.account, 'Plan account')|tojson }}, values: rows.map((r) => r.balance) }],
+      refs: cushion ? [{ value: cushion, label: `Cushion ${Charts.money(cushion)}` }] : [],
+    });
+    {% for b in projection.backups %}
+    Charts.lines(document.getElementById("runway-{{ b }}"), {
+      labels, titles, height: 150, colors: [Charts.seriesColor({{ loop.index }})],
+      series: [{ name: {{ names[b]|tojson }}, values: rows.map((r) => r.left[{{ b|tojson }}]) }],
+    });
+    {% endfor %}
   })();
 </script>
 {% endif %}

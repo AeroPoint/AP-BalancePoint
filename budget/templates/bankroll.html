@@ -13,6 +13,11 @@
     <label class="field"><span>Hours</span><input name="table{{ i }}-hours" placeholder="1:45" value="{{ t.hours|hm if t and t.hours else '' }}"></label>
     <label class="field"><span>EV per hour</span><input name="table{{ i }}-ev_hour" inputmode="decimal" placeholder="85.50" value="{{ t.ev_hour if t and t.ev_hour is not none else '' }}"></label>
     <label class="field"><span>or EV total</span><input name="table{{ i }}-ev_total" inputmode="decimal" value="{{ t.ev_total if t and t.ev_total is not none and t.ev_hour is none else '' }}"></label>
+  </div>
+  {# The game's rules: filled in from the last visit to the same casino, so usually just a check. #}
+  <details class="bj-rules-edit"{% if t %} open{% endif %}>
+    <summary>Game rules <span class="muted">{{ rules_line(r) if r else 'fill in, or pick a casino you have played' }}</span></summary>
+  <div class="bj-grid">
     {% for key in rule_keys %}
     <label class="field"><span>{{ rule_labels.get(key, key) }}</span>
       {% if key == "17" %}
@@ -27,6 +32,7 @@
     </label>
     {% endfor %}
   </div>
+  </details>
 </fieldset>
 {% endmacro %}
 
@@ -148,7 +154,7 @@
     <table class="ledger cards bj-sessions">
       <thead><tr><th>Date</th><th>Casino</th><th class="num">Hours</th><th class="num">EV</th><th class="num">EV / h</th><th class="num">Result</th><th class="num">Result / h</th></tr></thead>
       {% for s in sessions %}
-      <tbody id="s{{ s.id }}">
+      <tbody id="s{{ s.id }}"{% if loop.index > 15 %} class="bj-older"{% endif %}>
         <tr>
           <td class="nowrap c-meta">{{ s.date|day_label }}</td>
           <td class="c-main">{{ s.location }}{% if s.tables|length > 1 %} <span class="muted">· {{ s.tables|length }} tables</span>{% endif %}</td>
@@ -196,6 +202,9 @@
       {% endfor %}
     </table>
   </div>
+  {% if sessions|length > 15 %}
+  <p class="bj-pad bj-show-all"><button type="button" class="btn" onclick="this.closest('section').classList.add('all'); this.parentElement.remove()">Show all {{ sessions|length }} sessions</button></p>
+  {% endif %}
 </section>
 {% endif %}
 

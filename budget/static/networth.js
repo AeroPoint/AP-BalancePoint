@@ -157,7 +157,11 @@
         { name: "Owe", values: shown.map((m) => totalsAt(m).owe) },
         { name: "Net worth", values: shown.map((m) => totalsAt(m).net) },
       ],
+      emphasis: "Net worth",
     });
+    const picked = chosen.filter((a) => showClosed || !a.closed).length;
+    const summary = document.getElementById("nw-pick-summary");
+    if (summary) summary.textContent = `${picked} of ${accounts.filter((a) => showClosed || !a.closed).length} included`;
     renderStack(chosen, shown);
     renderTable(shown, totalsAt);
   }
@@ -209,18 +213,25 @@
       list.className = "catbars";
       const max = Math.max(...rows.map((r) => Math.abs(r.v)));
       const sideTotal = rows.reduce((s, r) => s + Math.abs(r.v), 0);
-      for (const { a, v } of rows) {
+      const small = rows.filter((r) => Math.abs(r.v) / sideTotal < 0.01);
+      const listed = small.length > 1 ? rows.filter((r) => !small.includes(r)) : rows;
+      if (small.length > 1) {
+        const v = small.reduce((s, r) => s + r.v, 0);
+        listed.push({ a: { name: `${small.length} smaller accounts`, id: -1, tip: small.map((r) => `${r.a.name} ${money(r.v)}`).join(", ") }, v, other: true });
+      }
+      for (const { a, v, other } of listed) {
         const li = document.createElement("li");
         const name = document.createElement("span");
         name.className = "cb-name";
         name.textContent = a.name;
         const track = document.createElement("span");
         track.className = "cb-track";
-        track.dataset.tip = `${a.name}: ${money(v)}`;
+        track.dataset.tip = a.tip || `${a.name}: ${money(v)}`;
+        if (a.tip) name.dataset.tip = a.tip;
         const fill = document.createElement("span");
         fill.className = "cb-fill";
         fill.style.width = `${(Math.abs(v) / max) * 100}%`;
-        fill.style.background = side === "asset" ? colorOf(a) : Charts.token("--ink-2");
+        fill.style.background = other ? Charts.token("--s-other") : side === "asset" ? colorOf(a) : Charts.token("--ink-2");
         track.appendChild(fill);
         const amount = document.createElement("span");
         amount.className = "cb-amt";
@@ -238,8 +249,11 @@
 
   function renderStack(chosen, shown) {
     const el = document.getElementById("nw-stack");
-    const assets = chosen.filter((a) => a.side === "asset");
-    const named = bySize.filter((a) => slot.has(a.id) && !isOff(a));
+    const withHome = document.getElementById("nw-stack-home")?.checked;
+    const counted = (a) => withHome || !["property", "vehicle"].includes(a.kind);
+    if (el.clientWidth < 480 && shown.length > 12) shown = shown.slice(-12);
+    const assets = chosen.filter((a) => a.side === "asset" && counted(a));
+    const named = bySize.filter((a) => slot.has(a.id) && !isOff(a) && counted(a));
     const rest = assets.filter((a) => !slot.has(a.id));
     const series = [];
     const colors = [];
@@ -281,11 +295,11 @@
       let change = "—";
       if (idx > 0) {
         const diff = t.net - totalsAt(months[idx - 1]).net;
-        change = `${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))}`;
+        change = `<span class="${diff > 0 ? "in" : diff < 0 ? "down" : ""}">${diff >= 0 ? "+" : "−"}${money(Math.abs(diff))}</span>`;
       }
       const tr = document.createElement("tr");
       tr.innerHTML =
-        `<td><a href="?month=${m}">${long(m)}${m === thisMonth ? " (today)" : ""}</a></td>` +
+        `<td class="nowrap"><a href="?month=${m}"><span class="desk-only">${long(m)}</span><span class="phone-only">${short(m)}</span>${m === thisMonth ? " (today)" : ""}</a></td>` +
         `<td class="num">${money(t.own)}</td><td class="num">${money(t.owe)}</td>` +
         `<td class="num strong">${money(t.net)}</td><td class="num">${change}</td>`;
       body.appendChild(tr);
@@ -303,6 +317,14 @@
       render();
     });
   });
+  const stackHome = document.getElementById("nw-stack-home");
+  if (stackHome) {
+    stackHome.checked = store.get("ledger.nw.stackHome", false);
+    stackHome.addEventListener("change", () => {
+      store.set("ledger.nw.stackHome", stackHome.checked);
+      render();
+    });
+  }
   closedToggle.addEventListener("change", () => {
     showClosed = closedToggle.checked;
     save();
@@ -316,4 +338,10 @@
 
   renderChips();
   render();
+})();
+
+// The account picker starts closed on phones, open on wider screens; the stack toggle redraws.
+(function () {
+  const pick = document.getElementById("nw-pick");
+  if (pick && window.matchMedia("(min-width: 641px)").matches) pick.open = true;
 })();

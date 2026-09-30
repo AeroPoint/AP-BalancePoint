@@ -309,10 +309,10 @@ tr.done select, tr.done input { opacity: 0.6; }
 .heat-table th[scope="row"] { position: sticky; left: 0; z-index: 1; background: var(--panel); font-weight: 500; white-space: nowrap; }
 .heat-table td.heat {
   padding: 6px 6px; text-align: right; font-variant-numeric: tabular-nums;
-  background: color-mix(in oklab, var(--s1) calc(var(--h, 0) * 1%), transparent);
+  /* Capped so the darkest cell still reads with dark text (about 6:1). */
+  background: color-mix(in oklab, var(--s1) calc(min(var(--h, 0), 55) * 1%), transparent);
   border-right: 2px solid var(--panel); border-bottom: 2px solid var(--panel);
 }
-.heat-table td.heat.deep { color: #fff; }
 .heat-table td.off { background: repeating-linear-gradient(135deg, transparent 0 5px, var(--rule) 5px 6px); }
 
 /* net worth */
@@ -606,4 +606,66 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
   table.accounts-table .activity { grid-column: span 2; align-self: center; }
   table.accounts-table td.num { align-self: center; }
   table.accounts-table td.actions { align-self: center; text-align: right; }
+}
+.phone-note { display: none; }
+@media (max-width: 640px) {
+  /* Overview: the headline and first comparison, the rest a tap away. */
+  .statement:not(.open) .compare ~ .compare { display: none; }
+  .statement.open .stmt-more { display: none; }
+  .stmt-more { margin-top: 8px; padding-left: 0; }
+  /* The flow chart can't fit a phone held upright; category bars carry the same story. */
+  .flow-panel #flow { display: none; }
+  .flow-panel .phone-note { display: block; }
+  .flow-panel .panel-head p { display: none; }
+  /* Category bars: name, amount and change on one line, the bar full width under them. */
+  .catbars { display: block; }
+  .catbars li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: 12px; margin-bottom: 10px; }
+  .cb-name { grid-column: 1; grid-row: 1; }
+  .cb-amt { grid-column: 2; grid-row: 1; }
+  .cb-delta { grid-column: 3; grid-row: 1; min-width: 3.5rem; }
+  .cb-track { grid-column: 1 / -1; grid-row: 2; height: 10px; }
+  .big-charges .actions.c-full .btn { width: auto; }
+}
+@media (max-width: 640px) and (orientation: landscape) {
+  .flow-panel #flow { display: block; }
+  .flow-panel .phone-note { display: none; }
+}
+.split.even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 1000px) { .split.even { grid-template-columns: minmax(0, 1fr); } }
+.heat-table thead th:first-child, .heat-table tfoot th { position: sticky; left: 0; z-index: 1; background: var(--panel); text-align: left; }
+@media (max-width: 640px) {
+  .heat-table th:nth-last-child(-n+2), .heat-table td:nth-last-child(-n+2) { display: none; }
+  .yearly-table th:nth-child(5), .yearly-table td:nth-child(5) { display: none; }
+}
+.down { color: var(--error); }
+.nw-pick > summary { cursor: pointer; list-style: none; justify-content: flex-start; margin-bottom: 0; }
+.nw-pick > summary::-webkit-details-marker { display: none; }
+.nw-pick > summary h2::after { content: " +"; color: var(--accent); }
+.nw-pick[open] > summary h2::after { content: " −"; }
+.nw-pick[open] > summary { margin-bottom: 12px; }
+@media (max-width: 820px) {
+  .chip-check { min-height: 40px; padding: 6px 12px 6px 9px; }
+  .chip-check input { width: 18px; height: 18px; }
+}
+@media (max-width: 640px) {
+  .nw-months th:nth-child(2), .nw-months td:nth-child(2), .nw-months th:nth-child(3), .nw-months td:nth-child(3) { display: none; }
+}
+/* plan: one small chart per account */
+.runway-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 16px 20px; margin-bottom: 16px; }
+.runway-cell { margin: 0; min-width: 0; }
+.runway-cell figcaption { margin-bottom: 6px; color: var(--ink-2); font-size: 0.9rem; }
+.runway-cell figcaption b { color: var(--ink); font-weight: 600; }
+.plan-table .c-main .chip { display: inline-block; max-width: 100%; margin-top: 3px; white-space: normal; }
+/* bankroll: rules tucked away, latest sessions first, Save always in reach on phones */
+.bj-rules-edit { margin-bottom: 10px; }
+.bj-rules-edit > summary { margin-bottom: 10px; color: var(--accent); font-weight: 600; cursor: pointer; }
+.bj-rules-edit > summary .muted { display: block; font-weight: 400; font-size: 0.85rem; }
+#sessions:not(.all) tbody.bj-older { display: none; }
+.bj-show-all { padding-bottom: 16px; }
+@media (max-width: 820px) {
+  .bj-form > .form-actions {
+    position: sticky; bottom: calc(62px + env(safe-area-inset-bottom)); z-index: 5;
+    margin: 0 -14px; padding: 10px 14px; background: var(--panel); border-top: 1px solid var(--rule);
+  }
+  .bj-form > .form-actions .btn.primary { flex: 1 1 auto; }
 }

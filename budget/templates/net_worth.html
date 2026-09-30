@@ -23,9 +23,9 @@
 <div id="nw-app">
   <section class="statement" id="nw-statement" aria-live="polite"></section>
 
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Accounts to include</h2>
+  <details class="panel nw-pick" id="nw-pick">
+    <summary class="panel-head"><h2>Accounts to include</h2> <span class="muted" id="nw-pick-summary"></span></summary>
+    <div class="panel-head nw-presets">
       <div class="inline">
         <button type="button" class="btn small" data-preset="all">Everything</button>
         <button type="button" class="btn small" data-preset="liquid">Leave out home and cars</button>
@@ -35,10 +35,10 @@
     </div>
     <div id="nw-chips" class="chip-groups"></div>
     <label class="check" id="nw-closed-wrap"><input type="checkbox" id="nw-show-closed"> Show closed accounts</label>
-  </section>
+  </details>
 
   <div id="nw-charts">
-    <div class="split">
+    <div class="split even">
       <section class="panel">
         <div class="panel-head"><h2 id="nw-sits-title">Where it sits</h2></div>
         <div id="nw-sits"></div>
@@ -59,6 +59,7 @@
       <div class="panel-head">
         <h2>Money in each account over time</h2>
         <p class="muted">What you own at the end of each month (today for this month), stacked by account. Your seven biggest accounts keep their colors; the rest are grouped.</p>
+        <label class="check"><input type="checkbox" id="nw-stack-home"> Include home and cars</label>
       </div>
       <div id="nw-stack" class="chart"></div>
     </section>
@@ -119,7 +120,7 @@
     <section class="panel">
       <div class="panel-head"><h2>Month by month</h2></div>
       <div class="table-wrap">
-        <table class="ledger">
+        <table class="ledger nw-months">
           <thead><tr><th>Month</th><th class="num">Own</th><th class="num">Owe</th><th class="num">Net worth</th><th class="num">Change</th></tr></thead>
           <tbody id="nw-table"></tbody>
         </table>

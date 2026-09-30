@@ -76,6 +76,7 @@
     <a href="{{ url_for('main.transactions', category='none', period=period_filter, account=acct) }}">Categorize {{ 'it' if deposits.n == 1 else 'them' }}</a> as income, a refund, or a transfer.
   </p>
   {% endif %}
+  <button type="button" class="btn small quiet stmt-more phone-only" onclick="this.closest('.statement').classList.add('open')">More about this month</button>
 </section>
 
 {% if card %}
@@ -130,14 +131,14 @@
   {% if card.big %}
   <h3 class="h-sm why-title">Large charges</h3>
   <p class="muted why-help">Mark a big one-time purchase as a one-off so it doesn't count against flexible or fixed spending. It still counts as spending.</p>
-  <table class="ledger big-charges">
+  <table class="ledger big-charges cards">
     <tbody>
       {% for b in card.big %}
       <tr data-id="{{ b.id }}">
-        <td class="date">{{ b.date }}</td>
-        <td>{{ b.name }} <span class="source-tag">{{ b.category }}</span></td>
-        <td class="num">{{ b.amount|money(false) }}</td>
-        <td class="actions">
+        <td class="date c-meta">{{ b.date }}</td>
+        <td class="c-main">{{ b.name }} <span class="source-tag">{{ b.category }}</span></td>
+        <td class="num c-side">{{ b.amount|money(false) }}</td>
+        <td class="actions c-full">
           <button type="button" class="btn small{{ ' quiet' if b.one_off }} oneoff-toggle" data-on="{{ 0 if b.one_off else 1 }}">
             {{ 'Count normally' if b.one_off else 'Mark one-off' }}
           </button>
@@ -150,12 +151,13 @@
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel flow-panel">
   <div class="panel-head">
     <h2>Where the money went</h2>
-    <p class="muted">Income on the left, spending and savings on the right. Click a category to see its transactions. Card payments and transfers between your accounts aren't counted.</p>
+    <p class="muted">Income on the left, spending and savings on the right. Select a category to see its transactions. Card payments and transfers between your accounts aren't counted.</p>
   </div>
   <div id="flow" class="chart"></div>
+  <p class="note phone-note">This flow chart needs a wider screen: turn the phone sideways, or see spending by category below.</p>
 </section>
 
 <div class="split">

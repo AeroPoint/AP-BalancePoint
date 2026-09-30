@@ -26,7 +26,7 @@
 <section class="panel">
   <div class="panel-head">
     <h2>Spending by category and month</h2>
-    <p class="muted">Darker cells are that category's bigger months. Whole dollars; hover for exact amounts. The last column compares with the same months of {{ year - 1 }}.</p>
+    <p class="muted">Darker cells are that category's bigger months. Whole dollars; tap or hover for exact amounts. The last column compares with the same months of {{ year - 1 }}.</p>
   </div>
   <div class="table-wrap">
     <table class="ledger heat-table">
@@ -48,7 +48,7 @@
             {% set m = loop.index %}
             {% if m in active %}
               {% set h = ([0, (v / row_max * 85) if row_max > 0 else 0]|max)|round|int %}
-              <td class="heat{{ ' deep' if h > 50 }}" style="--h: {{ h }}" data-tip="{{ row.name }}, {{ months[m - 1] }} {{ year }}: {{ v|money }}">{{ '{:,.0f}'.format(v) if v|abs >= 0.5 else '' }}</td>
+              <td class="heat" style="--h: {{ h }}" data-tip="{{ row.name }}, {{ months[m - 1] }} {{ year }}: {{ v|money }}">{{ '{:,.0f}'.format(v) if v|abs >= 0.5 else '' }}</td>
             {% else %}
               <td class="heat off" data-tip="No data for {{ months[m - 1] }} {{ year }}"></td>
             {% endif %}
@@ -65,7 +65,7 @@
       </tbody>
       <tfoot>
         <tr>
-          <td>All spending</td>
+          <th scope="row">All spending</th>
           {% for v in month_totals %}<td class="num">{{ '{:,.0f}'.format(v) if loop.index in active else '' }}</td>{% endfor %}
           <td class="num">{{ month_totals|sum|money(false) }}</td>
           <td class="num">{{ (month_totals|sum / (active|length or 1))|money(false) }}</td>
@@ -76,7 +76,7 @@
   </div>
 </section>
 
-<div class="split">
+<div class="split even">
   <section class="panel">
     <div class="panel-head">
       <h2>Monthly spending, biggest categories</h2>
@@ -103,8 +103,8 @@
 <section class="panel">
   <div class="panel-head"><h2>Every year</h2></div>
   <div class="table-wrap">
-    <table class="ledger">
-      <thead><tr><th>Year</th><th class="num">Income</th><th class="num">Spending</th><th class="num">Kept</th><th class="num">Paycheck retirement</th><th class="num" title="Kept plus paycheck retirement savings, over income plus those savings">Savings rate</th></tr></thead>
+    <table class="ledger yearly-table">
+      <thead><tr><th>Year</th><th class="num">Income</th><th class="num">Spending</th><th class="num">Kept</th><th class="num">Retirement</th><th class="num" title="Kept plus paycheck retirement savings, over income plus those savings">Savings rate</th></tr></thead>
       <tbody>
         {% for y in yearly|reverse %}
         <tr>
@@ -133,7 +133,14 @@
     const read = (id) => JSON.parse(document.getElementById(id).textContent);
     const months = {{ months|tojson }};
     const year = {{ year }};
-    const stacked = read("data-stacked");
+    let stacked = read("data-stacked");
+    // A phone has room for the four biggest categories; the rest fold into Other.
+    if (document.getElementById("stacked").clientWidth < 480) {
+      const other = stacked.find((s) => s.name === "Other") || { name: "Other", values: months.map(() => 0) };
+      const keep = stacked.filter((s) => s.name !== "Other");
+      const folded = keep.slice(4);
+      stacked = [...keep.slice(0, 4), { name: "Other", values: months.map((_, i) => folded.reduce((a, s) => a + (s.values[i] || 0), other.values[i] || 0)) }];
+    }
     Charts.columns(document.getElementById("stacked"), {
       labels: months,
       titles: months.map((m) => `${m} ${year}`),
@@ -145,7 +152,8 @@
     Charts.lines(document.getElementById("pace"), {
       labels: months,
       series: pace,
-      colors: pace.map((s) => Charts.seriesColor(Number(s.name) % 8)),
+      emphasis: String(year),
+      colors: pace.map((s) => (s.name === String(year) ? Charts.seriesColor(0) : Charts.token("--s-other"))),
     });
     const flow = read("data-flow");
     Charts.columns(document.getElementById("flow"), {
