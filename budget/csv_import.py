@@ -141,7 +141,7 @@ def store_transactions(conn, account_id, filename, parsed, kind="csv", engine=No
         if key in replaced:
             continue
         fixed_name = t.get("name")
-        m = engine.resolve(t["raw"], t.get("mcc"), fixed_name, t["amount"])
+        m = engine.resolve(t["raw"], t.get("mcc"), fixed_name, t["amount"], account_id)
         category_id, source = m.category_id, m.source
         if t.get("category_hint"):
             wanted, compatible = t["category_hint"]

@@ -149,6 +149,11 @@ Loans with fixed terms (*Accounts → Loan schedules*) are calculated every mont
 spreadsheet import sets them up from an `=-FV(rate/12, DATEDIF(...), PMT(...), amount)` balance formula.
 Overview and Year trends have the same account filter for spending and income.
 
+A business account (*Accounts → Business accounts*) has its own categories: everything on it goes to
+its income category (money in) or expense category (money out), whatever the merchant rules say.
+Transfers to and from your other accounts stay Transfers, and a category picked by hand on one
+transaction (a personal charge made on the business card) stays.
+
 ## Judging a month, and planning ahead
 
 A single month's savings rate swings with every big purchase, so the Overview judges a month on

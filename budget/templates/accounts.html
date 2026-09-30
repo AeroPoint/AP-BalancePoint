@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import kind_select %}
+{% from "_macros.html" import kind_select, category_options %}
 {% block title %}Accounts{% endblock %}
 {% block content %}
 <header class="page-head">
@@ -233,6 +233,48 @@
     <label class="field"><span>Match % of yours</span><input name="match_rate" inputmode="decimal" placeholder="50" value="{{ paychecks[-1].match_rate|round(2) if paychecks else '' }}"></label>
     <label class="field"><span>Up to % of pay</span><input name="match_cap_pct" inputmode="decimal" placeholder="6" value="{{ paychecks[-1].match_cap_pct|round(2) if paychecks else '' }}"></label>
     <button class="btn primary">Add</button>
+  </form>
+</section>
+
+<section class="panel" id="business">
+  <div class="panel-head">
+    <h2>Business accounts</h2>
+    <p class="muted">
+      Give an account its own categories and everything on it lands there: money in to its income, money out to its
+      expenses, whatever the merchant. Transfers to and from your other accounts stay Transfers, and a category you pick
+      on a single transaction (a personal charge made on the business card) always stays.
+    </p>
+  </div>
+  {% set business = accounts|selectattr("default_in_category")|list + accounts|rejectattr("default_in_category")|selectattr("default_out_category")|list %}
+  {% if business %}
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead><tr><th>Account</th><th>Money in</th><th>Money out</th><th></th></tr></thead>
+      <tbody>
+        {% for a in business %}
+        <tr>
+          <td>{{ a.name }}</td>
+          <td><select form="biz-{{ a.id }}" name="default_in_category" aria-label="Money in">{{ category_options(categories, a.default_in_category, "No default") }}</select></td>
+          <td><select form="biz-{{ a.id }}" name="default_out_category" aria-label="Money out">{{ category_options(categories, a.default_out_category, "No default") }}</select></td>
+          <td class="actions">
+            <form id="biz-{{ a.id }}" method="post" action="{{ url_for('main.save_account_defaults') }}"><input type="hidden" name="account_id" value="{{ a.id }}"><button class="btn small">Save</button></form>
+            <form method="post" action="{{ url_for('main.save_account_defaults') }}" data-confirm="Stop sending everything on {{ a.name }} to its own categories? Merchant rules take over again.">
+              <input type="hidden" name="account_id" value="{{ a.id }}"><button class="btn small quiet danger">Clear</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('main.save_account_defaults') }}" class="inline">
+    <label class="field"><span>Account</span>
+      <select name="account_id" required>{% for a in accounts if not a.closed and not a.default_in_category and not a.default_out_category %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="field"><span>Money in</span><select name="default_in_category">{{ category_options(categories, none, "No default") }}</select></label>
+    <label class="field"><span>Money out</span><select name="default_out_category">{{ category_options(categories, none, "No default") }}</select></label>
+    <button class="btn primary">Set as business account</button>
   </form>
 </section>
 {% endblock %}

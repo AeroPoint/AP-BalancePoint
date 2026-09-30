@@ -122,6 +122,13 @@ class RuleEngine:
             for _, r in self.name_rules
             if r["source"] == "user" and r["amount"] is None and not r["pattern"].startswith("re:")
         }
+        # Business accounts: money in and out defaults to the account's own categories.
+        self.account_defaults = {
+            r["id"]: (r["default_in_category"], r["default_out_category"])
+            for r in conn.execute("SELECT id, default_in_category, default_out_category FROM accounts")
+            if r["default_in_category"] or r["default_out_category"]
+        }
+        self.transfers = {r[0] for r in conn.execute("SELECT id FROM categories WHERE kind = 'transfer'")}
         # Friendly name -> category, so "Groc Mart" typed in the old spreadsheet still categorizes.
         self.name_to_category = {}
         for _, r in self.raw_rules:
@@ -134,7 +141,20 @@ class RuleEngine:
             return False
         return bool(rx.search(text) or rx.search(key))
 
-    def resolve(self, raw, mcc=None, fixed_name=None, amount=None):
+    def resolve(self, raw, mcc=None, fixed_name=None, amount=None, account_id=None):
+        """Name and category for a transaction. On an account with default categories (a business
+        account), those win over merchant rules, except for transfers, so a household transfer stays
+        a Transfer; a category picked by hand on the transaction still wins over both (callers keep
+        'manual' and 'sheet' categories)."""
+        m = self._resolve(raw, mcc, fixed_name, amount)
+        defaults = self.account_defaults.get(account_id)
+        if defaults and amount:
+            wanted = defaults[0] if amount > 0 else defaults[1]
+            if wanted and m.category_id not in self.transfers:
+                return Match(m.name, wanted, "rule")
+        return m
+
+    def _resolve(self, raw, mcc=None, fixed_name=None, amount=None):
         text = normalize(raw)
         # Patterns are matched against the raw text and against its cleaned key, so an entry
         # like "SAFEWAY FUEL" still matches "SAFEWAY #1234 FUEL SPRINGFIELD IL".
@@ -182,13 +202,13 @@ def reapply(conn, where="1=1", params=()):
     """
     engine = RuleEngine(conn)
     rows = conn.execute(
-        f"SELECT id, raw_description, mcc, amount, name, name_locked, category_id, category_source "
+        f"SELECT id, account_id, raw_description, mcc, amount, name, name_locked, category_id, category_source "
         f"FROM transactions WHERE {where}",
         params,
     ).fetchall()
     changed = 0
     for t in rows:
-        m = engine.resolve(t["raw_description"], t["mcc"], t["name"] if t["name_locked"] else None, t["amount"])
+        m = engine.resolve(t["raw_description"], t["mcc"], t["name"] if t["name_locked"] else None, t["amount"], t["account_id"])
         name = t["name"] if t["name_locked"] else m.name
         if t["category_source"] in ("manual", "sheet"):
             category_id, source = t["category_id"], t["category_source"]

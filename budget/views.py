@@ -380,7 +380,7 @@ def add_transaction():
     amount = abs(amount) if form.get("direction") == "in" else -abs(amount)
     category_id, source = _int(form.get("category_id")), "manual"
     if not category_id:
-        match = RuleEngine(conn).resolve(name, None, name, amount)
+        match = RuleEngine(conn).resolve(name, None, name, amount, account_id)
         category_id, source = match.category_id, match.source if match.category_id else "none"
     conn.execute(
         """INSERT INTO transactions (account_id, import_id, date, effective_date, amount, raw_description, name,
@@ -719,8 +719,26 @@ def accounts_page():
     return render_template(
         "accounts.html", accounts=accounts, kinds=seed.ACCOUNT_KINDS, groups=seed.ACCOUNT_GROUPS, loans=loans,
         paychecks=paychecks, retirement_accounts=[a for a in accounts if a["side"] == "asset"],
-        liability_accounts=[a for a in accounts if a["side"] == "liability"],
+        liability_accounts=[a for a in accounts if a["side"] == "liability"], categories=_categories(conn),
+        category_names={c["id"]: c["name"] for c in _categories(conn)},
     )
+
+
+@bp.post("/accounts/defaults")
+def save_account_defaults():
+    """A business account's own categories for money in and out; re-categorizes what's already there."""
+    conn = get_db()
+    aid = _int(request.form.get("account_id"))
+    if not aid:
+        return redirect(url_for(".accounts_page") + "#business")
+    money_in, money_out = _int(request.form.get("default_in_category")), _int(request.form.get("default_out_category"))
+    conn.execute("UPDATE accounts SET default_in_category = ?, default_out_category = ? WHERE id = ?", (money_in, money_out, aid))
+    changed = reapply(conn, "account_id = ?", (aid,))
+    conn.commit()
+    name = conn.execute("SELECT name FROM accounts WHERE id = ?", (aid,)).fetchone()[0]
+    flash(f"{name}: " + ("default categories saved" if money_in or money_out else "default categories cleared")
+          + f"; {changed} transaction{'s' if changed != 1 else ''} re-categorized. Ones you picked by hand stay.", "ok")
+    return redirect(url_for(".accounts_page") + "#business")
 
 
 @bp.post("/loans/save")

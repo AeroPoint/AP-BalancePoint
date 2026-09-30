@@ -12,8 +12,12 @@ CREATE TABLE IF NOT EXISTS accounts (
     opened      TEXT,                              -- YYYY-MM, optional
     closed      TEXT,                              -- YYYY-MM once the account is closed
     sort        INTEGER NOT NULL DEFAULT 0,
-    bank_from   TEXT                               -- YYYY-MM: month of the last balance checked against the bank;
+    bank_from   TEXT,                              -- YYYY-MM: month of the last balance checked against the bank;
                                                    -- bank exports are the record from its 1st, older months stay as they were
+    -- A business account's own categories: everything on it lands in these unless it's a transfer or
+    -- picked by hand (rules.RuleEngine.resolve).
+    default_in_category  INTEGER REFERENCES categories(id) ON DELETE SET NULL,  -- money in
+    default_out_category INTEGER REFERENCES categories(id) ON DELETE SET NULL   -- money out
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -227,7 +231,9 @@ def migrate(conn):
 
     existing = _columns(conn, "accounts")
     for column, ddl in (("institution", "TEXT"), ("opened", "TEXT"), ("closed", "TEXT"),
-                        ("sort", "INTEGER NOT NULL DEFAULT 0"), ("bank_from", "TEXT")):
+                        ("sort", "INTEGER NOT NULL DEFAULT 0"), ("bank_from", "TEXT"),
+                        ("default_in_category", "INTEGER REFERENCES categories(id) ON DELETE SET NULL"),
+                        ("default_out_category", "INTEGER REFERENCES categories(id) ON DELETE SET NULL")):
         if column not in existing:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {column} {ddl}")
 
