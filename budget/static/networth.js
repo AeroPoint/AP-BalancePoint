@@ -11,6 +11,9 @@
   const short = (m) => `${NAMES[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`;
   const long = (m) => `${NAMES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
   const money = (v) => Charts.money(v);
+  // Money held for someone else (a child's 529) is tracked but isn't yours: it starts unticked on every
+  // device, stays out of every preset, and is only counted while you tick it.
+  const HELD = "Held for others";
   const PRESETS = {
     all: () => true,
     liquid: (a) => !["property", "vehicle", "loan"].includes(a.kind),
@@ -56,6 +59,8 @@
 
   // ---------------------------------------------------------------- state
   let excluded = new Set(store.get("ledger.nw.excluded", []));
+  let heldOn = new Set(store.get("ledger.nw.heldIncluded", []));
+  const isOff = (a) => (a.group === HELD ? !heldOn.has(a.id) : excluded.has(a.id));
   let showClosed = store.get("ledger.nw.showClosed", false);
   let range = store.get("ledger.nw.range", "24");
   const chipsEl = document.getElementById("nw-chips");
@@ -66,6 +71,7 @@
 
   function save() {
     store.set("ledger.nw.excluded", [...excluded]);
+    store.set("ledger.nw.heldIncluded", [...heldOn]);
     store.set("ledger.nw.showClosed", showClosed);
     store.set("ledger.nw.range", range);
   }
@@ -73,7 +79,7 @@
   // ---------------------------------------------------------------- filter chips
   function renderChips() {
     chipsEl.innerHTML = "";
-    for (const group of ["Cash", "Investments", "Property & other", "Debts"]) {
+    for (const group of ["Cash", "Investments", "Property & other", HELD, "Debts"]) {
       const members = accounts.filter((a) => a.group === group && (showClosed || !a.closed));
       if (!members.length) continue;
       const row = document.createElement("div");
@@ -86,9 +92,12 @@
         label.className = "chip-check";
         const box = document.createElement("input");
         box.type = "checkbox";
-        box.checked = !excluded.has(a.id);
+        box.checked = !isOff(a);
         box.addEventListener("change", () => {
-          if (box.checked) excluded.delete(a.id);
+          if (a.group === HELD) {
+            if (box.checked) heldOn.add(a.id);
+            else heldOn.delete(a.id);
+          } else if (box.checked) excluded.delete(a.id);
           else excluded.add(a.id);
           save();
           render();
@@ -115,7 +124,7 @@
 
   // ---------------------------------------------------------------- views
   function render() {
-    const chosen = accounts.filter((a) => !excluded.has(a.id));
+    const chosen = accounts.filter((a) => !isOff(a));
     const cache = new Map();
     const totalsAt = (month) => {
       if (!cache.has(month)) {
@@ -166,7 +175,7 @@
     const t = totalsAt(focus);
     const b = document.createElement("b");
     b.textContent = money(t.net);
-    const picked = excluded.size ? `the ${chosen.length} accounts you picked` : null;
+    const picked = excluded.size || heldOn.size ? `the ${chosen.length} accounts you picked` : null;
     if (now) h.append(picked ? `Today ${picked} come to ` : "Today your net worth is ", b, ".");
     else h.append(`At the end of ${long(focus)} ${picked ? `${picked} came to` : "your net worth was"} `, b, ".");
     const p = document.createElement("p");
@@ -230,7 +239,7 @@
   function renderStack(chosen, shown) {
     const el = document.getElementById("nw-stack");
     const assets = chosen.filter((a) => a.side === "asset");
-    const named = bySize.filter((a) => slot.has(a.id) && !excluded.has(a.id));
+    const named = bySize.filter((a) => slot.has(a.id) && !isOff(a));
     const rest = assets.filter((a) => !slot.has(a.id));
     const series = [];
     const colors = [];
@@ -287,7 +296,8 @@
   document.querySelectorAll("[data-preset]").forEach((button) => {
     button.addEventListener("click", () => {
       const keep = PRESETS[button.dataset.preset];
-      excluded = new Set(accounts.filter((a) => !keep(a)).map((a) => a.id));
+      excluded = new Set(accounts.filter((a) => a.group !== HELD && !keep(a)).map((a) => a.id));
+      heldOn = new Set();
       save();
       renderChips();
       render();

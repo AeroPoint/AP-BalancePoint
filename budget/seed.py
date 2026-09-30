@@ -477,11 +477,15 @@ ACCOUNT_KINDS = [
     ("property", "Real estate", "asset", "Property & other"),
     ("vehicle", "Vehicle", "asset", "Property & other"),
     ("other", "Other asset", "asset", "Property & other"),
+    # Money you track but isn't yours to spend: a child's 529, a custodial account. Net worth leaves
+    # it out of your totals unless you tick it.
+    ("held", "Held for someone else (529, custodial)", "asset", "Held for others"),
     ("credit", "Credit card", "liability", "Debts"),
     ("loan", "Loan or mortgage", "liability", "Debts"),
     ("other_debt", "Other debt", "liability", "Debts"),
 ]
-ACCOUNT_GROUPS = ["Cash", "Investments", "Property & other", "Debts"]
+ACCOUNT_GROUPS = ["Cash", "Investments", "Property & other", "Held for others", "Debts"]
+HELD_GROUP = "Held for others"
 KIND = {key: {"label": label, "side": side, "group": group} for key, label, side, group in ACCOUNT_KINDS}
 
 
@@ -499,6 +503,7 @@ def guess_kind(name, side="asset"):
         (("401k", "ira", "voya", "retire"), "retirement"),
         (("hsa", "fsa"), "hsa"),
         (("coinbase", "crypto"), "crypto"),
+        (("529", "custodial", "utma", "ugma"), "held"),
         (("merrill", "schwab", "fidelity", "vanguard", "brokerage"), "brokerage"),
     ]
     for words, kind in guesses:

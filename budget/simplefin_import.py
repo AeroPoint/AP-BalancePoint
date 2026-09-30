@@ -1,0 +1,315 @@
+"""Pull balances and transactions from SimpleFIN Bridge (bridge.simplefin.org): a cheap ($1.50/mo,
+up to 25 institutions), read-only bank-data aggregator. Protocol: https://www.simplefin.org/protocol.html
+
+One-time setup: run.py simplefin-setup claims a setup token, then simplefin-map ties each SimpleFIN
+account to a local one. After that, run.py simplefin-sync (daily, from sync-mac.sh) stores transactions
+through the same de-duplicated path a CSV upload uses (csv_import.store_transactions).
+
+Each mapped account keeps its own last_synced date, which only moves when its bank came back without an
+error. A run pulls from the oldest of those (less a few days of overlap), so a missed day, a computer
+that was off for a week, or a bank that needed signing in again at the Bridge all catch up on their own.
+"""
+import base64
+import http.client
+import json
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+from . import seed
+from .csv_import import replace_spreadsheet_rows, store_transactions
+
+ACCESS_URL_FILE = "simplefin-access-url"  # in the data folder; a credential, so kept out of budget.db
+MAX_WINDOW_DAYS = 45                      # the Bridge's recommended longest span per /accounts call
+OVERLAP_DAYS = 5                          # re-read the last few days every run, for late postings
+STALE_DAYS = 2                            # warn when an account's last good pull is older than this
+TRANSACTION_KINDS = ("checking", "savings", "credit", "cash")  # others sync their balance only
+# The Bridge sits behind Cloudflare, which turns away Python's default "Python-urllib" client
+# ("error code: 1010") before the request ever reaches SimpleFIN.
+USER_AGENT = "ledger-budget-app/1.0 (+https://www.simplefin.org/protocol.html)"
+
+
+class SimpleFinError(RuntimeError):
+    pass
+
+
+# ---------------------------------------------------------------- the access URL (a credential)
+
+def access_url_path(data_dir):
+    return Path(data_dir) / ACCESS_URL_FILE
+
+
+def save_access_url(data_dir, access_url):
+    """Write the access URL readable only by this user, and keep it out of data/'s own git repo."""
+    path = access_url_path(data_dir)
+    path.write_text(access_url + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    ignore = Path(data_dir) / ".gitignore"
+    lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
+    if ACCESS_URL_FILE not in lines:
+        ignore.write_text("\n".join(lines + [ACCESS_URL_FILE]) + "\n", encoding="utf-8")
+
+
+def load_access_url(data_dir):
+    path = access_url_path(data_dir)
+    return path.read_text(encoding="utf-8").strip() if path.exists() else None
+
+
+# ---------------------------------------------------------------- talking to the Bridge
+
+def claim_setup_token(setup_token):
+    """One-time: exchange a Setup Token for a long-lived Access URL. The token is single-use."""
+    try:
+        claim_url = base64.b64decode("".join(setup_token.split()), validate=True).decode()  # line breaks from pasting
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise SimpleFinError(f"That doesn't look like a SimpleFIN setup token: {exc}") from exc
+    if urllib.parse.urlsplit(claim_url).scheme not in ("http", "https") or "/claim/" not in claim_url:
+        raise SimpleFinError("That doesn't look like a SimpleFIN setup token (it should decode to a claim link).")
+    req = urllib.request.Request(claim_url, method="POST", headers={"Content-Length": "0", "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            access_url = resp.read().decode().strip()
+    except urllib.error.HTTPError as exc:
+        said = _server_said(exc)
+        if said.startswith("error code:"):  # Cloudflare, not SimpleFIN: the token wasn't used
+            raise SimpleFinError(f"Cloudflare blocked the request before it reached SimpleFIN ({said}); "
+                                 "the token wasn't used, so try again.") from exc
+        raise SimpleFinError(f"SimpleFIN Bridge turned down the setup token (HTTP {exc.code}: {said}). "
+                             "A token works once; if it was claimed, make a new one at bridge.simplefin.org.") from exc
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+        raise SimpleFinError(f"Couldn't reach SimpleFIN Bridge: {getattr(exc, 'reason', exc)!s}") from exc
+    if not access_url.startswith("http"):
+        raise SimpleFinError(f"Unexpected response claiming the setup token: {access_url[:80]!r}")
+    return access_url
+
+
+def _server_said(exc):
+    """The first line of an error response's body, for the message."""
+    try:
+        text = exc.read(300).decode(errors="replace").strip()
+    except OSError:
+        return "no details"
+    return (text.splitlines() or ["no details"])[0][:150]
+
+
+def _get_json(access_url, path, params):
+    parts = urllib.parse.urlsplit(access_url)
+    auth = base64.b64encode(
+        f"{urllib.parse.unquote(parts.username or '')}:{urllib.parse.unquote(parts.password or '')}".encode()
+    ).decode()
+    netloc = parts.hostname + (f":{parts.port}" if parts.port else "")
+    url = urllib.parse.urlunsplit(
+        (parts.scheme, netloc, parts.path.rstrip("/") + path, urllib.parse.urlencode(params), "")
+    )
+    req = urllib.request.Request(url, headers={"Authorization": f"Basic {auth}", "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        said = _server_said(exc)
+        hint = (" The access may have been revoked; run simplefin-setup with a new token."
+                if exc.code in (401, 403) and not said.startswith("error code:") else "")
+        raise SimpleFinError(f"SimpleFIN Bridge returned HTTP {exc.code} for {path} ({said}).{hint}") from exc
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+        raise SimpleFinError(f"Couldn't reach SimpleFIN Bridge: {getattr(exc, 'reason', exc)!s}") from exc
+    except json.JSONDecodeError as exc:
+        raise SimpleFinError(f"SimpleFIN Bridge sent something that isn't JSON for {path}") from exc
+
+
+def _epoch(day):
+    return int(datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc).timestamp())
+
+
+def _day(epoch):
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).date()
+
+
+def _org_name(account):
+    org = account.get("org")
+    return org.get("name") if isinstance(org, dict) else org
+
+
+def fetch_accounts(access_url, start, end):
+    """/accounts for [start, end) (dates), in as many calls as SimpleFIN's 90-day cap needs.
+
+    Returns (accounts, errors). An account's transactions are merged across calls; its balance is the
+    current one whatever the window, so the last call's is kept. Version 2 names each account's bank in
+    a separate "connections" list; it's copied onto the account as "org".
+    """
+    accounts, errors = {}, []
+    chunk_start = start
+    while chunk_start < end:
+        chunk_end = min(chunk_start + timedelta(days=MAX_WINDOW_DAYS), end)
+        data = _get_json(access_url, "/accounts", {
+            "version": "2", "start-date": _epoch(chunk_start), "end-date": _epoch(chunk_end),
+        })
+        banks = {c.get("conn_id"): c.get("org_name") or c.get("name") for c in data.get("connections") or []}
+        for a in data.get("accounts", []):
+            merged = accounts.setdefault(a["id"], {**a, "transactions": []})
+            if not merged.get("org") and banks.get(a.get("conn_id")):
+                merged["org"] = banks[a["conn_id"]]
+            merged["balance"] = a.get("balance", merged.get("balance"))
+            merged["balance-date"] = a.get("balance-date", merged.get("balance-date"))
+            merged["transactions"].extend(a.get("transactions") or [])
+        errors.extend(data.get("errlist") or data.get("errors") or [])
+        chunk_start = chunk_end
+    return list(accounts.values()), errors
+
+
+def list_accounts(access_url):
+    """Every account the Bridge knows about: [(id, org, label, balance)], errors."""
+    today = datetime.now(timezone.utc).date()
+    fetched, errors = fetch_accounts(access_url, today - timedelta(days=1), today + timedelta(days=1))
+    return [(a["id"], _org_name(a), a["name"], a.get("balance")) for a in fetched], errors
+
+
+def to_rows(transactions, sync_from=None):
+    """SimpleFIN transactions -> the {date, amount, raw, memo, mcc} rows parse_csv() makes.
+
+    Pending ones are left for the day they post, so they're never counted twice.
+    """
+    out = []
+    for t in transactions:
+        if t.get("pending") or not t.get("posted"):
+            continue
+        day = _day(t["posted"]).isoformat()
+        if sync_from and day < sync_from:
+            continue
+        out.append({"date": day, "amount": round(float(t["amount"]), 2),
+                    "raw": (t.get("description") or "").strip(), "memo": None, "mcc": None})
+    return out
+
+
+def set_synced_balance(conn, account_id, amount, as_of):
+    """Upsert the month's balance from the bank. Unlike other imports, it also replaces a balance typed
+    in by hand, but only an older one: the bank's newer number is the better one, while a number you
+    type with a later date still wins."""
+    conn.execute(
+        """INSERT INTO balances (account_id, month, amount, as_of, source) VALUES (?, ?, ?, ?, 'simplefin')
+           ON CONFLICT (account_id, month) DO UPDATE
+             SET amount = excluded.amount, as_of = excluded.as_of, source = 'simplefin'
+           WHERE balances.source != 'manual' OR COALESCE(balances.as_of, '') < excluded.as_of""",
+        (account_id, as_of[:7], amount, as_of),
+    )
+
+
+def _failed(errors):
+    """(connection ids, account ids) the Bridge reported a problem with; None = can't tell which.
+
+    errlist codes are gen.* (notices about the request, like a long date range), con.* (a bank
+    connection, e.g. con.auth: sign in again) or act.* (one account). Only the last two mean data may be
+    missing; one that doesn't say which connection or account it's about counts against all of them.
+    """
+    conns, accounts = set(), set()
+    for e in errors:
+        if isinstance(e, dict) and str(e.get("code", "")).startswith("gen."):
+            continue
+        if not isinstance(e, dict) or not (e.get("conn_id") or e.get("account_id")):
+            return None
+        conns.add(e.get("conn_id"))
+        accounts.add(e.get("account_id"))
+    return conns - {None}, accounts - {None}
+
+
+# ---------------------------------------------------------------- mapping and syncing
+
+def map_account(conn, external_id, account_id, transactions=None, sync_from=None):
+    """Tie a SimpleFIN account to a local one. Returns (transactions?, sync_from).
+
+    transactions: None = by the account's kind (TRANSACTION_KINDS). sync_from: None = the day after the
+    account's latest transaction, so the sync picks up exactly where CSV uploads left off.
+    """
+    kind = conn.execute("SELECT kind FROM accounts WHERE id = ?", (account_id,)).fetchone()["kind"]
+    if transactions is None:
+        transactions = kind in TRANSACTION_KINDS
+    if sync_from is None:
+        latest = conn.execute("SELECT MAX(date) FROM transactions WHERE account_id = ?", (account_id,)).fetchone()[0]
+        sync_from = (date.fromisoformat(latest) + timedelta(days=1)).isoformat() if latest else date.today().isoformat()
+    conn.execute(
+        """INSERT INTO simplefin_accounts (external_id, account_id, transactions, sync_from) VALUES (?, ?, ?, ?)
+           ON CONFLICT (external_id) DO UPDATE SET account_id = excluded.account_id,
+             transactions = excluded.transactions, sync_from = excluded.sync_from, last_synced = NULL""",
+        (external_id, account_id, int(transactions), sync_from),
+    )
+    return transactions, sync_from
+
+
+def status(conn, today=None):
+    """[dict] for each mapped account: names, mode, sync_from, last_synced, stale?"""
+    today = today or date.today()
+    out = []
+    for r in conn.execute(
+        "SELECT s.*, a.name AS account FROM simplefin_accounts s JOIN accounts a ON a.id = s.account_id ORDER BY a.sort, a.name"
+    ):
+        row = dict(r)
+        row["stale"] = not row["last_synced"] or (today - date.fromisoformat(row["last_synced"])).days > STALE_DAYS
+        out.append(row)
+    return out
+
+
+def sync(conn, access_url, today=None, since=None):
+    """Pull every mapped account from its last good sync (or since, if given) through today.
+
+    Returns {"start", "end", "accounts": [dict], "unmapped": [(id, org, label)], "missing": [local
+    names], "errors": [...], "stale": [dict]}. Raises SimpleFinError if the Bridge couldn't be reached,
+    in which case nothing was stored and no watermark moved. The caller commits.
+    """
+    today = today or date.today()
+    mapped = {r["external_id"]: dict(r) for r in conn.execute(
+        "SELECT s.*, a.name AS account, a.kind FROM simplefin_accounts s JOIN accounts a ON a.id = s.account_id"
+    )}
+    if since:
+        start = since
+    elif mapped:
+        start = min(date.fromisoformat(m["last_synced"] or m["sync_from"]) for m in mapped.values())
+    else:
+        start = today
+    start -= timedelta(days=OVERLAP_DAYS)
+    end = today + timedelta(days=1)  # end-date is exclusive; include what posted today
+    fetched, errors = fetch_accounts(access_url, start, end)
+    failed = _failed(errors)
+
+    results, unmapped, seen = [], [], set()
+    balances = {}  # local account id -> [total, latest as_of]: several bank accounts can feed one
+    for a in fetched:
+        m = mapped.get(a["id"])
+        if m is None:
+            unmapped.append((a["id"], _org_name(a), a["name"]))
+            continue
+        seen.add(a["id"])
+        read = added = 0
+        if m["transactions"]:
+            rows = to_rows(a.get("transactions") or [], m["sync_from"])
+            if rows:
+                _, read, added, _, _ = store_transactions(conn, m["account_id"], "SimpleFIN sync", rows, kind="csv")
+                replace_spreadsheet_rows(conn, m["account_id"], rows, "SimpleFIN sync")
+        balance = None
+        if a.get("balance") not in (None, ""):
+            balance = float(a["balance"])
+            # A balance is a moment, so it takes this Mac's local date (a UTC date can be tomorrow here in
+            # the evening, leaving no balance on or before today), and never one later than today.
+            as_of = min(datetime.fromtimestamp(a["balance-date"]).date() if a.get("balance-date") else today, today).isoformat()
+            total = balances.setdefault(m["account_id"], [0.0, as_of, m["kind"]])
+            total[0] += balance
+            total[1] = max(total[1], as_of)
+        ok = failed is not None and a.get("conn_id") not in failed[0] and a["id"] not in failed[1]
+        conn.execute(
+            "UPDATE simplefin_accounts SET org = ?, label = ?, last_synced = COALESCE(?, last_synced) WHERE external_id = ?",
+            (_org_name(a), a["name"], today.isoformat() if ok else None, a["id"]),
+        )
+        if balance is not None and seed.account_side(m["kind"]) == "liability":
+            balance = abs(balance)  # shown the way it's stored: what's owed
+        results.append({"org": _org_name(a), "label": a["name"], "account": m["account"], "added": added,
+                        "read": read, "balance": balance, "ok": ok})
+    missing = [m["account"] for ext, m in mapped.items() if ext not in seen]
+    for account_id, (total, as_of, kind) in balances.items():
+        if any(m["account_id"] == account_id and ext not in seen for ext, m in mapped.items()):
+            continue  # part of this account didn't come back; a partial sum would be wrong
+        if seed.account_side(kind) == "liability":
+            total = abs(total)  # stored as what's owed
+        set_synced_balance(conn, account_id, round(total, 2), as_of)
+    stale = [s for s in status(conn, today) if s["stale"]]
+    return {"start": start, "end": today, "accounts": results, "unmapped": unmapped, "missing": missing,
+            "errors": errors, "stale": stale}

@@ -82,4 +82,4 @@ investments_sheet = "Investments"
 "Brokerage" = { account = "Brokerage", kind = "brokerage", column = "E" }
 
 # Account kinds: checking, savings, cash, brokerage, retirement, hsa, crypto, property, vehicle,
-# other, credit, loan, other_debt
+# other, held (a child's 529 or other money you track but don't own), credit, loan, other_debt

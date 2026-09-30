@@ -131,6 +131,70 @@ CREATE TABLE IF NOT EXISTS loan_terms (
     start_date  TEXT NOT NULL,                  -- YYYY-MM-DD; payments counted in whole months since
     counts_from TEXT                            -- YYYY-MM-DD the calculation takes over (default start_date)
 );
+
+-- Maps a SimpleFIN Bridge account (bridge.simplefin.org) to a local account for the daily sync.
+-- The Bridge access URL is a credential and lives in its own file (simplefin_import.access_url_path),
+-- not here, so backups of this database never contain it.
+CREATE TABLE IF NOT EXISTS simplefin_accounts (
+    external_id  TEXT PRIMARY KEY,
+    account_id   INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    org          TEXT,                          -- institution name, for display only
+    label        TEXT,                          -- SimpleFIN's account name, for display only
+    transactions INTEGER NOT NULL DEFAULT 1,    -- 0 = balance only (investments, loans)
+    sync_from    TEXT NOT NULL,                 -- YYYY-MM-DD: transactions before this came from CSVs/the workbook
+    last_synced  TEXT                           -- YYYY-MM-DD this account last came back without an error
+);
+
+-- Blackjack (blackjack.py). A session is one casino visit; its tables are the games played there,
+-- one per row of the old tracker workbook. A session's result lands in the bankroll cash account as a
+-- transaction. Rules, research fields and training fields are JSON keyed by the tracker's own headers.
+CREATE TABLE IF NOT EXISTS bj_sessions (
+    id             INTEGER PRIMARY KEY,
+    date           TEXT NOT NULL,              -- YYYY-MM-DD
+    location       TEXT NOT NULL,
+    result         REAL,                       -- actual win (+) or loss (-) for the visit; NULL = not recorded
+    tip            REAL,
+    miles          REAL,
+    flight         REAL,
+    room_board     REAL,
+    wearing        TEXT,
+    notes          TEXT,
+    casino_notes   TEXT,                       -- what to know about the casino next time (the "411")
+    source         TEXT NOT NULL DEFAULT 'app', -- 'app', or the workbook sheet it came from
+    transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS bj_tables (
+    id         INTEGER PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES bj_sessions(id) ON DELETE CASCADE,
+    sort       INTEGER NOT NULL DEFAULT 0,
+    hours      REAL,
+    ev_total   REAL,
+    ev_hour    REAL,
+    rules      TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS bj_research (
+    id     INTEGER PRIMARY KEY,
+    region TEXT NOT NULL,
+    sort   INTEGER NOT NULL DEFAULT 0,
+    casino TEXT NOT NULL,
+    fields TEXT NOT NULL DEFAULT '{}',
+    source TEXT NOT NULL DEFAULT 'app'  -- 'app', or the workbook sheet it came from
+);
+CREATE TABLE IF NOT EXISTS bj_notes (
+    id     INTEGER PRIMARY KEY,
+    region TEXT NOT NULL,
+    sort   INTEGER NOT NULL DEFAULT 0,
+    title  TEXT,
+    body   TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'app'  -- 'app', or the workbook sheet it came from
+);
+CREATE TABLE IF NOT EXISTS bj_training (
+    id      INTEGER PRIMARY KEY,
+    date    TEXT NOT NULL,
+    minutes INTEGER,
+    fields  TEXT NOT NULL DEFAULT '{}',
+    source TEXT NOT NULL DEFAULT 'app'  -- 'app', or the workbook sheet it came from
+);
 """
 
 

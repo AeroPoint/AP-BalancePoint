@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}Bankroll{% endblock %}
+
+{% macro signed(v) -%}
+{%- if v is none %}<span class="muted">—</span>{% else %}<span class="{{ 'in' if v > 0 }}">{{ '+' if v > 0 }}{{ v|money }}</span>{% endif -%}
+{%- endmacro %}
+
+{% macro table_fields(i, t) %}
+{% set r = t.rules if t else {} %}
+<fieldset class="bj-table" data-index="{{ i }}">
+  <legend>Table {{ i + 1 }}</legend>
+  <div class="bj-grid">
+    <label class="field"><span>Hours</span><input name="table{{ i }}-hours" placeholder="1:45" value="{{ t.hours|hm if t and t.hours else '' }}"></label>
+    <label class="field"><span>EV per hour</span><input name="table{{ i }}-ev_hour" inputmode="decimal" placeholder="85.50" value="{{ t.ev_hour if t and t.ev_hour is not none else '' }}"></label>
+    <label class="field"><span>or EV total</span><input name="table{{ i }}-ev_total" inputmode="decimal" value="{{ t.ev_total if t and t.ev_total is not none and t.ev_hour is none else '' }}"></label>
+    {% for key in rule_keys %}
+    <label class="field"><span>{{ rule_labels.get(key, key) }}</span>
+      {% if key == "17" %}
+      <select name="table{{ i }}-17"><option value="">—</option>{% for v, l in [("H", "Hits (H17)"), ("S", "Stands (S17)")] %}<option value="{{ v }}"{% if r.get("17") == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      {% elif key in ("RSA", "DAS", "Sur") %}
+      <select name="table{{ i }}-{{ key }}"><option value="">—</option>{% for v in ("Y", "N") %}<option{% if r.get(key) == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      {% else %}
+      <input name="table{{ i }}-{{ key }}" value="{{ r.get(key, '') }}"
+        {%- if key in ("Decks", "Cutoff", "SP#", "# Players", "N0", "Min", "Max", "Deck Divisor") %} inputmode="decimal"{% endif %}
+        placeholder="{{ {'BJ': '3:2', 'Double': 'All', 'Spread': '1-20', 'Play All': 'Yes', 'Speed': 'Average', 'Deck Estimation': 'Truncate'}.get(key, '') }}">
+      {% endif %}
+    </label>
+    {% endfor %}
+  </div>
+</fieldset>
+{% endmacro %}
+
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Bankroll</h1>
+    <p class="sub">
+      Blackjack sessions with what the game was worth (EV) next to what actually happened, plus casino research and practice.
+      Each session's result is also a transaction in {{ account_name }}.
+    </p>
+  </div>
+  <nav class="inline" aria-label="On this page">
+    <a class="btn small" href="#log">Log a session</a>
+    <a class="btn small quiet" href="#sessions">Sessions</a>
+    <a class="btn small quiet" href="#years">By year</a>
+    <a class="btn small quiet" href="#research">Research</a>
+    <a class="btn small quiet" href="#training">Training</a>
+  </nav>
+</header>
+
+{% set L = lifetime %}
+{% if L.sessions %}
+<section class="statement">
+  <h1>
+    Over <b>{{ L.sessions }} sessions</b> and {{ L.hours|round(1) }} hours, blackjack has {{ 'won' if L.av >= 0 else 'lost' }}
+    <b>{{ L.av|abs|money }}</b>: {{ L.av_hour|money }} an hour against {{ L.ev_hour|money }} expected.
+  </h1>
+  <p class="compare">
+    Expected so far {{ L.ev|money }}, so you're running {{ (L.av - L.ev)|abs|money(false) }} {{ 'above' if L.av >= L.ev else 'below' }} expectation.
+    After travel ({{ L.travel|money(false) }} in miles, flights and rooms) it's {{ L.net|money }}.
+    {% if balance is not none %}{{ account_name }} holds {{ balance|money }} today.{% endif %}
+  </p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Running result</h2>
+    <p class="muted">Actual winnings added up session by session, next to what the games were expected to win. The gap is variance.</p>
+  </div>
+  <div id="bj-run" class="chart"></div>
+</section>
+{% endif %}
+
+<details class="panel bj-log" id="log" {% if editing or not L.sessions %}open{% endif %}>
+  <summary><h2>{{ 'Edit session: ' ~ editing.location if editing else 'Log a session' }}</h2></summary>
+  {% set e = editing %}
+  <form method="post" action="{{ url_for('main.save_bj_session') }}" class="bj-form">
+    {% if e %}<input type="hidden" name="id" value="{{ e.id }}"><input type="hidden" name="source" value="{{ e.source }}">{% endif %}
+    <div class="bj-grid">
+      <label class="field"><span>Date</span><input type="date" name="date" required value="{{ e.date if e else today }}"></label>
+      <label class="field grow"><span>Casino</span><input name="location" required list="bj-locations" value="{{ e.location if e else '' }}" placeholder="Riverside Casino (Reno)"></label>
+      <label class="field"><span>Result</span>
+        <select name="outcome"><option value="won"{% if not e or (e.result or 0) >= 0 %} selected{% endif %}>Won</option><option value="lost"{% if e and (e.result or 0) < 0 %} selected{% endif %}>Lost</option></select>
+      </label>
+      <label class="field"><span>Amount</span><input name="result" inputmode="decimal" placeholder="400.00" value="{{ e.result|abs if e and e.result is not none else '' }}"></label>
+      <label class="field"><span>Tip</span><input name="tip" inputmode="decimal" value="{{ e.tip if e and e.tip else '' }}"></label>
+    </div>
+    <div id="bj-tables">
+      {% if e and e.tables %}{% for t in e.tables %}{{ table_fields(loop.index0, t) }}{% endfor %}{% else %}{{ table_fields(0, none) }}{% endif %}
+    </div>
+    <button type="button" class="btn small" id="bj-add-table">Add another table</button>
+    <div class="bj-grid">
+      <label class="field"><span>Miles driven</span><input name="miles" inputmode="decimal" value="{{ e.miles if e and e.miles else '' }}"></label>
+      <label class="field"><span>Flight</span><input name="flight" inputmode="decimal" value="{{ e.flight if e and e.flight else '' }}"></label>
+      <label class="field"><span>Room and board</span><input name="room_board" inputmode="decimal" value="{{ e.room_board if e and e.room_board else '' }}"></label>
+      <label class="field grow"><span>Wearing</span><input name="wearing" value="{{ e.wearing if e and e.wearing else '' }}"></label>
+    </div>
+    <label class="field"><span>Notes</span><textarea name="notes" rows="2" placeholder="How it went: heat, back-offs, bet ramp">{{ e.notes if e and e.notes else '' }}</textarea></label>
+    <label class="field"><span>Casino notes (411)</span><textarea name="casino_notes" rows="3" placeholder="What to know next time: pen by dealer, cash-out limits, ID, surveillance">{{ e.casino_notes if e and e.casino_notes else '' }}</textarea></label>
+    <div class="form-actions">
+      <button class="btn primary">{{ 'Save changes' if e else 'Save session' }}</button>
+      {% if e %}<a class="btn quiet" href="{{ url_for('main.bankroll') }}#sessions">Cancel</a>{% endif %}
+    </div>
+  </form>
+  <datalist id="bj-locations">{% for l in locations %}<option value="{{ l }}">{% endfor %}</datalist>
+</details>
+
+{% if L.sessions %}
+<section class="panel" id="years">
+  <div class="panel-head">
+    <h2>By year</h2>
+    <p class="muted">The tracker's totals. Travel is miles × {{ rate|money }} a mile, plus flights and room and board; the grand total takes it off the result.</p>
+  </div>
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead><tr><th>Year</th><th class="num">Sessions</th><th class="num">Hours</th><th class="num">EV</th><th class="num">EV / h</th><th class="num">Result</th><th class="num">Result / h</th><th class="num">Miles</th><th class="num">Travel</th><th class="num">Grand total</th></tr></thead>
+      <tbody>
+        {% for y, t in years %}
+        <tr>
+          <td>{{ y }}</td><td class="num">{{ t.sessions }}</td><td class="num">{{ t.hours|round(1) }}</td>
+          <td class="num">{{ t.ev|money }}</td><td class="num">{{ t.ev_hour|money }}</td>
+          <td class="num strong">{{ signed(t.av) }}</td><td class="num">{{ t.av_hour|money }}</td>
+          <td class="num">{{ '{:,.0f}'.format(t.miles) }}</td>
+          <td class="num" title="Mileage {{ t.mileage|money }}, flights {{ t.flight|money }}, room and board {{ t.room_board|money }}">{{ t.travel|money }}</td>
+          <td class="num strong">{{ signed(t.net) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>All time</td><td class="num">{{ L.sessions }}</td><td class="num">{{ L.hours|round(1) }}</td>
+          <td class="num">{{ L.ev|money }}</td><td class="num">{{ L.ev_hour|money }}</td>
+          <td class="num">{{ signed(L.av) }}</td><td class="num">{{ L.av_hour|money }}</td>
+          <td class="num">{{ '{:,.0f}'.format(L.miles) }}</td><td class="num">{{ L.travel|money }}</td><td class="num">{{ signed(L.net) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <form method="post" action="{{ url_for('main.save_bj_mile_rate') }}" class="inline bj-rate">
+    <label class="field"><span>$ per mile</span><input name="rate" inputmode="decimal" value="{{ rate }}"></label>
+    <button class="btn small">Save rate</button>
+  </form>
+</section>
+
+<section class="panel flush" id="sessions">
+  <div class="panel-head bj-pad"><h2>Sessions</h2><p class="muted">Newest first. Open a session for its games, rules and notes.</p></div>
+  <div class="table-wrap">
+    <table class="ledger bj-sessions">
+      <thead><tr><th>Date</th><th>Casino</th><th class="num">Hours</th><th class="num">EV</th><th class="num">EV / h</th><th class="num">Result</th><th class="num">Result / h</th></tr></thead>
+      {% for s in sessions %}
+      <tbody id="s{{ s.id }}">
+        <tr>
+          <td class="nowrap">{{ s.date|day_label }}</td>
+          <td>{{ s.location }}{% if s.tables|length > 1 %} <span class="muted">· {{ s.tables|length }} tables</span>{% endif %}</td>
+          <td class="num">{{ s.hours|hm }}</td>
+          <td class="num">{{ s.ev|money }}</td>
+          <td class="num">{{ s.ev_hour|money }}</td>
+          <td class="num strong">{{ signed(s.result) }}</td>
+          <td class="num">{{ s.av_hour|money }}</td>
+        </tr>
+        <tr class="bj-detail">
+          <td colspan="7">
+            <details>
+              <summary>{% for t in s.tables %}{{ rules_line(t.rules) or 'Game not recorded' }}{{ ' / ' if not loop.last }}{% endfor %}{% if s.notes %} · <em>{{ s.notes.splitlines()[0] }}</em>{% endif %}</summary>
+              <div class="bj-more">
+                {% for t in s.tables %}
+                <div class="bj-game">
+                  <h3>{% if s.tables|length > 1 %}Table {{ loop.index }}: {% endif %}{{ t.hours|hm }} h, EV {{ t.ev_total|money }}{% if t.ev_hour is not none %} ({{ t.ev_hour|money }}/h){% endif %}</h3>
+                  <dl class="bj-rules">
+                    {% for key in rule_keys if t.rules.get(key) not in (none, '') %}<div><dt>{{ rule_labels.get(key, key) }}</dt><dd>{{ t.rules[key] }}</dd></div>{% endfor %}
+                    {% if t.rules.get('N0') and t.hours %}<div><dt>Hours / N0</dt><dd>{{ '%.3f'|format(t.hours / t.rules['N0']) if t.rules['N0'] is number else '—' }}</dd></div>{% endif %}
+                  </dl>
+                </div>
+                {% endfor %}
+                <dl class="bj-rules">
+                  {% if s.tip %}<div><dt>Tip</dt><dd>{{ s.tip|money }}</dd></div>{% endif %}
+                  {% if s.miles %}<div><dt>Miles</dt><dd>{{ s.miles }}</dd></div>{% endif %}
+                  {% if s.flight %}<div><dt>Flight</dt><dd>{{ s.flight|money }}</dd></div>{% endif %}
+                  {% if s.room_board %}<div><dt>Room and board</dt><dd>{{ s.room_board|money }}</dd></div>{% endif %}
+                  {% if s.wearing %}<div><dt>Wearing</dt><dd>{{ s.wearing }}</dd></div>{% endif %}
+                </dl>
+                {% if s.notes %}<p class="bj-text"><strong>Notes.</strong> {{ s.notes }}</p>{% endif %}
+                {% if s.casino_notes %}<p class="bj-text"><strong>Casino notes.</strong> {{ s.casino_notes }}</p>{% endif %}
+                <div class="form-actions">
+                  <a class="btn small" href="{{ url_for('main.bankroll', edit=s.id) }}#log">Edit</a>
+                  <form method="post" action="{{ url_for('main.delete_bj_session', sid=s.id) }}" data-confirm="Delete {{ s.location }} on {{ s.date|day_label }}, and its result in {{ account_name }}?">
+                    <button class="btn small danger">Delete</button>
+                  </form>
+                  <span class="muted">{{ 'Logged here' if s.source == 'app' else 'From the ' ~ s.source ~ ' sheet' }}</span>
+                </div>
+              </div>
+            </details>
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel" id="research">
+  <div class="panel-head">
+    <h2>Research</h2>
+    <p class="muted">Casinos and games by trip, with your notes. Casino notes (411) from sessions show under the casino they're about.</p>
+  </div>
+  {% for region, columns, rows, notes, casino_notes in research %}
+  <details class="bj-region">
+    <summary><h3>{{ region }}</h3> <span class="muted">{% if rows %}{{ rows|length }} games{% endif %}{% if notes %}{{ ', ' if rows }}{{ notes|length }} notes{% endif %}{% if casino_notes %}{{ ', ' if rows or notes }}{{ casino_notes|length }} casino notes{% endif %}</span></summary>
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="ledger bj-research">
+        <thead><tr><th>Casino</th>{% for c in columns %}<th>{{ c }}</th>{% endfor %}<th></th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td class="strong">{% if loop.first or rows[loop.index0 - 1].casino != r.casino %}{{ r.casino }}{% endif %}</td>
+            {% for c in columns %}{% set v = r.fields.get(c) %}<td{% if v is number %} class="num"{% endif %}>{% if v is none %}{% elif v is string and v.startswith('http') %}<a href="{{ v }}" target="_blank" rel="noopener">link</a>{% else %}{{ v }}{% endif %}</td>{% endfor %}
+            <td class="actions">
+              <details class="more">
+                <summary class="btn small quiet">Edit</summary>
+                <div class="more-panel">
+                  <form method="post" action="{{ url_for('main.save_bj_research') }}" class="stack">
+                    <input type="hidden" name="id" value="{{ r.id }}"><input type="hidden" name="region" value="{{ region }}">
+                    <label class="field"><span>Casino</span><input name="casino" value="{{ r.casino }}" required></label>
+                    {% for c in columns %}<label class="field"><span>{{ c }}</span><input name="field:{{ c }}" value="{{ r.fields.get(c, '') }}"></label>{% endfor %}
+                    <button class="btn small primary">Save</button>
+                  </form>
+                  <form method="post" action="{{ url_for('main.delete_bj_research', rid=r.id) }}" data-confirm="Delete this {{ r.casino }} row?">
+                    <button class="btn small danger">Delete</button>
+                  </form>
+                </div>
+              </details>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% for n in notes %}
+    <div class="bj-note">
+      {% if n.title %}<h4>{{ n.title }}</h4>{% endif %}
+      {% if n.table %}
+      <table class="ledger bj-mini"><thead><tr>{% for h in n.table[0] %}<th class="num">{{ h }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in n.table[1:] %}<tr>{% for v in row %}<td class="num">{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+      {% else %}
+      <p class="bj-text">{% for line in n.body.splitlines() %}{% if line.startswith('http') %}<a href="{{ line }}" target="_blank" rel="noopener">Open in Google Maps</a>{% else %}{{ line }}{% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% for s in casino_notes %}
+    <div class="bj-note"><h4>{{ s.location }}: casino notes <span class="muted">({{ s.date|day_label }})</span></h4>
+      <p class="bj-text">{{ s.casino_notes }}</p>
+    </div>
+    {% endfor %}
+    {% if rows or region != "Other casinos" %}
+    <details class="add-txn">
+      <summary>Add a casino or game to {{ region }}</summary>
+      <form method="post" action="{{ url_for('main.save_bj_research') }}" class="inline">
+        <input type="hidden" name="region" value="{{ region }}">
+        <label class="field"><span>Casino</span><input name="casino" required list="bj-locations"></label>
+        {% for c in (columns or research_columns) %}<label class="field"><span>{{ c }}</span><input name="field:{{ c }}"></label>{% endfor %}
+        <button class="btn small primary">Add</button>
+      </form>
+    </details>
+    {% endif %}
+  </details>
+  {% endfor %}
+  <details class="add-txn">
+    <summary>Start research for a new trip</summary>
+    <form method="post" action="{{ url_for('main.save_bj_research') }}" class="inline">
+      <label class="field"><span>Trip or region</span><input name="region" required placeholder="Reno"></label>
+      <label class="field"><span>Casino</span><input name="casino" required></label>
+      {% for c in research_columns %}<label class="field"><span>{{ c }}</span><input name="field:{{ c }}"></label>{% endfor %}
+      <button class="btn small primary">Add</button>
+    </form>
+  </details>
+</section>
+
+<section class="panel" id="training">
+  <div class="panel-head">
+    <h2>Training</h2>
+    <p class="muted">Practice sessions: drills, test-outs and casino sims.</p>
+  </div>
+  {% set tcols = training_columns or ["Source", "Testout", "Count", "Deviations", "Basic", "True Count", "Casino Sim"] %}
+  {% if training %}
+  <div class="table-wrap">
+    <table class="ledger">
+      <thead><tr><th>Date</th><th class="num">Time</th>{% for c in tcols %}<th>{{ c }}</th>{% endfor %}<th></th></tr></thead>
+      <tbody>
+        {% for t in training %}
+        <tr>
+          <td class="nowrap">{{ t.date|day_label }}</td><td class="num">{{ (t.minutes / 60)|hm if t.minutes else '—' }}</td>
+          {% for c in tcols %}<td>{{ t.fields.get(c, '') }}</td>{% endfor %}
+          <td class="actions"><form method="post" action="{{ url_for('main.delete_bj_training', tid=t.id) }}" data-confirm="Delete this practice session?"><button class="btn small quiet">Delete</button></form></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <details class="add-txn">
+    <summary>Add a practice session</summary>
+    <form method="post" action="{{ url_for('main.save_bj_training') }}" class="inline">
+      <label class="field"><span>Date</span><input type="date" name="date" required value="{{ today }}"></label>
+      <label class="field"><span>Minutes</span><input name="minutes" inputmode="numeric"></label>
+      {% for c in tcols %}<label class="field"><span>{{ c }}</span><input name="field:{{ c }}"></label>{% endfor %}
+      <button class="btn small primary">Add</button>
+    </form>
+  </details>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="bj-data">{{ running|tojson }}</script>
+<script type="application/json" id="bj-last-rules">{% set last = {} %}{% for s in sessions|reverse if s.tables %}{% set _ = last.update({s.location: s.tables[0].rules}) %}{% endfor %}{{ last|tojson }}</script>
+<script src="{{ url_for('static', filename='bankroll.js') }}"></script>
+{% endblock %}

@@ -119,14 +119,15 @@
     render();
   }
 
-  function yAxis(root, { left, right, top, plotH, max, width }) {
+  function yAxis(root, { left, right, top, plotH, max, width, min = 0, step }) {
     // Quarter steps of 50k are 12.5k; use fifths then so ticks land on round numbers.
+    // With values below zero, the caller passes min and a round step, and zero gets the axis line.
     const quarter = max / 4;
-    const steps = quarter % 10 ** Math.floor(Math.log10(quarter)) === 0 ? 4 : 5;
+    const steps = step ? Math.round((max - min) / step) : quarter % 10 ** Math.floor(Math.log10(quarter)) === 0 ? 4 : 5;
     for (let i = 0; i <= steps; i++) {
-      const v = (max / steps) * i;
-      const y = Math.round(top + plotH - (v / max) * plotH) + 0.5;
-      svg("line", { x1: left, x2: width - right, y1: y, y2: y, stroke: token(i === 0 ? "--axis" : "--grid"), "stroke-width": 1 }, root);
+      const v = min + ((max - min) / steps) * i;
+      const y = Math.round(top + plotH - ((v - min) / (max - min)) * plotH) + 0.5;
+      svg("line", { x1: left, x2: width - right, y1: y, y2: y, stroke: token(Math.abs(v) < 1e-9 ? "--axis" : "--grid"), "stroke-width": 1 }, root);
       svg("text", { x: left - 8, y: y + 4, "text-anchor": "end" }, root).textContent = money(v, true);
     }
   }
@@ -207,12 +208,21 @@
       const plotW = width - m.left - m.right;
       const plotH = height - m.top - m.bottom;
       const values = series.flatMap((s) => s.values.filter((v) => v != null));
-      const max = niceMax(Math.max(0, ...values));
+      const low = Math.min(0, ...values);
+      let max = niceMax(Math.max(0, ...values));
+      let min = 0;
+      let tick;
+      if (low < 0) {
+        // Running totals can dip below zero: round both ends to one step so zero lands on a tick.
+        tick = niceMax((Math.max(0, ...values) - low) / 5);
+        min = Math.floor(low / tick) * tick;
+        max = Math.max(tick, Math.ceil(Math.max(0, ...values) / tick) * tick);
+      }
       const root = svg("svg", { width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": series.map((s) => s.name).join(", ") }, container);
-      yAxis(root, { left: m.left, right: m.right, top: m.top, plotH, max, width });
+      yAxis(root, { left: m.left, right: m.right, top: m.top, plotH, max, width, min, step: tick });
       const step = labels.length > 1 ? plotW / (labels.length - 1) : 0;
       const X = (i) => m.left + step * i;
-      const Y = (v) => m.top + plotH - (Math.max(0, v) / max) * plotH;
+      const Y = (v) => m.top + plotH - ((Math.max(min, v) - min) / (max - min)) * plotH;
       const labelEvery = step ? labelStep(labels, step) : 1;
       labels.forEach((label, i) => {
         if (i % labelEvery === 0) svg("text", { x: X(i), y: height - 8, "text-anchor": "middle" }, root).textContent = label;

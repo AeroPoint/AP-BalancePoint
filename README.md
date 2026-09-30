@@ -42,12 +42,14 @@ always-on machine at home instead, the same way.
    computer first, so only one copy of the database is in use.
 2. Install Tailscale for Mac and sign in to the same account. In System Settings → Energy, turn on
    *Prevent automatic sleeping* and *Start up automatically after a power failure*.
-3. In Terminal: `cd ~/Budget && chmod +x *.sh && ./install-mac.sh`. It sets up Python (3.11+
-   needed) the first time, starts the app, and makes it start again at every login and after a
+3. In Terminal: `brew install python@3.12`, then `cd ~/Budget && chmod +x *.sh && ./install-mac.sh`.
+   The app gets its own environment in `.venv`, built from Homebrew's Python so it doesn't depend on
+   conda or whatever `python` means in your shell; `python run.py ...` switches into it by itself.
+   The installer starts the app, and makes it start again at every login and after a
    crash. It prints the address for phones and other computers, e.g. `http://mac-mini:5000`.
    Allow incoming connections if macOS asks.
-4. Log: `data/server.log`. Remove the auto-start with `./install-mac.sh remove`; run it by hand
-   with `./start-mac.sh`.
+4. Log: `data/server.log`. Remove the auto-start (and the daily bank sync) with
+   `./install-mac.sh remove`; run it by hand with `./start-mac.sh`.
 
 For the app to come back after a power cut, the Mac needs to log in to that account on its own
 (System Settings → Users & Groups → automatic login), since it starts at login.
@@ -86,6 +88,49 @@ startup, so restart after editing. Changes you make in the app win over the file
   Running it again is safe. It won't overwrite categories or balances you changed in the app.
 - **Command-line CSV import:**
   `run.py import-csv export.csv --account "Checking" --kind checking`
+- **Automatic bank sync:** see below.
+
+### Automatic bank sync (SimpleFIN Bridge)
+
+[SimpleFIN Bridge](https://bridge.simplefin.org) is a read-only bank-data service: $1.50 a month or
+$15 a year for up to 25 institutions, paid to them directly. The app pulls from it once a day, so bank
+CSVs aren't needed for the accounts it covers.
+
+1. Sign up at bridge.simplefin.org, connect each bank there, and create a **setup token**.
+2. `run.py simplefin-setup <token>`. The token works once; the long-lived access it's exchanged for
+   is saved to `data/simplefin-access-url` (only your user can read it, and `data/`'s own git repo
+   ignores it). It lists every account the Bridge sees, each with an id.
+3. For each: `run.py simplefin-map <id> --account "Joint Checking"`. The account must already exist on
+   the Accounts page.
+   - Checking, savings, credit card and cash accounts sync **transactions and the balance**.
+     Transactions start the day after the account's latest one, so nothing CSVs already brought in is
+     doubled; `--from YYYY-MM-DD` picks another day. Once an account syncs, stop uploading its CSVs:
+     the bank's text in a CSV can differ from SimpleFIN's, so the same charge could come in twice.
+   - Everything else (brokerage, retirement, HSA, loans) syncs **the balance only**, so a 401(k)
+     contribution isn't counted as income on top of *Paycheck retirement savings*. `--transactions` or
+     `--balance-only` overrides.
+4. `run.py simplefin-sync` pulls everything new; `run.py simplefin-status` shows when each account was
+   last pulled. Reconnecting a bank at the Bridge gives its accounts new ids: the log then
+   shows the old id as "mapped, but the Bridge didn't return it" and the new one as not mapped;
+   `run.py simplefin-unmap <old id>` and map the new one.
+5. Loans: a synced lender balance replaces the loan schedule from its date on, while it's less than
+   35 days old, so the schedule still covers history and takes over again if the sync stops.
+
+On the Mac, `install-mac.sh` runs `sync-mac.sh` **every day at 6:00** (after the banks' overnight
+posting) and again whenever the Mac starts up. It commits `data/` before and after, so a bad sync is
+one `git revert` away. Log: `data/simplefin-sync.log`.
+
+Missed days fill in by themselves. Each account remembers its last good pull, and the next run starts
+from the oldest of those, less 5 days for anything that posted late. So after a week with the Mac off
+or offline, or with a bank that needed signing in again at the Bridge, the next run pulls the whole
+gap. An account whose bank reported a problem keeps its old date until a clean pull. The log flags any
+account not pulled in 2+ days as **STALE**; the usual fix is signing in to that bank again at
+bridge.simplefin.org.
+
+Synced balances count like ones you type: the latest one in a month is that month's balance. A synced
+balance replaces one you typed only when the bank's date is newer. Pending transactions wait until
+they post. The Bridge asks for no more than 24 requests a day; a daily run uses one (more only when
+catching up past 90 days).
 
 ## Accounts and net worth
 
@@ -96,7 +141,8 @@ account comes in under two names, merge them.
 
 *Net worth* shows where money sits in a month, own/owe/net over time, and each account's
 balance history. Tick accounts on or off, or use a preset (cash only, investments only, leave
-out home and cars). Balances are for a day. For accounts with transactions, the app estimates
+out home and cars). Accounts typed *Held for someone else* (a child's 529) sit in their own group and
+stay out of every total until you tick them. Balances are for a day. For accounts with transactions, the app estimates
 today's balance from the last one entered plus everything that posted since; type the bank's
 number now and then to correct it. Accounts without transactions carry their last balance forward.
 Loans with fixed terms (*Accounts → Loan schedules*) are calculated every month instead, and the
@@ -145,13 +191,19 @@ ahead of other cash accounts.
 
 ### Blackjack bankroll
 
-A bankroll is a cash account of its own (e.g. "Blackjack Bankroll"). Money moving between it and the
-bank is a Transfer; session results come from a tracker workbook: *Upload data → Blackjack tracker*,
-or `python run.py import-blackjack "Blackjack Tracker.xlsx" --account "Blackjack Bankroll"`. Every
-sheet with "Date" and "AV Total" columns is read, one Blackjack-category result per dated row (win =
-money in, loss = money out); total rows without a date are skipped. Importing again replaces the
-earlier sessions, so update the tracker and re-import. If the account's balance drifts from the cash
-you actually hold, enter what you hold on the Net worth page.
+The **Bankroll** page is the blackjack tracker: every session (a casino visit, with each table's game,
+rules, conditions, hours and EV), what actually happened next to what was expected, yearly totals like
+the tracker's own (travel is miles × a $/mile rate plus flights and room and board), a running-result
+chart, research by trip (casinos, rules, EV, bet spreads, directions) and a training log.
+
+- **Log a session** on the page, on the phone at the casino if you like. Picking a casino you've played
+  fills in its last game. Add a table per game played during the visit.
+- Each session's result is a transaction in the *Blackjack Bankroll* cash account, Blackjack category,
+  and follows the session when it's edited or deleted. Money moving between it and the bank is a
+  Transfer. If the account drifts from the cash you actually hold, enter what you hold on Net worth.
+- The old workbook (`data/source/Blackjack Tracker.xlsx`) was imported once: *Upload data → Blackjack
+  tracker*, or `python run.py import-blackjack "Blackjack Tracker.xlsx"`. Importing again replaces only
+  what came from a workbook; sessions, research and practice added in the app stay.
 
 ## How naming and categorizing works
 
@@ -209,7 +261,8 @@ budget/
   reports.py            monthly/yearly aggregations
   balances.py           account balances on any date, loan schedules
   budgeting.py          month scorecard, paycheck retirement savings, the plan
-  blackjack.py          blackjack tracker sessions into a bankroll account
+  blackjack.py          Bankroll page: sessions, research, training; results into a bankroll account
+  simplefin_import.py   daily bank sync from SimpleFIN Bridge
   views.py              pages and JSON endpoints
   templates/, static/
 data/                   (git-ignored) budget.db, personal.toml, uploads/, source/

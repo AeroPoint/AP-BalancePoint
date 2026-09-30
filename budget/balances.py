@@ -4,13 +4,17 @@ An account's balance on a day is the latest balance entered on or before that da
 accounts with transactions, everything that posted after it. Entering the bank's real number now
 and then snaps the estimate back. Accounts without transactions (retirement, a home) simply carry
 their last balance forward. Loans with fixed terms are calculated instead, the way a spreadsheet's
-=-FV(rate/12, DATEDIF(start, date, "m"), PMT(rate/12, term, amount), amount) formula would.
+=-FV(rate/12, DATEDIF(start, date, "m"), PMT(rate/12, term, amount), amount) formula would, until the
+lender's own number comes in from the bank sync: a synced balance wins from its date on, for as long as
+it's fresh (SYNCED_FRESH_DAYS), so the schedule takes back over if the sync ever stops.
 """
 import bisect
 from collections import defaultdict
 from datetime import date, timedelta
 
 from . import seed
+
+SYNCED_FRESH_DAYS = 35
 
 
 def month_end(month):
@@ -53,9 +57,11 @@ def loan_balance(principal, annual_rate, term_months, start_date, day):
 
 
 class AccountLedger:
-    def __init__(self, account, anchors, daily, loans=()):
+    def __init__(self, account, anchors, daily, loans=(), synced=()):
         self.account = account
         self.loans = list(loans)
+        self.synced = sorted(synced)  # [(as_of, amount)] balances that came from the bank sync
+        self.synced_days = [s[0] for s in self.synced]
         self.side = seed.account_side(account["kind"])
         self.anchors = sorted(anchors)  # [(as_of, amount)]
         self.anchor_days = [a[0] for a in self.anchors]
@@ -85,6 +91,17 @@ class AccountLedger:
         """Loans whose calculated balance applies on this day."""
         return [loan for loan in self.loans if (loan["counts_from"] or loan["start_date"]) <= day]
 
+    def synced_on(self, day):
+        """The bank-synced balance that applies on a day, if a fresh one exists."""
+        i = bisect.bisect_right(self.synced_days, day)
+        if i and (date.fromisoformat(day) - date.fromisoformat(self.synced[i - 1][0])).days <= SYNCED_FRESH_DAYS:
+            return self.synced[i - 1]
+        return None
+
+    def calculated_loans(self, day):
+        """Loans whose schedule sets the balance on a day: none while the lender's synced number is fresh."""
+        return [] if self.synced_on(day) else self.scheduled_loans(day)
+
     def monthly_payment(self, day):
         return sum(loan_payment(l["principal"], l["annual_rate"], l["term_months"]) for l in self.scheduled_loans(day))
 
@@ -95,7 +112,7 @@ class AccountLedger:
             return None
         if a["closed"] and day[:7] > a["closed"]:
             return 0.0
-        loans = self.scheduled_loans(day)
+        loans = self.calculated_loans(day)
         if loans:
             return round(sum(
                 loan_balance(l["principal"], l["annual_rate"], l["term_months"], l["start_date"], day) for l in loans
@@ -110,9 +127,11 @@ class AccountLedger:
 
 def load_ledgers(conn):
     """{account id: AccountLedger}, in the usual account order."""
-    anchors, daily, loans = defaultdict(list), defaultdict(list), defaultdict(list)
-    for r in conn.execute("SELECT account_id, as_of, month, amount FROM balances"):
+    anchors, daily, loans, synced = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
+    for r in conn.execute("SELECT account_id, as_of, month, amount, source FROM balances"):
         anchors[r[0]].append((r[1] or month_end(r[2]), r[3]))
+        if r[4] == "simplefin":
+            synced[r[0]].append((r[1] or month_end(r[2]), r[3]))
     for r in conn.execute(
         "SELECT account_id, date, SUM(amount), COUNT(*) FROM transactions GROUP BY account_id, date ORDER BY account_id, date"
     ):
@@ -120,6 +139,6 @@ def load_ledgers(conn):
     for r in conn.execute("SELECT * FROM loan_terms ORDER BY start_date"):
         loans[r["account_id"]].append(dict(r))
     return {
-        a["id"]: AccountLedger(dict(a), anchors[a["id"]], daily[a["id"]], loans[a["id"]])
+        a["id"]: AccountLedger(dict(a), anchors[a["id"]], daily[a["id"]], loans[a["id"]], synced[a["id"]])
         for a in conn.execute("SELECT * FROM accounts ORDER BY closed IS NOT NULL, sort, name")
     }

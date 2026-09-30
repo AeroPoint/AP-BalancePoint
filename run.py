@@ -4,13 +4,26 @@
     python run.py serve --phones           # also reachable from your phones over Tailscale
     python run.py import-excel data/source/budget.xlsx [--through 2024-12-31]
     python run.py import-csv path/to/export.csv --account "US Bank Credit" [--kind credit]
+    python run.py simplefin-setup <setup token>          # one-time, from bridge.simplefin.org
+    python run.py simplefin-map <id> --account "..."     # map each account simplefin-setup listed
+    python run.py simplefin-sync                         # pull since each account's last sync (daily)
+    python run.py simplefin-status                       # when each account was last pulled
+    python run.py simplefin-unmap <id>                   # stop syncing one (an old id after reconnecting)
 """
 import argparse
+import os
+import sys
 import webbrowser
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
-from budget import create_app, personal
+# Always run inside the app's own environment (.venv), whichever "python" was typed: a conda or
+# system Python won't have Flask.
+_VENV_PYTHON = Path(__file__).resolve().parent / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+if _VENV_PYTHON.exists() and Path(sys.prefix).resolve() != _VENV_PYTHON.parent.parent.resolve():
+    os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), *sys.argv])
+
+from budget import create_app, personal, simplefin_import
 from budget.csv_import import parse_csv, replace_spreadsheet_rows, store_transactions
 from budget.db import connect
 from budget.excel_import import ensure_account, import_workbook
@@ -35,6 +48,15 @@ def print_phone_address(port):
         print("Tailscale isn't running on this computer yet, so phones can't reach the app. See README: 'On your phone'.")
 
 
+def _sf_name(org, label):
+    return f"{org} - {label}" if org else (label or "")
+
+
+def _sf_error(e):
+    """A SimpleFIN errlist entry ({code, msg, ...}) or an old-style error string, for the log."""
+    return f"{e.get('msg')} [{e.get('code')}]" if isinstance(e, dict) else str(e)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Personal budget app")
     sub = parser.add_subparsers(dest="command")
@@ -50,12 +72,31 @@ def main():
     csv_cmd.add_argument("path")
     csv_cmd.add_argument("--account", required=True)
     csv_cmd.add_argument("--kind", default="checking", choices=["checking", "credit", "savings"])
-    bj = sub.add_parser("import-blackjack", help="import blackjack sessions from a tracker workbook into a bankroll account")
+    bj = sub.add_parser("import-blackjack", help="import the blackjack tracker workbook (sessions, research, training); keeps sessions logged in the app")
     bj.add_argument("path")
     bj.add_argument("--account", default="Blackjack Bankroll")
+    sf_setup = sub.add_parser("simplefin-setup", help="claim a SimpleFIN Bridge setup token (one-time, from bridge.simplefin.org)")
+    sf_setup.add_argument("token")
+    sf_map = sub.add_parser("simplefin-map", help="map a SimpleFIN account (its id, printed by simplefin-setup/-sync) to a local account")
+    sf_map.add_argument("external_id")
+    sf_map.add_argument("--account", required=True)
+    sf_map.add_argument("--from", dest="sync_from",
+                        help="first day to take transactions from (default: the day after the account's latest one)")
+    mode = sf_map.add_mutually_exclusive_group()
+    mode.add_argument("--transactions", action="store_true", default=None,
+                      help="sync transactions too (default for checking, savings, credit and cash accounts)")
+    mode.add_argument("--balance-only", dest="transactions", action="store_false",
+                      help="sync only the balance (default for investments, retirement, HSA, loans)")
+    sf_map.set_defaults(transactions=None)
+    sf_unmap = sub.add_parser("simplefin-unmap", help="stop syncing a SimpleFIN account (e.g. an old id after reconnecting a bank)")
+    sf_unmap.add_argument("external_id")
+    sf_sync = sub.add_parser("simplefin-sync", help="pull balances/transactions for every mapped SimpleFIN account")
+    sf_sync.add_argument("--since", help="pull from this date instead of each account's last sync (YYYY-MM-DD)")
+    sub.add_parser("simplefin-status", help="when each SimpleFIN account was last pulled")
     args = parser.parse_args()
 
     app = create_app()
+    data_dir = Path(app.config["DATABASE"]).parent
     if args.command == "import-excel":
         conn = connect(app.config["DATABASE"])
         through = date.fromisoformat(args.through) if args.through else None
@@ -78,14 +119,16 @@ def main():
             print(f"  skipped {result['skipped_for_bank_data']} entries on dates bank exports already cover")
         conn.close()
     elif args.command == "import-blackjack":
-        from budget.blackjack import import_tracker
+        from budget.blackjack import import_workbook as import_blackjack
 
         conn = connect(app.config["DATABASE"])
         account_id = ensure_account(conn, args.account, "cash")
-        count, net = import_tracker(conn, args.path, account_id)
+        got = import_blackjack(conn, args.path, account_id)
         conn.commit()
         conn.close()
-        print(f"{args.account}: {count} sessions, net {net:+,.2f}")
+        print(f"{args.account}: {got['sessions']} sessions ({got['tables']} tables), net {got['net']:+,.2f}; "
+              f"{got['research']} research rows, {got['notes']} notes, {got['training']} practice sessions. "
+              "Sessions logged in the app were kept.")
     elif args.command == "import-csv":
         conn = connect(app.config["DATABASE"])
         account_id = ensure_account(conn, args.account, args.kind)
@@ -98,6 +141,78 @@ def main():
         print(f"Added {added} of {read} transactions to {args.account}"
               + (f"; replaced {replaced} spreadsheet entries for the same dates" if replaced else "")
               + (f", carrying their categories to {carried} bank rows" if carried else ""))
+    elif args.command == "simplefin-setup":
+        try:
+            access_url = simplefin_import.claim_setup_token(args.token)
+            simplefin_import.save_access_url(data_dir, access_url)
+            accounts, errors = simplefin_import.list_accounts(access_url)
+        except simplefin_import.SimpleFinError as exc:
+            raise SystemExit(str(exc))
+        print(f"Connected; access saved to {simplefin_import.access_url_path(data_dir)}.")
+        print('Map each account below with: run.py simplefin-map <id> --account "Local Account Name"')
+        for external_id, org, label, balance in accounts:
+            print(f"  {external_id}  {_sf_name(org, label)}  (balance {balance})")
+        for e in errors:
+            print(f"  Bridge says: {_sf_error(e)}")
+    elif args.command == "simplefin-map":
+        conn = connect(app.config["DATABASE"])
+        row = conn.execute("SELECT id FROM accounts WHERE name = ?", (args.account,)).fetchone()
+        if not row:
+            raise SystemExit(f"No account named {args.account!r}. Add it on the Accounts page first.")
+        sync_from = date.fromisoformat(args.sync_from).isoformat() if args.sync_from else None
+        transactions, sync_from = simplefin_import.map_account(conn, args.external_id, row["id"], args.transactions, sync_from)
+        conn.commit()
+        conn.close()
+        print(f"{args.external_id} -> {args.account}: "
+              + (f"transactions from {sync_from} and the balance" if transactions else "balance only"))
+    elif args.command == "simplefin-unmap":
+        conn = connect(app.config["DATABASE"])
+        gone = conn.execute("DELETE FROM simplefin_accounts WHERE external_id = ?", (args.external_id,)).rowcount
+        conn.commit()
+        conn.close()
+        print(f"Stopped syncing {args.external_id}" if gone else f"{args.external_id} wasn't mapped")
+    elif args.command == "simplefin-sync":
+        access_url = simplefin_import.load_access_url(data_dir)
+        if not access_url:
+            raise SystemExit("Not connected yet: run `run.py simplefin-setup <token>` first (README: 'Automatic bank sync').")
+        conn = connect(app.config["DATABASE"])
+        since = date.fromisoformat(args.since) if args.since else None
+        try:
+            report = simplefin_import.sync(conn, access_url, date.today(), since)
+        except simplefin_import.SimpleFinError as exc:
+            conn.close()
+            raise SystemExit(f"{datetime.now():%Y-%m-%d %H:%M} SimpleFIN sync FAILED, nothing changed: {exc}")
+        conn.commit()
+        conn.close()
+        print(f"{datetime.now():%Y-%m-%d %H:%M} SimpleFIN sync, {report['start']} through {report['end']}"
+              f" ({(report['end'] - report['start']).days + 1} days)")
+        shared = {a["account"] for a in report["accounts"] if sum(b["account"] == a["account"] for b in report["accounts"]) > 1}
+        for a in report["accounts"]:
+            balance = f", balance {a['balance']:,.2f}" if a["balance"] is not None else ""
+            if a["account"] in shared:  # several bank accounts feed this one; its balance is their total
+                a["account"] = f"{a['account']} [{a['label']}]"
+            problem = "" if a["ok"] else "  (bank reported a problem: will retry these dates next run)"
+            print(f"  {a['account']}: {a['added']} new of {a['read']}{balance}{problem}")
+        for e in report["errors"]:
+            print(f"  Bridge says: {_sf_error(e)}")
+        for name in report["missing"]:
+            print(f"  {name}: mapped, but the Bridge didn't return it (removed at bridge.simplefin.org?)")
+        for s in report["stale"]:
+            print(f"  STALE: {s['account']} last pulled {s['last_synced'] or 'never'}")
+        if report["unmapped"]:
+            print('  Not mapped yet (run.py simplefin-map <id> --account "Local Account Name"):')
+            for external_id, org, label in report["unmapped"]:
+                print(f"    {external_id}  {_sf_name(org, label)}")
+    elif args.command == "simplefin-status":
+        conn = connect(app.config["DATABASE"])
+        rows = simplefin_import.status(conn)
+        conn.close()
+        if not simplefin_import.load_access_url(data_dir):
+            print("Not connected: run `run.py simplefin-setup <token>` first.")
+        for s in rows:
+            mode = f"transactions from {s['sync_from']}" if s["transactions"] else "balance only"
+            flag = "  STALE" if s["stale"] else ""
+            print(f"{s['account']:<28} last pulled {s['last_synced'] or 'never':<10}  {mode}  [{_sf_name(s['org'], s['label'])}]{flag}")
     else:
         port = getattr(args, "port", 5000)
         phones = getattr(args, "phones", False)

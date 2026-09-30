@@ -92,8 +92,9 @@
   <div class="panel-head">
     <h2>Blackjack tracker</h2>
     <p class="muted">
-      Reads every sheet with “Date” and “AV Total” columns as one result per session, into a bankroll cash account under the
-      Blackjack category. Importing again replaces the earlier sessions. Moving money between the bank and the bankroll is a Transfer.
+      Brings the old tracker workbook into the <a href="{{ url_for('main.bankroll') }}">Bankroll</a> page: its sessions (each
+      visit with its tables, rules and notes), research sheets and training log. Results land in a bankroll cash account under the
+      Blackjack category. Importing again replaces what came from a workbook; sessions logged on the Bankroll page stay.
     </p>
   </div>
   <form method="post" action="{{ url_for('main.upload_blackjack') }}" enctype="multipart/form-data" class="inline">

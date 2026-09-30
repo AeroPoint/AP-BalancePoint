@@ -1,4 +1,5 @@
 """Pages and small JSON endpoints."""
+import json
 import re
 import sqlite3
 from datetime import date, datetime
@@ -8,7 +9,7 @@ from uuid import uuid4
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import budgeting, personal, reports, seed
+from . import blackjack, budgeting, personal, reports, seed
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import CsvFormatError, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -145,6 +146,15 @@ def month_label(key):
 def day_label(iso):
     d = date.fromisoformat(str(iso)[:10])
     return f"{MONTHS[d.month - 1]} {d.day}, {d.year}"
+
+
+@bp.app_template_filter("hm")
+def hours_label(hours):
+    """1.75 -> "1:45"."""
+    if not hours:
+        return "—"
+    minutes = round(hours * 60)
+    return f"{minutes // 60}:{minutes % 60:02d}"
 
 
 @bp.app_context_processor
@@ -682,7 +692,7 @@ def accounts_page():
             not r["closed"] and activity and latest and _months_between(activity, latest) >= 4
         ) else None
         a["today"] = ledgers[r["id"]].on(today)
-        a["from_loans"] = bool(ledgers[r["id"]].scheduled_loans(today))
+        a["from_loans"] = bool(ledgers[r["id"]].calculated_loans(today))
         a["side"] = seed.account_side(r["kind"])
         # Loan calculations replace quiet-account hints: a mortgage with no new balances isn't closed.
         if ledgers[r["id"]].loans:
@@ -960,12 +970,14 @@ def net_worth():
             "SELECT amount, as_of FROM balances WHERE account_id = ? AND month = ?", (a["id"], month)
         ).fetchone()
         anchor, since = ledger.since_anchor(as_of)
-        scheduled = ledger.scheduled_loans(as_of)
+        scheduled = ledger.calculated_loans(as_of)
         if scheduled:
             hint = (f"Calculated from {len(scheduled)} loan{'s' if len(scheduled) != 1 else ''}, "
                     f"{money_filter(ledger.monthly_payment(as_of))} a month")
         elif anchor is None:
             hint = "No balance entered yet"
+        elif not ledger.has_transactions and ledger.synced_on(as_of) == anchor:
+            hint = f"From the bank sync, {day_label(anchor[0])}"
         elif anchor[0] == as_of:
             hint = "Entered for this day"
         elif ledger.has_transactions:
@@ -1101,8 +1113,6 @@ def upload_excel():
 
 @bp.post("/upload/blackjack")
 def upload_blackjack():
-    from .blackjack import import_tracker
-
     conn = get_db()
     f = request.files.get("tracker")
     name = " ".join(request.form.get("account", "").split()) or "Blackjack Bankroll"
@@ -1113,14 +1123,16 @@ def upload_blackjack():
     f.save(path)
     account_id = ensure_account(conn, name, "cash")
     try:
-        count, net = import_tracker(conn, path, account_id)
+        got = blackjack.import_workbook(conn, path, account_id)
     except Exception as exc:  # a workbook that isn't a tracker
         conn.rollback()
         flash(f"{f.filename}: couldn't read it ({exc}).", "error")
         return redirect(url_for(".upload"))
     conn.commit()
-    flash(f"{name}: {count} sessions from {f.filename}, net {money_filter(net)}. They replace the previous import.", "ok")
-    return redirect(url_for(".upload"))
+    flash(f"{name}: {got['sessions']} sessions ({got['tables']} tables), {got['research']} research rows and "
+          f"{got['training']} practice sessions from {f.filename}, net {money_filter(got['net'])}. They replace "
+          "the previous workbook import; sessions logged on the Bankroll page stay.", "ok")
+    return redirect(url_for(".bankroll"))
 
 
 @bp.post("/imports/<int:iid>/delete")
@@ -1131,3 +1143,122 @@ def delete_import(iid):
     conn.commit()
     flash(f"Removed that import and its {removed} transactions.", "ok")
     return redirect(url_for(".upload"))
+
+
+# ---------------------------------------------------------------- blackjack bankroll
+
+RESEARCH_COLUMNS = ["Status", "Adress", "Decks", "Pen", "Min", "Max", "Spread", "EV", "RoR", "N0", "Double",
+                    "RSA Rule", "17 Rule", "DAS Rule", "SP", "Open", "Other"]
+
+
+@bp.route("/bankroll")
+def bankroll():
+    conn = get_db()
+    rate = budgeting.get_setting(conn, "bj_mile_rate", blackjack.MILE_RATE)
+    rows = blackjack.sessions(conn)
+    research = blackjack.research(conn, rows)
+    training_columns, training = blackjack.training(conn)
+    editing = next((s for s in rows if s["id"] == _int(request.args.get("edit"))), None)
+    locations = sorted({s["location"] for s in rows} | {r["casino"] for _, _, region_rows, _, _ in research for r in region_rows})
+    account_id = conn.execute("SELECT id FROM accounts WHERE name = ?", (blackjack.ACCOUNT,)).fetchone()
+    balance = load_ledgers(conn)[account_id[0]].on(date.today().isoformat()) if account_id else None
+    return render_template(
+        "bankroll.html", sessions=list(reversed(rows)), lifetime=blackjack.totals(rows, rate),
+        years=blackjack.by_year(rows, rate), running=blackjack.running(rows), research=research,
+        training=training, training_columns=training_columns, rate=rate, editing=editing, locations=locations,
+        rule_keys=blackjack.RULE_KEYS, rule_labels=blackjack.RULE_LABELS, rules_line=blackjack.rules_line,
+        research_columns=RESEARCH_COLUMNS, balance=balance, account_name=blackjack.ACCOUNT,
+        today=date.today().isoformat(),
+    )
+
+
+@bp.post("/bankroll/sessions/save")
+def save_bj_session():
+    conn = get_db()
+    s = blackjack.session_from_form(request.form)
+    if not (s["date"] and _date_input(s["date"]) and s["location"]):
+        flash("A session needs a date and a location.", "error")
+        return redirect(url_for(".bankroll", edit=s["id"]) + "#log")
+    sid = blackjack.save_session(conn, s)
+    conn.commit()
+    flash(f"Saved {s['location']}, {day_label(s['date'])}"
+          + (f": {'+' if s['result'] > 0 else ''}{money_filter(s['result'])}" if s["result"] is not None else "") + ".", "ok")
+    return redirect(url_for(".bankroll") + f"#s{sid}")
+
+
+@bp.post("/bankroll/sessions/<int:sid>/delete")
+def delete_bj_session(sid):
+    conn = get_db()
+    blackjack.delete_session(conn, sid)
+    conn.commit()
+    flash("Session deleted, with its result in the bankroll.", "ok")
+    return redirect(url_for(".bankroll") + "#sessions")
+
+
+def _fields_from_form(form, prefix="field:"):
+    """{column: value} from inputs named field:<column>, numbers kept as numbers."""
+    out = {}
+    for key in form:
+        if key.startswith(prefix) and form.get(key, "").strip():
+            v = form[key].strip()
+            out[key[len(prefix):]] = int(v) if re.fullmatch(r"-?\d+", v) else float(v) if re.fullmatch(r"-?\d*\.\d+", v) else v
+    return out
+
+
+@bp.post("/bankroll/research/save")
+def save_bj_research():
+    conn = get_db()
+    form = request.form
+    region, casino = " ".join(form.get("region", "").split()), " ".join(form.get("casino", "").split())
+    if not (region and casino):
+        flash("A research row needs a region and a casino.", "error")
+        return redirect(url_for(".bankroll") + "#research")
+    fields = json.dumps(_fields_from_form(form))
+    rid = _int(form.get("id"))
+    if rid:
+        conn.execute("UPDATE bj_research SET region = ?, casino = ?, fields = ? WHERE id = ?", (region, casino, fields, rid))
+    else:
+        sort = conn.execute("SELECT COALESCE(MAX(sort), 0) + 1 FROM bj_research").fetchone()[0]
+        conn.execute("INSERT INTO bj_research (region, sort, casino, fields) VALUES (?, ?, ?, ?)", (region, sort, casino, fields))
+    conn.commit()
+    flash(f"Saved {casino} under {region}.", "ok")
+    return redirect(url_for(".bankroll") + "#research")
+
+
+@bp.post("/bankroll/research/<int:rid>/delete")
+def delete_bj_research(rid):
+    conn = get_db()
+    conn.execute("DELETE FROM bj_research WHERE id = ?", (rid,))
+    conn.commit()
+    return redirect(url_for(".bankroll") + "#research")
+
+
+@bp.post("/bankroll/training/save")
+def save_bj_training():
+    conn = get_db()
+    form = request.form
+    day = _date_input(form.get("date"))
+    if not day:
+        flash("A practice session needs a date.", "error")
+        return redirect(url_for(".bankroll") + "#training")
+    conn.execute("INSERT INTO bj_training (date, minutes, fields) VALUES (?, ?, ?)",
+                 (day, _int(form.get("minutes")), json.dumps(_fields_from_form(form))))
+    conn.commit()
+    return redirect(url_for(".bankroll") + "#training")
+
+
+@bp.post("/bankroll/training/<int:tid>/delete")
+def delete_bj_training(tid):
+    conn = get_db()
+    conn.execute("DELETE FROM bj_training WHERE id = ?", (tid,))
+    conn.commit()
+    return redirect(url_for(".bankroll") + "#training")
+
+
+@bp.post("/bankroll/mile-rate")
+def save_bj_mile_rate():
+    conn = get_db()
+    rate = _money_input(request.form.get("rate"))
+    budgeting.set_setting(conn, "bj_mile_rate", rate if rate and rate > 0 else None)
+    conn.commit()
+    return redirect(url_for(".bankroll") + "#years")
