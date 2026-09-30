@@ -112,26 +112,26 @@
     <p class="muted">The tracker's totals. Travel is miles × {{ rate|money }} a mile, plus flights and room and board; the grand total takes it off the result.</p>
   </div>
   <div class="table-wrap">
-    <table class="ledger">
+    <table class="ledger cards bj-years">
       <thead><tr><th>Year</th><th class="num">Sessions</th><th class="num">Hours</th><th class="num">EV</th><th class="num">EV / h</th><th class="num">Result</th><th class="num">Result / h</th><th class="num">Miles</th><th class="num">Travel</th><th class="num">Grand total</th></tr></thead>
       <tbody>
         {% for y, t in years %}
         <tr>
-          <td>{{ y }}</td><td class="num">{{ t.sessions }}</td><td class="num">{{ t.hours|round(1) }}</td>
-          <td class="num">{{ t.ev|money }}</td><td class="num">{{ t.ev_hour|money }}</td>
-          <td class="num strong">{{ signed(t.av) }}</td><td class="num">{{ t.av_hour|money }}</td>
-          <td class="num">{{ '{:,.0f}'.format(t.miles) }}</td>
-          <td class="num" title="Mileage {{ t.mileage|money }}, flights {{ t.flight|money }}, room and board {{ t.room_board|money }}">{{ t.travel|money }}</td>
-          <td class="num strong">{{ signed(t.net) }}</td>
+          <td class="c-main">{{ y }}</td><td class="num c-meta" data-label="Sessions">{{ t.sessions }}</td><td class="num c-meta" data-label="Hours">{{ t.hours|round(1) }}</td>
+          <td class="num c-meta" data-label="EV">{{ t.ev|money }}</td><td class="num c-hide">{{ t.ev_hour|money }}</td>
+          <td class="num strong c-side">{{ signed(t.av) }}</td><td class="num c-meta" data-label="per hour">{{ t.av_hour|money }}</td>
+          <td class="num c-hide">{{ '{:,.0f}'.format(t.miles) }}</td>
+          <td class="num c-meta" data-label="Travel" title="Mileage {{ t.mileage|money }}, flights {{ t.flight|money }}, room and board {{ t.room_board|money }}">{{ t.travel|money }}</td>
+          <td class="num strong c-meta" data-label="After travel">{{ signed(t.net) }}</td>
         </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr>
-          <td>All time</td><td class="num">{{ L.sessions }}</td><td class="num">{{ L.hours|round(1) }}</td>
-          <td class="num">{{ L.ev|money }}</td><td class="num">{{ L.ev_hour|money }}</td>
-          <td class="num">{{ signed(L.av) }}</td><td class="num">{{ L.av_hour|money }}</td>
-          <td class="num">{{ '{:,.0f}'.format(L.miles) }}</td><td class="num">{{ L.travel|money }}</td><td class="num">{{ signed(L.net) }}</td>
+          <td class="c-main nowrap">All time</td><td class="num c-meta" data-label="Sessions">{{ L.sessions }}</td><td class="num c-meta" data-label="Hours">{{ L.hours|round(1) }}</td>
+          <td class="num c-meta" data-label="EV">{{ L.ev|money }}</td><td class="num c-hide">{{ L.ev_hour|money }}</td>
+          <td class="num c-side">{{ signed(L.av) }}</td><td class="num c-meta" data-label="per hour">{{ L.av_hour|money }}</td>
+          <td class="num c-hide">{{ '{:,.0f}'.format(L.miles) }}</td><td class="num c-meta" data-label="Travel">{{ L.travel|money }}</td><td class="num c-meta" data-label="After travel">{{ signed(L.net) }}</td>
         </tr>
       </tfoot>
     </table>
@@ -145,21 +145,21 @@
 <section class="panel flush" id="sessions">
   <div class="panel-head bj-pad"><h2>Sessions</h2><p class="muted">Newest first. Open a session for its games, rules and notes.</p></div>
   <div class="table-wrap">
-    <table class="ledger bj-sessions">
+    <table class="ledger cards bj-sessions">
       <thead><tr><th>Date</th><th>Casino</th><th class="num">Hours</th><th class="num">EV</th><th class="num">EV / h</th><th class="num">Result</th><th class="num">Result / h</th></tr></thead>
       {% for s in sessions %}
       <tbody id="s{{ s.id }}">
         <tr>
-          <td class="nowrap">{{ s.date|day_label }}</td>
-          <td>{{ s.location }}{% if s.tables|length > 1 %} <span class="muted">· {{ s.tables|length }} tables</span>{% endif %}</td>
-          <td class="num">{{ s.hours|hm }}</td>
-          <td class="num">{{ s.ev|money }}</td>
-          <td class="num">{{ s.ev_hour|money }}</td>
-          <td class="num strong">{{ signed(s.result) }}</td>
-          <td class="num">{{ s.av_hour|money }}</td>
+          <td class="nowrap c-meta">{{ s.date|day_label }}</td>
+          <td class="c-main">{{ s.location }}{% if s.tables|length > 1 %} <span class="muted">· {{ s.tables|length }} tables</span>{% endif %}</td>
+          <td class="num c-meta" data-label="Hours">{{ s.hours|hm }}</td>
+          <td class="num c-meta" data-label="EV">{{ s.ev|money }}</td>
+          <td class="num c-hide">{{ s.ev_hour|money }}</td>
+          <td class="num strong c-side">{{ signed(s.result) }}</td>
+          <td class="num c-meta" data-label="per hour">{{ s.av_hour|money }}</td>
         </tr>
         <tr class="bj-detail">
-          <td colspan="7">
+          <td colspan="7" class="c-full">
             <details>
               <summary>{% for t in s.tables %}{{ rules_line(t.rules) or 'Game not recorded' }}{{ ' / ' if not loop.last }}{% endfor %}{% if s.notes %} · <em>{{ s.notes.splitlines()[0] }}</em>{% endif %}</summary>
               <div class="bj-more">
@@ -209,14 +209,14 @@
     <summary><h3>{{ region }}</h3> <span class="muted">{% if rows %}{{ rows|length }} games{% endif %}{% if notes %}{{ ', ' if rows }}{{ notes|length }} notes{% endif %}{% if casino_notes %}{{ ', ' if rows or notes }}{{ casino_notes|length }} casino notes{% endif %}</span></summary>
     {% if rows %}
     <div class="table-wrap">
-      <table class="ledger bj-research">
+      <table class="ledger cards bj-research">
         <thead><tr><th>Casino</th>{% for c in columns %}<th>{{ c }}</th>{% endfor %}<th></th></tr></thead>
         <tbody>
           {% for r in rows %}
           <tr>
-            <td class="strong">{% if loop.first or rows[loop.index0 - 1].casino != r.casino %}{{ r.casino }}{% endif %}</td>
-            {% for c in columns %}{% set v = r.fields.get(c) %}<td{% if v is number %} class="num"{% endif %}>{% if v is none %}{% elif v is string and v.startswith('http') %}<a href="{{ v }}" target="_blank" rel="noopener">link</a>{% else %}{{ v }}{% endif %}</td>{% endfor %}
-            <td class="actions">
+            <td class="strong c-main"><span class="{{ 'phone-only' if not (loop.first or rows[loop.index0 - 1].casino != r.casino) }}">{{ r.casino }}</span></td>
+            {% for c in columns %}{% set v = r.fields.get(c) %}<td class="c-meta{{ ' num' if v is number }}{{ ' c-hide' if v is none }}" data-label="{{ c }}">{% if v is none %}{% elif v is string and v.startswith('http') %}<a href="{{ v }}" target="_blank" rel="noopener">link</a>{% else %}{{ v }}{% endif %}</td>{% endfor %}
+            <td class="actions c-side">
               <details class="more">
                 <summary class="btn small quiet">Edit</summary>
                 <div class="more-panel">
@@ -286,14 +286,14 @@
   {% set tcols = training_columns or ["Source", "Testout", "Count", "Deviations", "Basic", "True Count", "Casino Sim"] %}
   {% if training %}
   <div class="table-wrap">
-    <table class="ledger">
+    <table class="ledger cards bj-training">
       <thead><tr><th>Date</th><th class="num">Time</th>{% for c in tcols %}<th>{{ c }}</th>{% endfor %}<th></th></tr></thead>
       <tbody>
         {% for t in training %}
         <tr>
-          <td class="nowrap">{{ t.date|day_label }}</td><td class="num">{{ (t.minutes / 60)|hm if t.minutes else '—' }}</td>
-          {% for c in tcols %}<td>{{ t.fields.get(c, '') }}</td>{% endfor %}
-          <td class="actions"><form method="post" action="{{ url_for('main.delete_bj_training', tid=t.id) }}" data-confirm="Delete this practice session?"><button class="btn small quiet">Delete</button></form></td>
+          <td class="nowrap c-main">{{ t.date|day_label }}</td><td class="num c-meta" data-label="Time">{{ (t.minutes / 60)|hm if t.minutes else '—' }}</td>
+          {% for c in tcols %}{% set v = t.fields.get(c) %}<td class="c-meta{{ ' c-hide' if v in (none, '') }}" data-label="{{ c }}">{{ v if v is not none else '' }}</td>{% endfor %}
+          <td class="actions c-side"><form method="post" action="{{ url_for('main.delete_bj_training', tid=t.id) }}" data-confirm="Delete this practice session?"><button class="btn small quiet">Delete</button></form></td>
         </tr>
         {% endfor %}
       </tbody>

@@ -108,19 +108,19 @@
   <div class="panel-head" style="padding: 16px clamp(14px, 2.5vw, 24px) 0"><h2>Import history</h2></div>
   {% if imports %}
   <div class="table-wrap">
-    <table class="ledger">
+    <table class="ledger cards">
       <thead>
         <tr><th>File</th><th>Account</th><th>Imported</th><th>Dates covered</th><th class="num">Added</th><th><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {% for i in imports %}
         <tr>
-          <td>{{ i.filename }}</td>
-          <td class="source-tag">{{ i.account_name or '—' }}</td>
-          <td class="date">{{ i.uploaded_at[:16] }}</td>
-          <td class="date">{% if i.first_date %}{{ i.first_date }} to {{ i.last_date }}{% else %}—{% endif %}</td>
-          <td class="num">{{ '{:,}'.format(i.remaining) }} of {{ '{:,}'.format(i.rows_read) }}</td>
-          <td class="actions">
+          <td class="c-main" style="overflow-wrap:anywhere">{{ i.filename }}</td>
+          <td class="source-tag c-meta">{{ i.account_name or '—' }}</td>
+          <td class="date c-meta" data-label="Imported">{{ i.uploaded_at[:16] }}</td>
+          <td class="date c-meta">{% if i.first_date %}{{ i.first_date }} to {{ i.last_date }}{% else %}—{% endif %}</td>
+          <td class="num c-meta" data-label="Added">{{ '{:,}'.format(i.remaining) }} of {{ '{:,}'.format(i.rows_read) }}</td>
+          <td class="actions c-side">
             <form method="post" action="{{ url_for('main.delete_import', iid=i.id) }}"
                   data-confirm="Remove this import and its {{ i.remaining }} transactions? The file stays in the data folder.">
               <button class="btn small quiet danger">Remove</button>

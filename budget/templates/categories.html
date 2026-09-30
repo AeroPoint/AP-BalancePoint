@@ -46,22 +46,22 @@
 
 <div class="panel flush">
   <div class="table-wrap">
-    <table class="ledger rules">
+    <table class="ledger rules cards">
       <thead>
         <tr><th>Name</th><th>Type</th><th>Counts as</th><th>Count on nearest 1st</th><th class="num">Transactions</th><th class="num">Dictionary entries</th><th class="num">All-time total</th><th><span class="visually-hidden">Actions</span></th></tr>
       </thead>
       <tbody>
         {% for c in rows %}
         <tr>
-          <td><input form="cat-{{ c.id }}" name="name" value="{{ c.name }}" aria-label="Category name"></td>
-          <td>
+          <td class="c-full c-first" data-label="Name"><input form="cat-{{ c.id }}" name="name" value="{{ c.name }}" aria-label="Category name"></td>
+          <td class="c-half" data-label="Type">
             <select form="cat-{{ c.id }}" name="kind" aria-label="Type">
               {% for value, label in [('expense', 'Spending'), ('income', 'Income'), ('transfer', 'Transfer')] %}
               <option value="{{ value }}" {{ 'selected' if c.kind == value }}>{{ label }}</option>
               {% endfor %}
             </select>
           </td>
-          <td>
+          <td class="c-half" data-label="Counts as">
             {% if c.kind == 'expense' %}
             <select form="cat-{{ c.id }}" name="grp" aria-label="How {{ c.name }} counts">
               {% for value, label, help in groups %}<option value="{{ value }}" title="{{ help }}" {{ 'selected' if c.grp == value }}>{{ label }}</option>{% endfor %}
@@ -73,16 +73,16 @@
             </select>
             {% else %}<span class="muted">Income</span>{% endif %}
           </td>
-          <td>
+          <td class="c-full">
             <label class="check">
               <input type="checkbox" form="cat-{{ c.id }}" name="snap_to_month" value="1"{% if c.snap_to_month %} checked{% endif %}>
-              <span class="visually-hidden">Count {{ c.name }} on the nearest 1st of the month</span>
+              <span class="visually-hidden">Count {{ c.name }} on the nearest 1st of the month</span><span class="phone-only" aria-hidden="true">Count on the nearest 1st</span>
             </label>
           </td>
-          <td class="num">{% if c.n %}<a href="{{ url_for('main.transactions', category=c.id) }}">{{ '{:,}'.format(c.n) }}</a>{% else %}0{% endif %}</td>
-          <td class="num">{{ c.rule_count }}</td>
-          <td class="num">{{ c.total|money(false) }}</td>
-          <td class="actions">
+          <td class="num c-meta" data-label="Transactions">{% if c.n %}<a href="{{ url_for('main.transactions', category=c.id) }}">{{ '{:,}'.format(c.n) }}</a>{% else %}0{% endif %}</td>
+          <td class="num c-meta" data-label="Entries">{{ c.rule_count }}</td>
+          <td class="num c-meta" data-label="Total">{{ c.total|money(false) }}</td>
+          <td class="actions c-side">
             <form id="cat-{{ c.id }}" method="post" action="{{ url_for('main.save_category') }}">
               <input type="hidden" name="id" value="{{ c.id }}">
               <button class="btn small">Save</button>

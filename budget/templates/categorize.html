@@ -23,11 +23,11 @@
 {% if groups %}
 <div class="panel flush">
   <div class="table-wrap">
-    <table class="ledger">
+    <table class="ledger cards cat-table">
       <thead>
         <tr>
           <th>Merchant</th>
-          <th class="num">Transactions</th>
+          <th class="num">Count</th>
           <th class="num">Total</th>
           <th>Last seen</th>
           <th>Category</th>
@@ -38,16 +38,16 @@
       <tbody>
         {% for g in groups %}
         <tr data-merchant="{{ g.name }}">
-          <td class="merchant">
+          <td class="merchant c-main">
             <a href="{{ url_for('main.transactions', name=g.name) }}">{{ g.name }}</a>
             {% if g.sample != g.name %}<span class="raw" title="{{ g.sample }}">{{ g.sample }}</span>{% endif %}
           </td>
-          <td class="num">{{ g.n }}</td>
-          <td class="num {{ 'in' if g.total > 0 }}">{{ '+' if g.total > 0 }}{{ g.total|money }}</td>
-          <td class="date">{{ g.last_date }}</td>
-          <td><select aria-label="Category for {{ g.name }}">{{ category_options(categories, g.category_id if mode == 'guessed' else None, 'Choose a category') }}</select></td>
-          <td><input type="checkbox" checked aria-label="Always use this category for {{ g.name }}"></td>
-          <td class="actions"><button type="button" class="btn small apply">Apply</button> <span class="status muted"></span></td>
+          <td class="num c-meta" data-label="Transactions">{{ g.n }}</td>
+          <td class="num c-side {{ 'in' if g.total > 0 }}">{{ '+' if g.total > 0 }}{{ g.total|money }}</td>
+          <td class="date c-meta" data-label="Last seen">{{ g.last_date }}</td>
+          <td class="c-full"><select class="cat-select" aria-label="Category for {{ g.name }}">{{ category_options(categories, g.category_id if mode == 'guessed' else None, 'Choose a category') }}</select></td>
+          <td class="c-half"><label class="always"><input type="checkbox" checked aria-label="Always use this category for {{ g.name }}"><span class="phone-only">Always</span></label></td>
+          <td class="actions c-half"><button type="button" class="btn small apply">Apply</button> <span class="status muted"></span></td>
         </tr>
         {% endfor %}
       </tbody>

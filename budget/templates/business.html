@@ -44,12 +44,12 @@
   <script type="application/json" id="data-{{ a.id }}">{{ r.chart|tojson }}</script>
 
   <div class="table-wrap">
-    <table class="ledger">
+    <table class="ledger biz-months">
       <thead><tr><th>Month</th><th class="num">Income</th><th class="num">Costs</th><th class="num">Profit</th><th class="num">You put in</th><th class="num">You took out</th></tr></thead>
       <tbody>
         {% for m in r.months %}
         <tr>
-          <td>{{ m.month|month_label }}</td>
+          <td class="nowrap"><span class="desk-only">{{ m.month|month_label }}</span><span class="phone-only">{{ m.month|month_label|replace(' 20', ' ’') }}</span></td>
           <td class="num">{% if m.income %}<a href="{{ url_for('main.transactions', category=a.default_in_category, period=m.month) }}">{{ m.income|money }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="num">{% if m.costs %}<a href="{{ url_for('main.transactions', category=a.default_out_category, period=m.month) }}">{{ m.costs|money }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="num strong">{{ signed(m.profit) }}</td>
@@ -70,10 +70,10 @@
   <details class="biz-recent">
     <summary>Latest {{ r.recent|length }} income and costs</summary>
     <div class="table-wrap">
-      <table class="ledger">
+      <table class="ledger cards">
         <tbody>
           {% for t in r.recent %}
-          <tr><td class="nowrap">{{ t.effective_date|day_label }}</td><td>{{ t.name }}</td><td class="muted">{{ t.category }}{% if t.account != a.name %} · {{ t.account }}{% endif %}</td><td class="num">{{ signed(t.amount) }}</td></tr>
+          <tr><td class="nowrap c-meta">{{ t.effective_date|day_label }}</td><td class="c-main">{{ t.name }}</td><td class="muted c-meta">{{ t.category }}{% if t.account != a.name %} · {{ t.account }}{% endif %}</td><td class="num c-side">{{ signed(t.amount) }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

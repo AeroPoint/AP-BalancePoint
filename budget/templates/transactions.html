@@ -75,6 +75,7 @@
   {% endif %}
   {% if a.get('source') %}<input type="hidden" name="source" value="{{ a.get('source') }}">{% endif %}
   <button class="btn primary">Filter</button>
+  {% if a.get('source') == 'mcc' %}<span class="chip">Showing only categories guessed from the card type</span>{% endif %}
   {% if a %}<a class="btn quiet" href="{{ url_for('main.transactions') }}">Clear filters</a>{% endif %}
 </form>
 
@@ -103,13 +104,13 @@
             </form>
             {% endif %}
           </td>
-          <td>
+          <td class="cat-cell">
             <select class="cat-select" aria-label="Category for {{ t.name }}">{{ category_options(categories, t.category_id) }}</select>
             {% if t.category_source == 'mcc' %}<span class="guess" data-tip="Guessed from the card's merchant type. Pick a category to confirm it.">guess</span>{% endif %}
           </td>
           <td class="source-tag">{{ t.account_name }}</td>
           <td class="num {{ 'in' if t.amount > 0 }}">{{ '+' if t.amount > 0 }}{{ t.amount|money }}</td>
-          <td class="oneoff-cell">{% if t.amount < 0 %}<input type="checkbox" class="oneoff-check" aria-label="{{ t.name }} is a one-off"{% if t.one_off %} checked{% endif %}>{% endif %}</td>
+          <td class="oneoff-cell">{% if t.amount < 0 %}<label class="oneoff-label"><input type="checkbox" class="oneoff-check" aria-label="{{ t.name }} is a one-off"{% if t.one_off %} checked{% endif %}><span class="phone-only">One-off</span></label>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

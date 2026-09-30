@@ -78,7 +78,7 @@
 
 <div class="panel flush">
   <div class="table-wrap">
-    <table class="ledger rules">
+    <table class="ledger rules cards">
       <thead>
         <tr>
           <th>{{ 'Bank text contains' if tab == 'raw' else 'Name contains' }}</th>
@@ -91,15 +91,15 @@
       <tbody>
         {% for r in rules[:limit] %}
         <tr>
-          <td><input form="rule-{{ r.id }}" name="pattern" value="{{ r.pattern }}" aria-label="Match text"></td>
+          <td class="c-full" data-label="{{ 'Bank text contains' if tab == 'raw' else 'Name contains' }}"><input form="rule-{{ r.id }}" name="pattern" value="{{ r.pattern }}" aria-label="Match text"></td>
           {% if tab == 'raw' %}
-          <td><input form="rule-{{ r.id }}" name="rename_to" value="{{ r.rename_to or '' }}" aria-label="Show as"></td>
-          <td><input form="rule-{{ r.id }}" name="amount" inputmode="decimal" placeholder="any"
+          <td class="c-half" data-label="Show as"><input form="rule-{{ r.id }}" name="rename_to" value="{{ r.rename_to or '' }}" aria-label="Show as"></td>
+          <td class="c-half" data-label="Only this amount"><input form="rule-{{ r.id }}" name="amount" inputmode="decimal" placeholder="any"
                      value="{{ '%.2f'|format(r.amount) if r.amount is not none else '' }}" aria-label="Only this amount"></td>
           {% endif %}
-          <td><select form="rule-{{ r.id }}" name="category_id" aria-label="Category">{{ category_options(categories, r.category_id, 'No category') }}</select></td>
-          <td class="source-tag">{{ {'user': 'You', 'config': 'personal.toml', 'excel': 'Spreadsheet', 'builtin': 'Built in'}.get(r.source, r.source) }}</td>
-          <td class="actions">
+          <td class="c-full" data-label="Category"><select form="rule-{{ r.id }}" name="category_id" aria-label="Category">{{ category_options(categories, r.category_id, 'No category') }}</select></td>
+          <td class="source-tag c-meta">{{ {'user': 'You', 'config': 'personal.toml', 'excel': 'Spreadsheet', 'builtin': 'Built in'}.get(r.source, r.source) }}</td>
+          <td class="actions c-side">
             <form id="rule-{{ r.id }}" method="post" action="{{ url_for('main.save_rule') }}">
               <input type="hidden" name="id" value="{{ r.id }}">
               <input type="hidden" name="match_on" value="{{ r.match_on }}">

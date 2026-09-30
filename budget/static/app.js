@@ -273,3 +273,12 @@ document.addEventListener("pointerdown", (e) => {
   const more = document.querySelector(".tab-more[open]");
   if (more && !more.contains(e.target)) more.removeAttribute("open");
 });
+
+// Phone page intros are cut to two lines; a tap shows the rest.
+document.querySelectorAll(".page-head .sub").forEach((el) => {
+  el.addEventListener("click", (e) => {
+    if (e.target.closest("a, button, input, select")) return;
+    el.classList.toggle("open");
+  });
+  el.title = "Tap to read more";
+});

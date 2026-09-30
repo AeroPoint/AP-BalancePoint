@@ -28,7 +28,7 @@
 {% if accounts %}
 <div class="panel flush">
   <div class="table-wrap">
-    <table class="ledger rules accounts-table">
+    <table class="ledger rules accounts-table cards">
       <thead>
         <tr>
           <th>Name</th><th>Type</th><th>Institution</th><th>Opened</th><th>Closed</th><th>Bank exports from</th><th>Activity</th>
@@ -38,13 +38,14 @@
       <tbody>
         {% for a in accounts %}
         <tr class="{{ 'is-closed' if a.closed }}">
-          <td><input form="acct-{{ a.id }}" name="name" value="{{ a.name }}" aria-label="Account name" required></td>
-          <td>{{ kind_select(kinds, groups, a.kind, 'acct-' ~ a.id) }}</td>
-          <td><input form="acct-{{ a.id }}" name="institution" value="{{ a.institution or '' }}" aria-label="Institution"></td>
-          <td><input form="acct-{{ a.id }}" type="month" name="opened" value="{{ a.opened or '' }}" aria-label="Opened"></td>
-          <td><input form="acct-{{ a.id }}" type="month" name="closed" value="{{ a.closed or '' }}" aria-label="Closed"></td>
-          <td><input form="acct-{{ a.id }}" type="month" name="bank_from" value="{{ a.bank_from or '' }}" aria-label="Bank exports from"></td>
-          <td class="activity">
+          <td class="c-full c-first" data-label="Name"><input form="acct-{{ a.id }}" name="name" value="{{ a.name }}" aria-label="Account name" required></td>
+          <td class="c-half" data-label="Type">{{ kind_select(kinds, groups, a.kind, 'acct-' ~ a.id) }}</td>
+          <td class="c-half" data-label="Institution"><input form="acct-{{ a.id }}" name="institution" value="{{ a.institution or '' }}" aria-label="Institution"></td>
+          <td class="c-half" data-label="Opened"><input form="acct-{{ a.id }}" type="month" name="opened" value="{{ a.opened or '' }}" aria-label="Opened"></td>
+          <td class="c-half" data-label="Closed"><input form="acct-{{ a.id }}" type="month" name="closed" value="{{ a.closed or '' }}" aria-label="Closed"></td>
+          <td class="c-half" data-label="Bank exports from"><input form="acct-{{ a.id }}" type="month" name="bank_from" value="{{ a.bank_from or '' }}" aria-label="Bank exports from"></td>
+          <td class="activity c-meta">
+            {% if a.closed %}<span class="chip">Closed {{ a.closed|month_label }}</span>{% endif %}
             {% if a.n %}
               <a href="{{ url_for('main.transactions', account=a.id) }}">{{ '{:,}'.format(a.n) }} transactions</a>
               <small>{{ a.first_date[:7]|month_label }} to {{ a.last_date[:7]|month_label }}</small>
@@ -59,13 +60,13 @@
             </form>
             {% endif %}
           </td>
-          <td class="num">
+          <td class="num c-side">
             {% if a.today is not none %}
               {{ a.today|money(false) }}
               <small>{% if a.from_loans %}from loan terms{% elif a.balance_month %}last entered {{ a.balance_month|month_label }}{% endif %}</small>
             {% else %}<span class="muted">—</span>{% endif %}
           </td>
-          <td class="actions">
+          <td class="actions c-side">
             <form id="acct-{{ a.id }}" method="post" action="{{ url_for('main.save_account') }}">
               <input type="hidden" name="id" value="{{ a.id }}">
               <button class="btn small">Save</button>
