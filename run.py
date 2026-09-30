@@ -8,6 +8,7 @@
     python run.py simplefin-map <id> --account "..."     # map each account simplefin-setup listed
     python run.py simplefin-sync                         # pull since each account's last sync (daily)
     python run.py simplefin-status                       # when each account was last pulled
+    python run.py demo [--dir demo-data]                 # a made-up household to try the app on
     python run.py simplefin-unmap <id>                   # stop syncing one (an old id after reconnecting)
 """
 import argparse
@@ -57,6 +58,39 @@ def _sf_error(e):
     return f"{e.get('msg')} [{e.get('code')}]" if isinstance(e, dict) else str(e)
 
 
+def build_demo(args):
+    """The demo lives in its own folder; this refuses to go anywhere near the real data folder."""
+    from budget import ROOT, demo
+
+    target = Path(args.dir).expanduser().resolve()
+    real = Path(os.environ.get("BUDGET_DATA_DIR", ROOT / "data")).expanduser().resolve()
+    if target == real or real in target.parents or target in real.parents:
+        raise SystemExit(f"Refusing: {target} is (or holds) your real data folder. Pick another --dir.")
+    db = target / "budget.db"
+    if db.exists():
+        if not args.replace:
+            raise SystemExit(f"{db} already exists. Use --replace to rebuild the demo there.")
+        if not (target / ".ledger-demo").exists():
+            raise SystemExit(f"{target} wasn't made by run.py demo; not replacing anything in it.")
+        db.unlink()
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".ledger-demo").write_text("Made by run.py demo: made-up data, safe to delete.\n")
+    previous = os.environ.get("BUDGET_DATA_DIR")
+    os.environ["BUDGET_DATA_DIR"] = str(target)
+    try:
+        app = create_app()
+        conn = connect(app.config["DATABASE"])
+        got = demo.build(conn)
+        conn.close()
+    finally:  # point back at the real data folder
+        if previous is None:
+            os.environ.pop("BUDGET_DATA_DIR", None)
+        else:
+            os.environ["BUDGET_DATA_DIR"] = previous
+    print(f"Demo household in {target}: {got['transactions']} made-up transactions since {got['from']}.")
+    print(f"Try it (your own app keeps running on 5000):  BUDGET_DATA_DIR={args.dir} python run.py serve --port 5001")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Personal budget app")
     sub = parser.add_subparsers(dest="command")
@@ -93,7 +127,13 @@ def main():
     sf_sync = sub.add_parser("simplefin-sync", help="pull balances/transactions for every mapped SimpleFIN account")
     sf_sync.add_argument("--since", help="pull from this date instead of each account's last sync (YYYY-MM-DD)")
     sub.add_parser("simplefin-status", help="when each SimpleFIN account was last pulled")
+    demo = sub.add_parser("demo", help="build a made-up household in its own folder (never your real data) to try the app")
+    demo.add_argument("--dir", default="demo-data", help="folder for the demo (default: demo-data)")
+    demo.add_argument("--replace", action="store_true", help="rebuild it if that folder already has a demo")
     args = parser.parse_args()
+
+    if args.command == "demo":
+        return build_demo(args)
 
     app = create_app()
     data_dir = Path(app.config["DATABASE"]).parent

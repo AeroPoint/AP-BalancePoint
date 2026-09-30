@@ -54,6 +54,18 @@ always-on machine at home instead, the same way.
 For the app to come back after a power cut, the Mac needs to log in to that account on its own
 (System Settings → Users & Groups → automatic login), since it starts at login.
 
+### Try it with made-up data
+
+`python run.py demo` builds a made-up household (Pat and Sam Smith: two years of spending, paychecks
+with a 401(k), a mortgage, a rental, a small business, a child's 529, a plan and a few blackjack
+sessions) in its own `demo-data/` folder. It never touches your real data folder. Then:
+
+```
+BUDGET_DATA_DIR=demo-data python run.py serve --port 5001
+```
+
+`python run.py demo --replace` rebuilds it.
+
 ## Personal settings
 
 Anything specific to your household goes in `data/personal.toml`, never in the code:
@@ -258,6 +270,13 @@ added on the next start without touching anything you've edited.
   run the app or a script against that. Check an account by comparing its ledger balance at month
   ends with the bank export's running balance.
 
+## Tests
+
+`python -m pip install -r requirements-dev.txt`, then `python -m pytest tests`. Every test runs in its
+own temporary data folder, on made-up data (the demo household, a fake SimpleFIN Bridge, a workbook
+built on the fly), so it never reads or changes `data/`. GitHub Actions runs them on macOS, Windows and
+Linux, and fails if a personal data file (`data/`, a database, a spreadsheet or CSV) is ever committed.
+
 ## Layout
 
 ```
@@ -273,6 +292,7 @@ budget/
   reports.py            monthly/yearly aggregations
   balances.py           account balances on any date, loan schedules
   budgeting.py          month scorecard, paycheck retirement savings, the plan
+  demo.py               the made-up demo household (run.py demo)
   business.py           Business page: income, costs and profit per business account
   blackjack.py          Bankroll page: sessions, research, training; results into a bankroll account
   simplefin_import.py   daily bank sync from SimpleFIN Bridge

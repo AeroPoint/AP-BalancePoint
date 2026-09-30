@@ -1,5 +1,6 @@
 # Personal financial data never goes in git
 data/
+demo-data/
 *.db
 *.sqlite3
 *.xlsx
