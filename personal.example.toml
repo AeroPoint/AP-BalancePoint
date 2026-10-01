@@ -1,4 +1,4 @@
-# Example personal settings for Ledger.
+# Example personal settings for BalancePoint.
 #
 # Copy this file to data/personal.toml and edit it. data/ is git-ignored, so nothing you put in
 # personal.toml ends up in the code repository. The app reads it at startup; restart after editing.

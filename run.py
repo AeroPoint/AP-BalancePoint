@@ -92,7 +92,7 @@ def build_demo(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Personal budget app")
+    parser = argparse.ArgumentParser(description="BalancePoint: a local personal budget app")
     sub = parser.add_subparsers(dest="command")
     serve = sub.add_parser("serve", help="run the web app (default)")
     serve.add_argument("--port", type=int, default=5000)

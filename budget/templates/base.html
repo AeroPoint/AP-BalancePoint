@@ -8,11 +8,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Ledger">
+  <meta name="apple-mobile-web-app-title" content="BalancePoint">
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon-180.png') }}">
-  <title>{% block title %}{% endblock %} | Ledger</title>
+  <title>{% block title %}{% endblock %} | BalancePoint</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;650;700&display=swap">
@@ -21,7 +21,7 @@
 <body>
 <div class="app">
   <aside class="side">
-    <a class="brand" href="{{ url_for('main.dashboard') }}">Ledger</a>
+    <a class="brand" href="{{ url_for('main.dashboard') }}">BalancePoint</a>
     <nav aria-label="Main">
       {% for item in [
         ('main.dashboard', 'Overview'),

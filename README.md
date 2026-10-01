@@ -1,4 +1,4 @@
-# Ledger
+# BalancePoint
 
 A local, Monarch-style budget app. It reads bank CSV exports or syncs banks daily through
 SimpleFIN Bridge (and, optionally, imports an old hand-kept budget spreadsheet), cleans up merchant
@@ -40,7 +40,7 @@ network. Anyone else, even on the same Wi-Fi, gets "Forbidden".
    `http://your-pc-name:5000`. The first time, allow Python through the Windows firewall on
    **private** networks.
 4. Open that address on the phone and use *Add to Home Screen* (Safari's share menu, or Chrome's
-   menu) to get a Ledger icon that opens full screen.
+   menu) to get a BalancePoint icon that opens full screen.
 
 The computer has to be on with the app running. For always-on access, run the app on a small
 always-on machine at home instead, the same way.
