@@ -923,8 +923,8 @@ def merge_account(aid):
     ).rowcount
     duplicates = conn.execute("DELETE FROM transactions WHERE account_id = ?", (aid,)).rowcount
     conn.execute(
-        "INSERT OR IGNORE INTO balances (account_id, month, amount, source) "
-        "SELECT ?, month, amount, source FROM balances WHERE account_id = ?",
+        "INSERT OR IGNORE INTO balances (account_id, month, amount, as_of, source) "
+        "SELECT ?, month, amount, as_of, source FROM balances WHERE account_id = ?",
         (target, aid),
     )
     conn.execute("UPDATE imports SET account_id = ? WHERE account_id = ?", (target, aid))
