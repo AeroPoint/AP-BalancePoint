@@ -101,7 +101,7 @@
           <td class="c-half" data-label="What">
             <select form="{{ fid }}" name="mode" aria-label="What to sync">
               {% if not s %}<option value="auto" selected>By account type</option>{% endif %}
-              <option value="txn"{% if s and s.transactions %} selected{% endif %}>Transactions + balance</option>
+              <option value="txn"{% if s and s.transactions %} selected{% endif %}>Transactions too</option>
               <option value="balance"{% if s and not s.transactions %} selected{% endif %}>Balance only</option>
             </select>
           </td>

@@ -1415,7 +1415,9 @@ def bank_sync():
     rows = [{**a, "status": status.get(a["id"])} for a in cached.get("accounts") or []]
     listed = {a["id"] for a in rows}
     # Mapped but not in the saved list: mapped from the command line, or an old id after reconnecting a bank.
-    rows += [{"id": ext, "org": s["org"], "label": s["label"] or ext, "balance": None, "status": s, "not_listed": True}
+    # Only flagged once there is a saved list to be missing from.
+    rows += [{"id": ext, "org": s["org"], "label": s["label"] or ext, "balance": None, "status": s,
+              "not_listed": bool(cached.get("accounts"))}
              for ext, s in status.items() if ext not in listed]
     log = data_dir / "simplefin-sync.log"
     log_tail = None
