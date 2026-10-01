@@ -76,6 +76,49 @@ BUDGET_DATA_DIR=demo-data python run.py serve --port 5001
 
 `python run.py demo --replace` rebuilds it.
 
+### Run it with Docker
+
+```
+docker compose up -d          # builds the image, then open http://127.0.0.1:5000
+```
+
+The data lives in a Docker volume (`budget-data`, mounted at `/data`), not in `data/`. Nothing from
+`data/` goes into the image. Run commands inside the container the same way, e.g.
+`docker compose run --rm budget python run.py simplefin-setup <token>`.
+
+Requests reach the container from Docker's own network, which the app doesn't trust by itself, so
+`docker-compose.yml` sets `BUDGET_TRUSTED_NETWORKS` to Docker's range and publishes the port on this
+computer only (`127.0.0.1:5000`). If pages say "Forbidden", `docker compose logs budget` shows the address
+each request came from; add its network. Before publishing the port wider, set a password (see
+*Security*).
+
+For the daily bank sync, uncomment the `sync` service in `docker-compose.yml`. It runs
+`python run.py simplefin-sync` at start and every 24 hours after.
+
+Without Compose:
+
+```
+docker build -t balancepoint .
+docker run -d -p 127.0.0.1:5000:5000 -v budget-data:/data -e BUDGET_TRUSTED_NETWORKS=172.16.0.0/12 balancepoint
+```
+
+## Security
+
+The app has no login by default. It answers only this computer and, with `--phones`, devices on your
+Tailscale network. Anyone else gets "Forbidden". These settings change that; with none of them set,
+nothing changes.
+
+- `BUDGET_TRUSTED_NETWORKS`: more networks to answer, comma-separated, like `172.16.0.0/12`. Everyone on
+  them gets in, so keep it narrow.
+- `BUDGET_PASSWORD`, or better `BUDGET_PASSWORD_HASH` (`python run.py hash-password` prints one): adds a
+  login page, after the network check. A login lasts 30 days on that device; *Log out* is at the
+  bottom of the menu. The login cookie is signed with `BUDGET_SECRET_KEY`, or else a random key the
+  app keeps in `secret-key` in the data folder (only your user can read it).
+- `BUDGET_HOST`, or `serve --host`: the address to listen on, like `0.0.0.0` in Docker.
+
+Never put it on the open internet, even with both. It has no HTTPS of its own, and the password is the
+only thing between a stranger and your finances. Use Tailscale (or another VPN) to reach it from away.
+
 ## Personal settings
 
 Anything specific to your household goes in `data/personal.toml`, never in the code:
@@ -317,8 +360,10 @@ budget/
   blackjack.py          Bankroll page: sessions, research, training; results into a bankroll account
   simplefin_import.py   daily bank sync from SimpleFIN Bridge
   views.py              pages and JSON endpoints
+  auth.py               optional password and extra trusted networks (README: Security)
   templates/, static/
 data/                   (git-ignored) budget.db, personal.toml, uploads/, source/
+Dockerfile, docker-compose.yml   run it in a container (README: Run it with Docker)
 ```
 
 Set `BUDGET_DATA_DIR` to keep the database somewhere else.

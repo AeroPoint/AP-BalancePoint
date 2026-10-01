@@ -2,6 +2,8 @@
 
     python run.py                          # serve at http://127.0.0.1:5000
     python run.py serve --phones           # also reachable from your phones over Tailscale
+    python run.py serve --host 0.0.0.0     # listen on every network (Docker); or set BUDGET_HOST
+    python run.py hash-password            # a BUDGET_PASSWORD_HASH for the optional login
     python run.py import-excel data/source/budget.xlsx [--through 2024-12-31]
     python run.py import-csv path/to/export.csv --account "US Bank Credit" [--kind credit]
     python run.py simplefin-setup <setup token>          # one-time, from bridge.simplefin.org
@@ -99,6 +101,10 @@ def main():
     serve.add_argument("--no-browser", action="store_true")
     serve.add_argument("--phones", action="store_true",
                        help="also answer devices on your Tailscale network (nobody else, even on the same Wi-Fi)")
+    serve.add_argument("--host", default=os.environ.get("BUDGET_HOST") or None,
+                       help="address to listen on, e.g. 0.0.0.0 in Docker (default: BUDGET_HOST, else 127.0.0.1, "
+                            "or every network with --phones). Who gets answered is still up to the trust check.")
+    sub.add_parser("hash-password", help="print a BUDGET_PASSWORD_HASH for the optional login (README: Security)")
     excel = sub.add_parser("import-excel", help="import an old budget workbook (see [spreadsheet] in personal.toml)")
     excel.add_argument("path")
     excel.add_argument("--through", help="ignore ledger rows after this date (YYYY-MM-DD)")
@@ -134,6 +140,15 @@ def main():
 
     if args.command == "demo":
         return build_demo(args)
+    if args.command == "hash-password":
+        from getpass import getpass
+
+        from werkzeug.security import generate_password_hash
+
+        password = getpass("Password: ")
+        if not password or password != getpass("Again: "):
+            raise SystemExit("The two didn't match (or were empty); nothing printed.")
+        return print(generate_password_hash(password))
 
     app = create_app()
     data_dir = Path(app.config["DATABASE"]).parent
@@ -265,7 +280,8 @@ def main():
             webbrowser.open(f"http://127.0.0.1:{port}")
         # With --phones the server listens on every network, and the app itself turns away anything
         # that isn't this computer or a Tailscale device (budget.trusted).
-        app.run(host="0.0.0.0" if phones else "127.0.0.1", port=port, debug=False)
+        host = getattr(args, "host", None) or os.environ.get("BUDGET_HOST") or ("0.0.0.0" if phones else "127.0.0.1")
+        app.run(host=host, port=port, debug=False)
 
 
 if __name__ == "__main__":

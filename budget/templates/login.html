@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="BalancePoint">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='icon-180.png') }}">
+  <title>Log in | BalancePoint</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main class="main" style="max-width: 380px; margin: 12vh auto 0;">
+  <form class="panel" method="post" action="{{ url_for('auth.login') }}">
+    <h1 class="brand" style="padding: 0; margin-bottom: 16px;">BalancePoint</h1>
+    {% if error %}<p class="flash error" role="alert">{{ error }}</p>{% endif %}
+    <label for="password">Password</label>
+    <p><input id="password" name="password" type="password" autocomplete="current-password" autofocus required style="width: 100%;"></p>
+    <input type="hidden" name="next" value="{{ next }}">
+    <p><button class="btn primary" type="submit">Log in</button></p>
+  </form>
+</main>
+</body>
+</html>

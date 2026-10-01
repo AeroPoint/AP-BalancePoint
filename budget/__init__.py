@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Flask, abort, request
 
-from . import db, personal
+from . import auth, db, personal
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -13,13 +13,14 @@ ROOT = Path(__file__).resolve().parent.parent
 TRUSTED_NETWORKS = [ipaddress.ip_network(n) for n in ("127.0.0.0/8", "::1/128", "100.64.0.0/10", "fd7a:115c:a1e0::/48")]
 
 
-def trusted(address):
-    """This computer, or a device on your Tailscale network (it hands out 100.64.0.0/10 addresses)."""
+def trusted(address, extra=()):
+    """This computer, or a device on your Tailscale network (it hands out 100.64.0.0/10 addresses), or one
+    on a network added with BUDGET_TRUSTED_NETWORKS (extra)."""
     try:
         ip = ipaddress.ip_address((address or "").split("%")[0])
     except ValueError:
         return False
-    return any(ip in net for net in TRUSTED_NETWORKS if net.version == ip.version)
+    return any(ip in net for net in (*TRUSTED_NETWORKS, *extra) if net.version == ip.version)
 
 
 def create_app():
@@ -46,13 +47,17 @@ def create_app():
         conn.close()
 
     app.teardown_appcontext(db.close_db)
+    extra = auth.extra_networks(os.environ.get("BUDGET_TRUSTED_NETWORKS"))
 
     @app.before_request
     def only_trusted_devices():
-        # The app has no login, so it only answers this computer and devices on your Tailscale
+        # The app has no login by default, so it only answers this computer and devices on your Tailscale
         # network (run.py serve --phones); anyone else on the same Wi-Fi gets turned away.
-        if not trusted(request.remote_addr):
+        # BUDGET_TRUSTED_NETWORKS adds networks (a Docker bridge); the password, if set, comes after this.
+        if not trusted(request.remote_addr, extra):
             abort(403)
+
+    auth.setup(app, data_dir)
 
     from .views import bp
 
