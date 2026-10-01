@@ -118,6 +118,10 @@ startup, so restart after editing. Changes you make in the app win over the file
 $15 a year for up to 25 institutions, paid to them directly. The app pulls from it once a day, so bank
 CSVs aren't needed for the accounts it covers.
 
+The **Bank sync** page (linked from Accounts) does steps 2 to 4 in the browser: paste the token, pick an
+account for each bank account, Sync now, and see each account's last pull and the morning log. It asks
+the Bridge only when you connect, press *Refresh accounts* or *Sync now*, and never shows the access.
+
 1. Sign up at bridge.simplefin.org, connect each bank there, and create a **setup token**.
 2. `run.py simplefin-setup <token>`. The token works once; the long-lived access it's exchanged for
    is saved to `data/simplefin-access-url` (only your user can read it, and `data/`'s own git repo

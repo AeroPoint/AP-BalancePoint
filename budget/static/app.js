@@ -293,6 +293,17 @@
       if (!window.confirm(form.dataset.confirm)) e.preventDefault();
     });
   });
+
+  // Slow requests (the bank sync talks to the Bridge): say so and don't send twice.
+  document.querySelectorAll("form[data-busy]").forEach((form) => {
+    form.addEventListener("submit", (e) => {
+      if (e.defaultPrevented) return;
+      const button = form.querySelector("button");
+      if (!button) return;
+      if (button.disabled) return e.preventDefault();
+      setTimeout(() => { button.disabled = true; button.textContent = form.dataset.busy; });
+    });
+  });
 })();
 
 // Phone tab bar: the More sheet closes on a tap anywhere else.

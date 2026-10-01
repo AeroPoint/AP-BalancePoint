@@ -9,7 +9,7 @@ from uuid import uuid4
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import blackjack, budgeting, business, personal, reports, seed
+from . import blackjack, budgeting, business, personal, reports, seed, simplefin_import
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import CsvFormatError, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -1322,3 +1322,222 @@ def save_bj_mile_rate():
 def business_page():
     conn = get_db()
     return render_template("business.html", reports=[business.report(conn, b) for b in business.businesses(conn)])
+
+
+# ---------------------------------------------------------------- bank sync (SimpleFIN Bridge)
+# The browser's version of run.py's simplefin-* commands, on the same functions and the same access file.
+# The Bridge allows about 24 requests a day and the daily sync uses one, so this page never calls it on
+# its own: the account list is kept in settings, fetched only after connecting or on "Refresh accounts".
+
+SF_LIST_KEY = "simplefin_account_list"        # {"fetched": "...", "accounts": [{id, org, label, balance}]}
+SF_LAST_SYNC_KEY = "simplefin_last_web_sync"  # {"at": "...", "lines": [...]}: the last Sync now's summary
+SF_LOG_LINES = 30
+_URL_LOGIN = re.compile(r"://[^/\s@]+@")      # a user:password@ inside a URL is never shown
+
+
+def _sf_data_dir():
+    return Path(current_app.config["DATABASE"]).parent  # the folder run.py uses
+
+
+def _sf_name(org, label):
+    return f"{org} - {label}" if org else (label or "")
+
+
+def _sf_error(e):
+    return f"{e.get('msg')} [{e.get('code')}]" if isinstance(e, dict) else str(e)
+
+
+def _sf_json(conn, key):
+    try:
+        return json.loads(budgeting.get_setting(conn, key, cast=str) or "null")
+    except ValueError:
+        return None
+
+
+def _sf_refresh_list(conn, access_url):
+    """One Bridge request. Returns the Bridge's notices; raises SimpleFinError."""
+    accounts, errors = simplefin_import.list_accounts(access_url)
+    budgeting.set_setting(conn, SF_LIST_KEY, json.dumps({
+        "fetched": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "accounts": [{"id": i, "org": org, "label": label, "balance": balance} for i, org, label, balance in accounts],
+    }))
+    conn.commit()
+    return errors
+
+
+def _sf_hint(message):
+    """The library's command-line advice, in this page's words."""
+    return message.replace("run simplefin-setup with a new token", "disconnect, then connect with a new token")
+
+
+def sync_report_lines(report):
+    """What run.py simplefin-sync prints, line for line (account names instead of ids to map)."""
+    lines = [f"{report['start']} through {report['end']} ({(report['end'] - report['start']).days + 1} days)"]
+    names = [a["account"] for a in report["accounts"]]
+    for a in report["accounts"]:
+        name = f"{a['account']} [{a['label']}]" if names.count(a["account"]) > 1 else a["account"]
+        balance = f", balance {a['balance']:,.2f}" if a["balance"] is not None else ""
+        problem = "  (bank reported a problem: will retry these dates next run)" if not a["ok"] else ""
+        lines.append(f"{name}: {a['added']} new of {a['read']}{balance}{problem}")
+        if a.get("pending") or a.get("settled") or a.get("dropped"):
+            lines.append(f"  pending from last month: {a['pending']} added, {a['settled']} posted and settled, "
+                         f"{a['dropped']} never posted and dropped")
+    lines += [f"Bridge says: {_sf_error(e)}" for e in report["errors"]]
+    lines += [f"{n}: mapped, but the Bridge didn't return it (removed at bridge.simplefin.org?)" for n in report["missing"]]
+    lines += [f"STALE: {s['account']} last pulled {s['last_synced'] or 'never'}" for s in report["stale"]]
+    lines += [f"Not mapped yet: {_sf_name(org, label)}" for _, org, label in report["unmapped"]]
+    return lines
+
+
+@bp.route("/bank-sync")
+def bank_sync():
+    conn = get_db()
+    data_dir = _sf_data_dir()
+    status = {s["external_id"]: s for s in simplefin_import.status(conn)}
+    cached = _sf_json(conn, SF_LIST_KEY) or {}
+    rows = [{**a, "status": status.get(a["id"])} for a in cached.get("accounts") or []]
+    listed = {a["id"] for a in rows}
+    # Mapped but not in the saved list: mapped from the command line, or an old id after reconnecting a bank.
+    rows += [{"id": ext, "org": s["org"], "label": s["label"] or ext, "balance": None, "status": s, "not_listed": True}
+             for ext, s in status.items() if ext not in listed]
+    log = data_dir / "simplefin-sync.log"
+    log_tail = None
+    if log.exists():
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()[-SF_LOG_LINES:]
+        log_tail = "\n".join(_URL_LOGIN.sub("://", line) for line in lines)
+    return render_template(
+        "bank_sync.html", connected=simplefin_import.access_url_path(data_dir).exists(), rows=rows,
+        mapped=list(status.values()), fetched=cached.get("fetched"),
+        accounts=[a for a in _accounts(conn) if not a["closed"]], last_sync=_sf_json(conn, SF_LAST_SYNC_KEY),
+        log_tail=log_tail, stale_days=simplefin_import.STALE_DAYS,
+    )
+
+
+@bp.post("/bank-sync/connect")
+def bank_sync_connect():
+    """Like run.py simplefin-setup: claim the token, save the access, list the accounts."""
+    conn = get_db()
+    token = (request.form.get("token") or "").strip()
+    if not token:
+        flash("Paste the setup token from bridge.simplefin.org.", "error")
+        return redirect(url_for(".bank_sync"))
+    try:
+        access_url = simplefin_import.claim_setup_token(token)
+    except simplefin_import.SimpleFinError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for(".bank_sync"))
+    simplefin_import.save_access_url(_sf_data_dir(), access_url)
+    try:
+        errors = _sf_refresh_list(conn, access_url)
+    except simplefin_import.SimpleFinError as exc:
+        flash(f"Connected, but the account list didn't come back: {_sf_hint(str(exc))} Try Refresh accounts later.", "error")
+        return redirect(url_for(".bank_sync"))
+    for e in errors:
+        flash(f"Bridge says: {_sf_error(e)}", "error")
+    flash("Connected. Pick where each account should sync to.", "ok")
+    return redirect(url_for(".bank_sync"))
+
+
+@bp.post("/bank-sync/refresh")
+def bank_sync_refresh():
+    conn = get_db()
+    access_url = simplefin_import.load_access_url(_sf_data_dir())
+    if not access_url:
+        flash("Not connected yet.", "error")
+        return redirect(url_for(".bank_sync"))
+    try:
+        errors = _sf_refresh_list(conn, access_url)
+    except simplefin_import.SimpleFinError as exc:
+        flash(_sf_hint(str(exc)), "error")
+        return redirect(url_for(".bank_sync"))
+    for e in errors:
+        flash(f"Bridge says: {_sf_error(e)}", "error")
+    flash("Refreshed the account list.", "ok")
+    return redirect(url_for(".bank_sync"))
+
+
+@bp.post("/bank-sync/map")
+def bank_sync_map():
+    """Like run.py simplefin-map: which account, transactions or balance only, and the day to start from."""
+    conn = get_db()
+    external_id = (request.form.get("external_id") or "").strip()
+    aid = _int(request.form.get("account_id"))
+    sync_from = _date_input(request.form.get("sync_from"))
+    if not external_id:
+        return redirect(url_for(".bank_sync"))
+    existing = conn.execute("SELECT * FROM simplefin_accounts WHERE external_id = ?", (external_id,)).fetchone()
+    if not aid:  # "Don't sync"
+        if existing:
+            conn.execute("DELETE FROM simplefin_accounts WHERE external_id = ?", (external_id,))
+            conn.commit()
+            flash("Stopped syncing that account. What it already brought in stays.", "ok")
+        return redirect(url_for(".bank_sync"))
+    row = conn.execute("SELECT id, name FROM accounts WHERE id = ?", (aid,)).fetchone()
+    if not row:
+        flash("Pick an account from the list.", "error")
+        return redirect(url_for(".bank_sync"))
+    transactions = {"txn": True, "balance": False}.get(request.form.get("mode"))  # else: by the account's type
+    if existing and existing["account_id"] == aid:
+        same_mode = transactions is None or bool(existing["transactions"]) == transactions
+        if same_mode and (not sync_from or sync_from == existing["sync_from"]):
+            flash(f"{row['name']}: nothing changed.", "ok")
+            return redirect(url_for(".bank_sync"))
+        sync_from = sync_from or existing["sync_from"]  # only the mode changed: keep its start
+    transactions, sync_from = simplefin_import.map_account(conn, external_id, aid, transactions, sync_from)
+    listed = next((a for a in (_sf_json(conn, SF_LIST_KEY) or {}).get("accounts") or [] if a["id"] == external_id), None)
+    if listed:  # names for the status table until the next sync fills them in
+        conn.execute("UPDATE simplefin_accounts SET org = COALESCE(org, ?), label = COALESCE(label, ?) WHERE external_id = ?",
+                     (listed["org"], listed["label"], external_id))
+    conn.commit()
+    flash(f"{row['name']}: " + (f"transactions from {day_label(sync_from)} and the balance" if transactions else "balance only")
+          + ", from the next sync.", "ok")
+    return redirect(url_for(".bank_sync"))
+
+
+@bp.post("/bank-sync/unmap")
+def bank_sync_unmap():
+    """Like run.py simplefin-unmap."""
+    conn = get_db()
+    gone = conn.execute("DELETE FROM simplefin_accounts WHERE external_id = ?", (request.form.get("external_id"),)).rowcount
+    conn.commit()
+    flash("Stopped syncing that account. What it already brought in stays." if gone else "That account wasn't syncing.", "ok")
+    return redirect(url_for(".bank_sync"))
+
+
+@bp.post("/bank-sync/sync")
+def bank_sync_now():
+    """Like run.py simplefin-sync: one Bridge request (more only when catching up a long gap)."""
+    conn = get_db()
+    access_url = simplefin_import.load_access_url(_sf_data_dir())
+    if not access_url:
+        flash("Not connected yet.", "error")
+        return redirect(url_for(".bank_sync"))
+    try:
+        report = simplefin_import.sync(conn, access_url, date.today())
+    except simplefin_import.SimpleFinError as exc:
+        conn.rollback()
+        flash(f"Sync failed, nothing changed: {_sf_hint(str(exc))}", "error")
+        return redirect(url_for(".bank_sync"))
+    conn.commit()
+    budgeting.set_setting(conn, SF_LAST_SYNC_KEY, json.dumps(
+        {"at": datetime.now().strftime("%Y-%m-%d %H:%M"), "lines": sync_report_lines(report)}))
+    cached = _sf_json(conn, SF_LIST_KEY)
+    if cached:  # accounts the sync came across that the saved list doesn't have yet
+        known = {a["id"] for a in cached["accounts"]}
+        cached["accounts"] += [{"id": i, "org": org, "label": label, "balance": None}
+                               for i, org, label in report["unmapped"] if i not in known]
+        budgeting.set_setting(conn, SF_LIST_KEY, json.dumps(cached))
+    conn.commit()
+    added = sum(a["added"] for a in report["accounts"])
+    flash(f"Synced: {added} new transaction{'s' if added != 1 else ''}. Details below.", "ok")
+    return redirect(url_for(".bank_sync") + "#last-sync")
+
+
+@bp.post("/bank-sync/disconnect")
+def bank_sync_disconnect():
+    conn = get_db()
+    simplefin_import.access_url_path(_sf_data_dir()).unlink(missing_ok=True)
+    budgeting.set_setting(conn, SF_LIST_KEY, None)
+    conn.commit()
+    flash("Disconnected. Which account syncs where is kept, in case you connect again.", "ok")
+    return redirect(url_for(".bank_sync"))

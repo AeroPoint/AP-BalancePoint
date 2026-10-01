@@ -4,7 +4,7 @@ from argparse import Namespace
 import pytest
 
 PAGES = ["/", "/plan", "/trends", "/business", "/transactions", "/categorize", "/net-worth", "/bankroll",
-         "/accounts", "/upload", "/rules", "/categories", "/transactions?flag=check", "/categorize?mode=guessed",
+         "/accounts", "/bank-sync", "/upload", "/rules", "/categories", "/transactions?flag=check", "/categorize?mode=guessed",
          "/?view=year", "/transactions?source=mcc"]
 
 
