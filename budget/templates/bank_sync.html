@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Bank sync{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Bank sync</h1>
+    <p class="sub">
+      Pull balances and transactions straight from your banks every morning, so you don't have to upload CSV files.
+      It goes through SimpleFIN Bridge, a read-only service: it can see your accounts but can't move money.
+    </p>
+  </div>
+  <a class="btn" href="{{ url_for('main.accounts_page') }}">Accounts</a>
+</header>
+
+{% if not connected %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>Connect</h2>
+    <p class="muted">
+      <a href="https://bridge.simplefin.org" target="_blank" rel="noopener">SimpleFIN Bridge</a> costs $1.50 a month or
+      $15 a year for up to 25 banks, paid to them directly.
+    </p>
+  </div>
+  <ol class="sf-steps">
+    <li>Sign up at <a href="https://bridge.simplefin.org" target="_blank" rel="noopener">bridge.simplefin.org</a> and connect each bank there.</li>
+    <li>Create a <b>setup token</b> there and copy it.</li>
+    <li>Paste it below. A token works once.</li>
+  </ol>
+  <form method="post" action="{{ url_for('main.bank_sync_connect') }}" class="inline" data-busy="Connecting…">
+    <label class="field grow"><span>Setup token</span>
+      <textarea class="sf-token" name="token" rows="2" required autocomplete="off" spellcheck="false" placeholder="aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmlu…"></textarea>
+    </label>
+    <button class="btn primary">Connect</button>
+  </form>
+  {% if mapped %}
+  <p class="muted sf-note">{{ mapped|length }} account{{ 's' if mapped|length != 1 }} still set to sync from an earlier connection. They pick up again once you connect.</p>
+  {% endif %}
+</section>
+{% else %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Sync</h2>
+    <form method="post" action="{{ url_for('main.bank_sync_now') }}" data-busy="Syncing…">
+      <button class="btn primary"{% if not mapped %} disabled{% endif %}>Sync now</button>
+    </form>
+  </div>
+  <p class="muted">
+    {% if mapped %}
+      {{ mapped|length }} account{{ 's' if mapped|length != 1 }} syncing.
+      {% set stale = mapped|selectattr('stale')|list %}
+      {% if stale %}<b class="sf-stale-text">{{ stale|length }} not pulled in {{ stale_days }}+ days</b>: sign in to that bank again at
+        <a href="https://bridge.simplefin.org" target="_blank" rel="noopener">bridge.simplefin.org</a>.{% endif %}
+    {% else %}
+      Pick an account for each bank account below, then sync.
+    {% endif %}
+    The Bridge allows about 24 requests a day. The automatic morning sync uses one; Sync now and Refresh accounts use one each.
+  </p>
+</section>
+
+<section class="panel flush" id="bridge-accounts">
+  <div class="panel-head sf-head">
+    <h2>Bank accounts</h2>
+    <form method="post" action="{{ url_for('main.bank_sync_refresh') }}" class="inline" data-busy="Refreshing…">
+      <small class="muted">{% if fetched %}Listed {{ fetched }}{% else %}Not listed yet{% endif %}</small>
+      <button class="btn small">Refresh accounts</button>
+    </form>
+  </div>
+  {% if rows %}
+  <div class="table-wrap">
+    <table class="ledger rules cards sf-table">
+      <thead>
+        <tr>
+          <th>Bank account</th><th class="num">Balance</th><th>Status</th><th>Sync into</th><th>What</th><th>From</th>
+          <th><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in rows %}{% set s = a.status %}{% set fid = 'sf-' ~ loop.index %}
+        <tr>
+          <td class="c-main">
+            {{ a.label }}{% if a.org %}<small class="muted sf-org">{{ a.org }}</small>{% endif %}
+            {% if a.not_listed %}<small class="muted sf-org">Not in the latest list: removed or reconnected at the Bridge?</small>{% endif %}
+          </td>
+          <td class="num c-side">{% if a.balance not in (none, '') %}{{ a.balance|float|money }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="c-meta">
+            {% if s %}
+              {% if s.stale %}<span class="chip sf-stale">STALE</span>{% endif %}
+              {% if s.last_synced %}Last pulled <span class="nowrap">{{ s.last_synced|day_label }}</span>{% else %}Not pulled yet{% endif %}
+              <small class="muted sf-org">{{ 'Transactions and balance' if s.transactions else 'Balance only' }}</small>
+            {% else %}
+              <span class="muted">Not syncing</span>
+            {% endif %}
+          </td>
+          <td class="c-full" data-label="Sync into">
+            <select form="{{ fid }}" name="account_id" aria-label="Sync into">
+              <option value="">Don't sync</option>
+              {% for acct in accounts %}<option value="{{ acct.id }}"{% if s and s.account_id == acct.id %} selected{% endif %}>{{ acct.name }}</option>{% endfor %}
+            </select>
+          </td>
+          <td class="c-half" data-label="What">
+            <select form="{{ fid }}" name="mode" aria-label="What to sync">
+              {% if not s %}<option value="auto" selected>By account type</option>{% endif %}
+              <option value="txn"{% if s and s.transactions %} selected{% endif %}>Transactions + balance</option>
+              <option value="balance"{% if s and not s.transactions %} selected{% endif %}>Balance only</option>
+            </select>
+          </td>
+          <td class="c-half" data-label="From">
+            <input form="{{ fid }}" type="date" name="sync_from" value="{{ s.sync_from if s else '' }}" aria-label="Transactions from"
+                   title="Blank: the day after the account's latest transaction, so nothing is counted twice">
+          </td>
+          <td class="actions c-side">
+            <form id="{{ fid }}" method="post" action="{{ url_for('main.bank_sync_map') }}">
+              <input type="hidden" name="external_id" value="{{ a.id }}">
+              <button class="btn small">Save</button>
+            </form>
+            {% if s %}
+            <form method="post" action="{{ url_for('main.bank_sync_unmap') }}" data-confirm="Stop syncing {{ a.label }} into {{ s.account }}? What it already brought in stays.">
+              <input type="hidden" name="external_id" value="{{ a.id }}">
+              <button class="btn small quiet danger">Stop</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted sf-foot">
+    “By account type”: checking, savings, credit card and cash accounts bring in transactions and the balance; everything else
+    (retirement, brokerage, loans) only the balance, so a 401(k) contribution isn't counted as income.
+    “From” left blank starts the day after the account's latest transaction, so CSVs you already uploaded aren't doubled.
+    Once an account syncs, stop uploading its CSVs. The account must already be on the <a href="{{ url_for('main.accounts_page') }}">Accounts</a> page.
+  </p>
+  {% else %}
+  <p class="muted sf-foot">No accounts listed yet. Press Refresh accounts to ask the Bridge.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if last_sync %}
+<section class="panel" id="last-sync">
+  <div class="panel-head"><h2>Last sync from this page</h2><small class="muted">{{ last_sync.at }}</small></div>
+  <pre class="sf-log">{{ last_sync.lines|join('\n') }}</pre>
+</section>
+{% endif %}
+
+{% if log_tail %}
+<section class="panel">
+  <div class="panel-head"><h2>Morning sync log</h2><small class="muted">Last 30 lines</small></div>
+  <pre class="sf-log">{{ log_tail }}</pre>
+</section>
+{% endif %}
+
+{% if connected %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>Disconnect</h2>
+    <form method="post" action="{{ url_for('main.bank_sync_disconnect') }}"
+          data-confirm="Disconnect from SimpleFIN Bridge? Syncing stops, including the morning sync, until you connect with a new setup token. What's already synced stays.">
+      <button class="btn small danger">Disconnect</button>
+    </form>
+  </div>
+  <p class="muted">Removes this computer's access. To stop the Bridge's side too, remove the app at bridge.simplefin.org.</p>
+</section>
+{% endif %}
+{% endblock %}
