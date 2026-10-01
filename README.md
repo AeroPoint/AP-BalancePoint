@@ -340,6 +340,28 @@ own temporary data folder, on made-up data (the demo household, a fake SimpleFIN
 built on the fly), so it never reads or changes `data/`. GitHub Actions runs them on macOS, Windows and
 Linux, and fails if a personal data file (`data/`, a database, a spreadsheet or CSV) is ever committed.
 
+`python scripts/check_no_personal_data.py` runs that check locally. It also refuses tracked text that
+looks like a secret, and any word listed in `.personal-words` (one per line: your real names, account
+numbers; git ignores the file). `scripts/install-git-hooks.sh` runs it before every commit (opt-in).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## Publishing
+
+`scripts/prepare_public_repo.sh` builds a public copy in a new folder and never changes this repo:
+
+```sh
+brew install git-filter-repo
+scripts/prepare_public_repo.sh ~/balancepoint-public "Your Name" 12345+you@users.noreply.github.com
+```
+
+It clones `main` with `git clone --no-local`, rewrites every author and committer in that clone to the
+one name and email given (`git filter-repo --mailmap`), applies text replacements from
+`.public-replacements` if present (`Real Name==>Pat Smith` per line, `git filter-repo --replace-text`
+format, also applied to commit messages; git ignores the file), checks the whole rewritten history
+for personal data, and prints the next steps (review, add a license, create the GitHub repo, push).
+
+**TODO (owner):** choose a license (MIT or AGPL-3.0) and add `LICENSE` before publishing.
+
 ## Layout
 
 ```
@@ -362,6 +384,8 @@ budget/
   views.py              pages and JSON endpoints
   auth.py               optional password and extra trusted networks (README: Security)
   templates/, static/
+scripts/                personal-data check, opt-in git hook, public-copy builder
+tests/                  pytest suite on made-up data
 data/                   (git-ignored) budget.db, personal.toml, uploads/, source/
 Dockerfile, docker-compose.yml   run it in a container (README: Run it with Docker)
 ```
