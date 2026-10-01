@@ -916,10 +916,17 @@ def merge_account(aid):
         return redirect(url_for(".accounts_page"))
     # Re-key moved transactions to the target so future uploads still spot duplicates. A row that
     # can't move because the target already has it is the same transaction twice, so it's dropped.
+    # Only keys that start with the account id are re-keyed; others (pending charges, blackjack sessions,
+    # hand entries) carry their own form and keep it, with a pending charge's account part updated.
+    conn.execute(
+        "UPDATE OR IGNORE transactions SET dedupe_key = ? || substr(dedupe_key, length(?) + 1) "
+        "WHERE account_id = ? AND dedupe_key LIKE ?",
+        (f"sfpending|{target}|", f"sfpending|{aid}|", aid, f"sfpending|{aid}|%"),
+    )
     moved = conn.execute(
-        "UPDATE OR IGNORE transactions SET account_id = ?, dedupe_key = ? || substr(dedupe_key, instr(dedupe_key, '|')) "
-        "WHERE account_id = ?",
-        (target, str(target), aid),
+        "UPDATE OR IGNORE transactions SET account_id = ?, dedupe_key = CASE WHEN dedupe_key LIKE ? "
+        "THEN ? || substr(dedupe_key, instr(dedupe_key, '|')) ELSE dedupe_key END WHERE account_id = ?",
+        (target, f"{aid}|%", str(target), aid),
     ).rowcount
     duplicates = conn.execute("DELETE FROM transactions WHERE account_id = ?", (aid,)).rowcount
     conn.execute(
@@ -929,6 +936,16 @@ def merge_account(aid):
     )
     conn.execute("UPDATE imports SET account_id = ? WHERE account_id = ?", (target, aid))
     conn.execute("UPDATE loan_terms SET account_id = ? WHERE account_id = ?", (target, aid))
+    # Everything else that points at the old account follows it: bank sync, paycheck savings, the plan,
+    # and its business categories when the target has none of its own.
+    conn.execute("UPDATE simplefin_accounts SET account_id = ? WHERE account_id = ?", (target, aid))
+    conn.execute("UPDATE paycheck_savings SET account_id = ? WHERE account_id = ?", (target, aid))
+    for key in ("plan_account", *budgeting.BACKUP_KEYS):
+        if budgeting.get_setting(conn, key, cast=int) == aid:
+            budgeting.set_setting(conn, key, target)
+    if not (target_row["default_in_category"] or target_row["default_out_category"]):
+        conn.execute("UPDATE accounts SET default_in_category = ?, default_out_category = ? WHERE id = ?",
+                     (source_row["default_in_category"], source_row["default_out_category"], target))
     conn.execute("DELETE FROM accounts WHERE id = ?", (aid,))
     conn.commit()
     flash(
