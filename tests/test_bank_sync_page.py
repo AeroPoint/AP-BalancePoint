@@ -87,10 +87,19 @@ def test_mode_change_keeps_the_start_date(client, conn, bridge, app):  # noqa: F
     client.post("/bank-sync/map", data={"external_id": "ACT-CHK", "account_id": checking, "mode": "balance", "sync_from": ""})
     row = conn.execute("SELECT transactions, sync_from FROM simplefin_accounts").fetchone()
     assert (row[0], row[1]) == (0, "2026-01-15")
-    # Mapped from the command line and never listed here: still shown, with a way to stop it.
+    # Mapped from the command line and no list fetched yet: still shown, with a way to stop it, and no
+    # "not in the latest list" warning since there's no list to be missing from.
     r = client.get("/bank-sync")
-    assert b"Not in the latest list" in r.data and b"/bank-sync/unmap" in r.data
+    assert b"Not in the latest list" not in r.data and b"/bank-sync/unmap" in r.data
     assert bridge.requests == []
+    # Once a fetched list lacks it (a bank reconnected under a new id), the warning shows.
+    import json
+
+    from budget import budgeting, views
+    budgeting.set_setting(conn, views.SF_LIST_KEY, json.dumps({"fetched": "2026-10-01 06:00", "accounts": [
+        {"id": "ACT-OTHER", "org": "Test Bank", "label": "Other", "balance": 1.0}]}))
+    conn.commit()
+    assert b"Not in the latest list" in client.get("/bank-sync").data
 
 
 def test_sync_failure_changes_nothing(client, conn, bridge, app):  # noqa: F811
