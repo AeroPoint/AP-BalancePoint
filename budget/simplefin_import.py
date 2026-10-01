@@ -263,6 +263,32 @@ def settle_pending(conn, account_id, today):
     return settled, dropped
 
 
+def count_in_month_happened(conn, account_id, transactions, sync_from):
+    """A posted charge that happened in an earlier month than it posted (bought on the 29th, posted on the
+    1st) counts in the month it happened, whether or not a sync saw it pending. Not for categories that
+    count on the nearest 1st (rent, mortgage), and never over a date set by hand. Returns how many."""
+    moved = 0
+    for t in transactions:
+        if t.get("pending") or not t.get("posted") or not t.get("transacted_at"):
+            continue
+        posted, happened = _day(t["posted"]), _day(t["transacted_at"])
+        if happened.strftime("%Y-%m") >= posted.strftime("%Y-%m") or (posted - happened).days > PENDING_MATCH_DAYS:
+            continue
+        if sync_from and posted.isoformat() < sync_from:
+            continue
+        moved += conn.execute(
+            """UPDATE transactions SET date_override = ?, notes = COALESCE(notes, ?)
+               WHERE account_id = ? AND date = ? AND ROUND(amount, 2) = ? AND raw_description = ?
+                 AND pending = 0 AND date_override IS NULL
+                 AND (category_id IS NULL OR category_id NOT IN (SELECT id FROM categories WHERE snap_to_month = 1))""",
+            (happened.isoformat(), f"Happened {happened.isoformat()}, posted {posted.isoformat()}: counts in {happened.strftime('%Y-%m')}",
+             account_id, posted.isoformat(), round(float(t["amount"]), 2), (t.get("description") or "").strip()),
+        ).rowcount
+    if moved:
+        sync_dates(conn, "account_id = ?", (account_id,))
+    return moved
+
+
 def _failed(errors):
     """(connection ids, account ids) the Bridge reported a problem with; None = can't tell which.
 
@@ -355,6 +381,7 @@ def sync(conn, access_url, today=None, since=None):
                 _, read, added, _, _ = store_transactions(conn, m["account_id"], "SimpleFIN sync", rows, kind="csv")
                 replace_spreadsheet_rows(conn, m["account_id"], rows, "SimpleFIN sync")
             settled, dropped = settle_pending(conn, m["account_id"], today)
+            count_in_month_happened(conn, m["account_id"], a.get("transactions") or [], m["sync_from"])
             pending = store_pending(conn, m["account_id"], a.get("transactions") or [], m["sync_from"], today)
         balance = None
         if a.get("balance") not in (None, ""):

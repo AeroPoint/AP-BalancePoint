@@ -153,6 +153,10 @@ Month ends: a charge that happened last month but is still pending when a new mo
 run on the 1st, or the first run after) is kept as a *pending* transaction in last month. When the
 bank posts it (same amount, or the same merchant within 30% for a tip), the posted charge replaces it
 and still counts in last month. A pending charge that never posts (a released hold) goes after 14 days.
+Every synced charge also carries the day it happened: one that happened in an earlier month than it
+posted (bought on the 29th, posted overnight on the 1st, never seen pending) counts in the month it
+happened. Categories that count on the nearest 1st (rent, mortgage) keep that rule, and a date you set
+by hand always wins.
 
 Synced balances count like ones you type: the latest one in a month is that month's balance. A synced
 balance replaces one you typed only when the bank's date is newer. Pending transactions wait until

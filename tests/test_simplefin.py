@@ -208,3 +208,29 @@ def test_month_end_pending_counts_in_that_month(bridge, conn):
     r = sf.sync(conn, bridge.url, last_day + timedelta(days=sf.PENDING_KEEP_DAYS + 2))
     assert r["accounts"][0]["dropped"] == 1
     assert not conn.execute("SELECT 1 FROM transactions WHERE pending = 1").fetchone()
+
+
+def test_posted_overnight_on_the_1st_counts_in_the_month_it_happened(bridge, conn):
+    """Pending Sep 27-30, posted overnight on the 1st before the 6:00 sync: never seen pending, still September."""
+    first = date(TODAY.year, TODAY.month, 1)
+    bought = first - timedelta(days=4)
+    chk = account(conn, "Checking")
+    sf.map_account(conn, "ACT-CHK", chk, sync_from=(first - timedelta(days=20)).isoformat())
+    conn.commit()
+    posted = lambda tid, amount, desc: {"id": tid, "posted": _ts(first, 3), "transacted_at": _ts(bought),  # noqa: E731
+                                        "amount": f"{amount:.2f}", "description": desc, "pending": False}
+    bridge.accounts = [dict(bridge.accounts[0], transactions=[
+        posted("A", -61.40, "SAFEWAY #1234 SPRINGFIELD"),
+        posted("B", -2150.00, "ACME MORTGAGE PMT"),  # counts on the nearest 1st: stays the new month's
+        {"id": "C", "posted": _ts(first, 3), "transacted_at": _ts(first, 1), "amount": "-5.00",
+         "description": "COFFEE ON THE 1ST", "pending": False},
+    ])]
+    sf.sync(conn, bridge.url, first)
+    eff = dict(conn.execute("SELECT raw_description, effective_date FROM transactions").fetchall())
+    assert eff["SAFEWAY #1234 SPRINGFIELD"] == bought.isoformat()
+    assert eff["ACME MORTGAGE PMT"] == first.isoformat()
+    assert eff["COFFEE ON THE 1ST"] == first.isoformat()
+    # Running again changes nothing, and a date set by hand is never overwritten.
+    conn.execute("UPDATE transactions SET date_override = ? WHERE raw_description = 'SAFEWAY #1234 SPRINGFIELD'", (first.isoformat(),))
+    sf.sync(conn, bridge.url, first)
+    assert conn.execute("SELECT date_override FROM transactions WHERE raw_description = 'SAFEWAY #1234 SPRINGFIELD'").fetchone()[0] == first.isoformat()
