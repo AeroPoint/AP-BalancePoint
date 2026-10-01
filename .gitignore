@@ -11,3 +11,6 @@ demo-data/
 .venv/
 __pycache__/
 *.pyc
+
+# Claude Code agent worktrees
+.claude/
