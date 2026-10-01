@@ -7,6 +7,10 @@ demo-data/
 *.xls
 *.csv
 
+# Local-only lists for scripts/check_no_personal_data.py and scripts/prepare_public_repo.sh
+.personal-words
+.public-replacements
+
 # Python
 .venv/
 __pycache__/

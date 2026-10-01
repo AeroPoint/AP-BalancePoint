@@ -1,0 +1,56 @@
+name: Bug report
+description: Something works wrong or crashes
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste real financial data.** No real transactions, balances, account numbers,
+        bank descriptions, names or SimpleFIN URLs. Use made-up ones (Pat Smith, ACME CORP), or
+        reproduce it with the demo household (`python run.py demo`).
+        Security problems: report privately instead (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Ideally on the demo data, or with a small made-up CSV.
+      placeholder: |
+        1. python run.py demo
+        2. Open Transactions ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output
+      description: Traceback or log lines, with anything personal replaced.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.1.0 / abc1234
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux, Other]
+  - type: input
+    id: bank
+    attributes:
+      label: Bank or data source (if relevant)
+      placeholder: e.g. US Bank CSV, SimpleFIN, old spreadsheet
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This report contains no real personal or financial data.
+          required: true

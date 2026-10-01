@@ -13,10 +13,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest -q tests
-      # Personal data must never be committed.
+      # Personal data must never be committed: data files, databases, spreadsheets, CSVs,
+      # access URLs or secret-looking strings (see scripts/check_no_personal_data.py).
       - name: No personal data in the repo
-        shell: bash
-        run: |
-          if git ls-files | grep -E '(^|/)data/|\.db$|\.sqlite3$|\.xlsx?$|\.csv$|simplefin-access-url'; then
-            echo "Personal data files are tracked"; exit 1
-          fi
+        run: python scripts/check_no_personal_data.py
