@@ -256,8 +256,8 @@ def project(conn, months=12, today=None):
     account = get_setting(conn, "plan_account", cast=int)
     iso = today.isoformat()
     backups = [b for b in (get_setting(conn, k, cast=int) for k in BACKUP_KEYS) if b in ledgers]
-    balance = ledgers[account].on(iso) if account in ledgers else 0.0
-    left = {b: ledgers[b].on(iso) for b in backups}
+    balance = (ledgers[account].on(iso) or 0.0) if account in ledgers else 0.0
+    left = {b: ledgers[b].on(iso) or 0.0 for b in backups}
     buffer = values["plan_buffer"] or 0.0
     items = [dict(r) for r in conn.execute("SELECT * FROM plan_items ORDER BY start_month, id")]
 
