@@ -138,7 +138,7 @@ code { font-size: 0.9em; background: var(--accent-wash); padding: 1px 5px; borde
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
   /* Fingers: 44px targets, 16px inputs so iOS doesn't zoom on focus (iPad mini included). */
   input, select, textarea { font-size: 16px; }
-  input:not([type]), input[type="text"], input[type="search"], input[type="month"], input[type="date"], select { min-height: 44px; }
+  input:not([type]), input[type="text"], input[type="search"], input[type="password"], input[type="month"], input[type="date"], select { min-height: 44px; }
   .btn { min-height: 44px; }
   .btn.small { min-height: 40px; padding: 4px 12px; }
   .step { width: 44px; height: 44px; }

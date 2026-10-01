@@ -41,7 +41,7 @@
         {{ text }}{% if ep == 'main.categorize' and uncategorized_count %}<span class="count" title="Uncategorized transactions">{{ uncategorized_count }}</span>{% endif %}
       </a>
       {% endfor %}
-    </nav>
+    </nav>{% if config.LOGIN_REQUIRED %}<nav aria-label="Account"><a href="{{ url_for('auth.logout') }}">Log out</a></nav>{% endif %}
   </aside>
   {# Phones: the four most-used pages as tabs, everything else under More. #}
   {% set tabs = [
@@ -70,7 +70,7 @@
                             ('main.net_worth', 'Net worth'), ('main.accounts_page', 'Accounts'), ('main.upload', 'Upload data'),
                             ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories')] if ep not in tab_eps %}
         <a href="{{ url_for(ep) }}" class="{{ 'on' if endpoint == ep }}">{{ text }}</a>
-        {% endfor %}
+        {% endfor %}{% if config.LOGIN_REQUIRED %}<a href="{{ url_for('auth.logout') }}">Log out</a>{% endif %}
       </div>
     </details>
   </nav>

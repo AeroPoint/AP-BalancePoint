@@ -1,0 +1,18 @@
+# Personal data never goes into an image.
+data/
+demo-data/
+*.db
+*.sqlite3
+*.csv
+*.xlsx
+*.xls
+secret-key
+simplefin-access-url
+
+.git
+.github
+.claude
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

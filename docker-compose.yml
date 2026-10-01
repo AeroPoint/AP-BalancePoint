@@ -1,0 +1,34 @@
+# docker compose up -d   then open http://127.0.0.1:5000   (README: "Run it with Docker")
+services:
+  budget:
+    build: .
+    image: balancepoint
+    restart: unless-stopped
+    ports:
+      # Only this computer. Before publishing it wider (e.g. "5000:5000"), set a password below.
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - budget-data:/data
+    environment:
+      # Requests reach the container from Docker's own network (172.16.0.0/12), which the app
+      # doesn't trust by itself. Anyone who can reach the published port arrives from there.
+      BUDGET_TRUSTED_NETWORKS: "172.16.0.0/12"
+      # Optional login. Prefer a hash from: docker compose run --rm budget python run.py hash-password
+      # Compose reads $ as a variable, so write each $ in the hash as $$ here.
+      # BUDGET_PASSWORD_HASH: "scrypt:32768:8:1$$..."
+      # BUDGET_PASSWORD: "change-me"
+
+  # Optional daily bank sync (README: "Automatic bank sync"). Run setup once first:
+  #   docker compose run --rm budget python run.py simplefin-setup <token>
+  # Then uncomment. It syncs at start and every 24 hours after; no cron needed.
+  # sync:
+  #   image: balancepoint
+  #   restart: unless-stopped
+  #   volumes:
+  #     - budget-data:/data
+  #   entrypoint: ["sh", "-c", "while true; do python run.py simplefin-sync; sleep 86400; done"]
+  #   depends_on:
+  #     - budget
+
+volumes:
+  budget-data:
