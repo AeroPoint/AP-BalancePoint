@@ -102,6 +102,13 @@ docker build -t balancepoint .
 docker run -d -p 127.0.0.1:5000:5000 -v budget-data:/data -e BUDGET_TRUSTED_NETWORKS=172.16.0.0/12 balancepoint
 ```
 
+To try it with the made-up demo household, build the demo in its own volume and serve that one:
+
+```
+docker run --rm -v balancepoint-demo:/demo balancepoint python run.py demo --dir /demo
+docker run -d -p 127.0.0.1:5001:5000 -v balancepoint-demo:/data -e BUDGET_TRUSTED_NETWORKS=172.16.0.0/12 balancepoint
+```
+
 ## Security
 
 The app has no login by default. It answers only this computer and, with `--phones`, devices on your

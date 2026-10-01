@@ -12,8 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 RUN useradd --create-home --uid 1000 budget \
-    && mkdir -p /data \
-    && chown budget:budget /data
+    && mkdir -p /data /demo \
+    && chown budget:budget /data /demo
 USER budget
 
 VOLUME ["/data"]

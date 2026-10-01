@@ -5,8 +5,8 @@ services:
     image: balancepoint
     restart: unless-stopped
     ports:
-      # Only this computer. Before publishing it wider (e.g. "5000:5000"), set a password below.
-      - "127.0.0.1:5000:5000"
+      # Only this computer (BALANCEPOINT_PORT picks another port). Before publishing it wider, set a password below.
+      - "127.0.0.1:${BALANCEPOINT_PORT:-5000}:5000"
     volumes:
       - budget-data:/data
     environment:

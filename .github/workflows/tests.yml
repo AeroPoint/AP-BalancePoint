@@ -17,3 +17,16 @@ jobs:
       # access URLs or secret-looking strings (see scripts/check_no_personal_data.py).
       - name: No personal data in the repo
         run: python scripts/check_no_personal_data.py
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t balancepoint .
+      - name: The image serves the demo household
+        run: |
+          docker run --rm -v bp-demo:/demo balancepoint python run.py demo --dir /demo
+          docker run -d --name bp -p 127.0.0.1:5090:5000 -v bp-demo:/data -e BUDGET_TRUSTED_NETWORKS=172.16.0.0/12 balancepoint
+          for i in $(seq 20); do curl -fs http://127.0.0.1:5090/ >/dev/null && break; sleep 1; done
+          curl -fs http://127.0.0.1:5090/ | grep -q "Flexible spending in"
+      - name: Personal data never goes into the image
+        run: docker run --rm --entrypoint sh balancepoint -c 'cd /app && ! ls -a | grep -E "^(data|\.personal-words|\.git|\.venv)$"'

@@ -16,3 +16,6 @@ simplefin-access-url
 __pycache__/
 *.pyc
 .pytest_cache/
+.personal-words
+.public-replacements
+.env
