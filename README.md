@@ -369,9 +369,9 @@ It clones `main` with `git clone --no-local`, rewrites every author and committe
 one name and email given (`git filter-repo --mailmap`), applies text replacements from
 `.public-replacements` if present (`Real Name==>Pat Smith` per line, `git filter-repo --replace-text`
 format, also applied to commit messages; git ignores the file), checks the whole rewritten history
-for personal data, and prints the next steps (review, add a license, create the GitHub repo, push).
+for personal data, and prints the next steps (review, create the GitHub repo, push).
 
-**TODO (owner):** choose a license (MIT or AGPL-3.0) and add `LICENSE` before publishing.
+Licensed under the MIT License (`LICENSE`).
 
 ## Layout
 

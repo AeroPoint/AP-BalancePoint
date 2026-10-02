@@ -106,7 +106,7 @@ Public copy ready: $target_abs  (this repository was not changed)
 
 Next steps:
   1. Look it over:   cd "$target_abs" && git log --stat | less
-  2. Add a LICENSE (MIT or AGPL-3.0, still to be decided) and commit it there.
+  2. Check LICENSE (MIT) is there.
   3. Create an empty GitHub repository (no README/license), e.g.
        gh repo create balancepoint --public --source "$target_abs"
      or on github.com, then:
