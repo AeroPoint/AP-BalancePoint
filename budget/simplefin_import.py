@@ -12,6 +12,7 @@ that was off for a week, or a bank that needed signing in again at the Bridge al
 import base64
 import http.client
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -129,6 +130,16 @@ def _day(epoch):
     return datetime.fromtimestamp(epoch, tz=timezone.utc).date()
 
 
+# Some banks put the transaction's date in the description at first ("Electronic Deposit 03/14 Apple Cash")
+# and drop it later, and payees come out as "Zelle To 03/15 Pat Smith". The date is left out, so the same
+# charge keeps one description (no duplicate when the text changes) and rules match every month.
+DATE_IN_TEXT = re.compile(r"(?<!\S)\d{1,2}/\d{1,2}(?:/\d{2,4})?(?!\S)")
+
+
+def clean_description(text):
+    return " ".join(DATE_IN_TEXT.sub(" ", text or "").split())
+
+
 def _org_name(account):
     org = account.get("org")
     return org.get("name") if isinstance(org, dict) else org
@@ -181,7 +192,7 @@ def to_rows(transactions, sync_from=None):
         if sync_from and day < sync_from:
             continue
         out.append({"date": day, "amount": round(float(t["amount"]), 2),
-                    "raw": (t.get("description") or "").strip(), "memo": None, "mcc": None})
+                    "raw": clean_description(t.get("description")), "memo": None, "mcc": None})
     return out
 
 
@@ -211,7 +222,7 @@ def store_pending(conn, account_id, transactions, sync_from, today):
         day = _day(t["transacted_at"]).isoformat()
         if day >= month_start or (sync_from and day < sync_from) or (today - _day(t["transacted_at"])).days > PENDING_KEEP_DAYS:
             continue
-        amount, raw = round(float(t["amount"]), 2), (t.get("description") or "").strip()
+        amount, raw = round(float(t["amount"]), 2), clean_description(t.get("description"))
         m = engine.resolve(raw, None, None, amount, account_id)
         added += conn.execute(
             """INSERT OR IGNORE INTO transactions (account_id, date, effective_date, amount, raw_description, name,
@@ -282,7 +293,7 @@ def count_in_month_happened(conn, account_id, transactions, sync_from):
                  AND pending = 0 AND date_override IS NULL
                  AND (category_id IS NULL OR category_id NOT IN (SELECT id FROM categories WHERE snap_to_month = 1))""",
             (happened.isoformat(), f"Happened {happened.isoformat()}, posted {posted.isoformat()}: counts in {happened.strftime('%Y-%m')}",
-             account_id, posted.isoformat(), round(float(t["amount"]), 2), (t.get("description") or "").strip()),
+             account_id, posted.isoformat(), round(float(t["amount"]), 2), clean_description(t.get("description"))),
         ).rowcount
     if moved:
         sync_dates(conn, "account_id = ?", (account_id,))

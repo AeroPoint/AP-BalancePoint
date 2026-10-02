@@ -234,3 +234,23 @@ def test_posted_overnight_on_the_1st_counts_in_the_month_it_happened(bridge, con
     conn.execute("UPDATE transactions SET date_override = ? WHERE raw_description = 'SAFEWAY #1234 SPRINGFIELD'", (first.isoformat(),))
     sf.sync(conn, bridge.url, first)
     assert conn.execute("SELECT date_override FROM transactions WHERE raw_description = 'SAFEWAY #1234 SPRINGFIELD'").fetchone()[0] == first.isoformat()
+
+
+def test_date_in_the_description_is_left_out(bridge, conn):
+    """The bank sends "Electronic Deposit 03/14 Apple Cash" one day and "Electronic Deposit Apple Cash"
+    the next for the same deposit; and payees come as "Zelle Instant Pmt To 03/15 Pat Smith"."""
+    chk = account(conn, "Checking")
+    day = TODAY - timedelta(days=2)
+    sf.map_account(conn, "ACT-CHK", chk, sync_from=(TODAY - timedelta(days=10)).isoformat())
+    conn.commit()
+    dep = lambda desc: {"id": "D1", "posted": _ts(day), "transacted_at": _ts(day), "amount": "950.00",  # noqa: E731
+                        "description": desc, "pending": False}
+    zelle = {"id": "Z1", "posted": _ts(day), "transacted_at": _ts(day), "amount": "-1500.00",
+             "description": f"Zelle Instant Pmt To {day:%m/%d} Pat Smith Ref7k2mq9pd", "pending": False}
+    bridge.accounts = [dict(bridge.accounts[0], transactions=[dep(f"Electronic Deposit {day:%m/%d} Apple Cash"), zelle])]
+    sf.sync(conn, bridge.url, TODAY)
+    bridge.accounts = [dict(bridge.accounts[0], transactions=[dep("Electronic Deposit Apple Cash"), zelle])]
+    sf.sync(conn, bridge.url, TODAY)
+    assert conn.execute("SELECT COUNT(*) FROM transactions WHERE amount = 950").fetchone()[0] == 1
+    name = conn.execute("SELECT name FROM transactions WHERE amount = -1500.00").fetchone()[0]
+    assert name == "Zelle to Pat Smith"
