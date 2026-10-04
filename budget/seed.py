@@ -4,7 +4,9 @@ Only general, nationally known merchants live here. Household-specific entries (
 businesses, extra categories, keywords) go in data/personal.toml; see personal.example.toml.
 
 Everything is loaded with INSERT OR IGNORE, so edits made in the app are never overwritten,
-and new built-in entries added here show up on the next start.
+and new built-in entries added here show up on the next start. Taking an entry out of these lists (or
+changing its name or category) only affects new databases: rows an existing database already has stay
+as they are, so nobody loses a rule they rely on.
 """
 import sys
 
@@ -99,7 +101,7 @@ BUILTIN_RULES = [
     # Card payments, transfers, payroll
     ("PAYMENT THANK YOU", "Credit Card Payment", "Transfer"),
     ("INTERNET PAYMENT", "Credit Card Payment", "Transfer"),
-    ("CARDMEMBER SERV", "US Bank Card Payment", "Transfer"),
+    ("CARDMEMBER SERV", "Card Payment", "Transfer"),
     ("CHASE CREDIT CRD", "Chase Card Payment", "Transfer"),
     ("AUTOPAY PAYMENT", "Credit Card Payment", "Transfer"),
     ("PAYMENT TO CREDIT CARD", "Credit Card Payment", "Transfer"),
@@ -110,7 +112,6 @@ BUILTIN_RULES = [
     ("AMAZON DIGIT", "Amazon Digital", "Bills & Utilities"),
     ("AMZNFREETIME", "Amazon Kids+", "Bills & Utilities"),
     ("AMAZON MKTPLACE", "Amazon", "Shopping & Personal"),
-    ("CLOUDFLARE", "Cloudflare", "Bills & Utilities"),
     ("APPLE.COM/US", "Apple", "Shopping & Personal"),
     ("THE UPS STORE", "The UPS Store", "Shopping & Personal"),
     ("MOBILE BANKING TRANSFER", "Transfer", "Transfer"),
@@ -123,10 +124,7 @@ BUILTIN_RULES = [
     ("ATM WITHDRAWAL", "ATM Withdrawal", "Other"),
     ("ZELLE", "Zelle", None),
     ("VENMO", "Venmo", None),
-    ("MERRILL", "Merrill", "Savings & Investments"),
-    ("ML ", "Merrill", "Savings & Investments"),
     ("SCHWAB", "Charles Schwab", "Savings & Investments"),
-    ("VOYA", "Voya", "Savings & Investments"),
     ("FIDELITY", "Fidelity", "Savings & Investments"),
     ("FID BKG SVC", "Fidelity", "Savings & Investments"),
     ("VANGUARD", "Vanguard", "Savings & Investments"),
@@ -402,7 +400,6 @@ NAME_RULES = [
     ("Remodel", "Home & Garden"),
     ("Insurance", "Bills & Utilities"),
     ("State Farm", "Bills & Utilities"),
-    ("Student Loans", "Kids & Education"),
     ("Income", "Paycheck"),
     ("Paycheck", "Paycheck"),
     ("Bonus", "Paycheck"),
@@ -422,18 +419,12 @@ NAME_RULES = [
     ("Transfer", "Transfer"),
     ("HYSA", "Transfer"),
     ("Down Payment", "Transfer"),
-    ("Chase Card", "Transfer"),
-    ("Merrill", "Savings & Investments"),
-    ("Merrill Lynch", "Savings & Investments"),
     ("Fidelity", "Savings & Investments"),
     ("Coinbase", "Savings & Investments"),
     ("ATM", "Other"),
     ("Cash Withdraw", "Other"),
     ("ATM Fee", "Taxes & Fees"),
     ("Fee", "Taxes & Fees"),
-    ("Check Deposit", "Other Income"),
-    ("Xmas", "Other Income"),
-    ("Christmas", "Other Income"),
     ("Gift", "Giving"),
     ("Subscription", "Bills & Utilities"),
     ("Google", "Bills & Utilities"),

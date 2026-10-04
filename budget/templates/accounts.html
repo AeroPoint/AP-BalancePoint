@@ -9,7 +9,8 @@
       Every account you track, open or closed. Closing an account keeps its transactions and balance history in every report;
       it just stops asking for new balances after the month it closed. If one account shows up under two names, merge them.
       “Bank exports from” is the month of the last balance you checked against the bank: months before it stay as recorded,
-      and uploaded bank exports are the record from its 1st on.
+      and uploaded bank exports are the record from its 1st on. Tick “Purchases are +” for a bank whose CSV lists purchases as
+      positive amounts (Amex, Discover and many card exports), so they come in as money out.
     </p>
   </div>
   <a class="btn" href="{{ url_for('main.bank_sync') }}">Bank sync</a>
@@ -44,7 +45,9 @@
           <td class="c-half" data-label="Institution"><input form="acct-{{ a.id }}" name="institution" value="{{ a.institution or '' }}" aria-label="Institution"></td>
           <td class="c-half" data-label="Opened"><input form="acct-{{ a.id }}" type="month" name="opened" value="{{ a.opened or '' }}" aria-label="Opened"></td>
           <td class="c-half" data-label="Closed"><input form="acct-{{ a.id }}" type="month" name="closed" value="{{ a.closed or '' }}" aria-label="Closed"></td>
-          <td class="c-half" data-label="Bank exports from"><input form="acct-{{ a.id }}" type="month" name="bank_from" value="{{ a.bank_from or '' }}" aria-label="Bank exports from"></td>
+          <td class="c-half" data-label="Bank exports from"><input form="acct-{{ a.id }}" type="month" name="bank_from" value="{{ a.bank_from or '' }}" aria-label="Bank exports from">
+            <label class="check" title="This bank's CSV lists purchases as positive amounts"><input form="acct-{{ a.id }}" type="checkbox" name="csv_flip_sign" value="1"{% if a.csv_flip_sign %} checked{% endif %}> <small>Purchases are +</small></label>
+          </td>
           <td class="activity c-meta">
             {% if a.closed %}<span class="chip">Closed {{ a.closed|month_label }}</span>{% endif %}
             {% if a.n %}
@@ -69,7 +72,7 @@
           </td>
           <td class="actions c-side">
             <form id="acct-{{ a.id }}" method="post" action="{{ url_for('main.save_account') }}">
-              <input type="hidden" name="id" value="{{ a.id }}">
+              <input type="hidden" name="id" value="{{ a.id }}"><input type="hidden" name="flip_sign_shown" value="1">
               <button class="btn small">Save</button>
             </form>
             {% if accounts|length > 1 %}
@@ -244,7 +247,8 @@
     <p class="muted">
       Give an account its own categories and everything on it lands there: money in to its income, money out to its
       expenses, whatever the merchant. Transfers to and from your other accounts stay Transfers, and a category you pick
-      on a single transaction (a personal charge made on the business card) always stays.
+      on a single transaction (a personal charge made on the business card) always stays. Once one is set up, the
+      Business page shows each one's income, costs and profit.
     </p>
   </div>
   {% set business = accounts|selectattr("default_in_category")|list + accounts|rejectattr("default_in_category")|selectattr("default_out_category")|list %}
@@ -270,6 +274,7 @@
     </table>
   </div>
   {% endif %}
+  {% if not business %}<details class="add-txn"><summary>Set up a business account</summary>{% endif %}
   <form method="post" action="{{ url_for('main.save_account_defaults') }}" class="inline">
     <label class="field"><span>Account</span>
       <select name="account_id" required>{% for a in accounts if not a.closed and not a.default_in_category and not a.default_out_category %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select>
@@ -278,5 +283,6 @@
     <label class="field"><span>Money out</span><select name="default_out_category">{{ category_options(categories, none, "No default") }}</select></label>
     <button class="btn primary">Set as business account</button>
   </form>
+  {% if not business %}</details>{% endif %}
 </section>
 {% endblock %}

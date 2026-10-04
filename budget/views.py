@@ -11,7 +11,7 @@ from werkzeug.utils import secure_filename
 
 from . import blackjack, budgeting, business, personal, reports, seed, simplefin_import
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
-from .csv_import import CsvFormatError, parse_csv, replace_spreadsheet_rows, store_transactions
+from .csv_import import CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
 from .excel_import import ensure_account, import_workbook
 from .rules import RuleEngine, compile_pattern, merchant_key, normalize, reapply, sync_dates
@@ -158,13 +158,19 @@ def hours_label(hours):
 
 
 def features(conn):
-    """Optional parts of the app. [features] in personal.toml decides; without it, Blackjack is on once
-    there are sessions (so an install that uses it keeps it) and off for a new one."""
+    """Optional parts of the app. [features] in personal.toml decides; without it, each is on once it's
+    in use (so an install that uses it keeps it) and off for a new one: Blackjack once there are sessions,
+    Business once an account has default categories (Accounts -> Business accounts)."""
     chosen = current_app.config.get("FEATURES", {})
     blackjack = chosen.get("blackjack")
     if blackjack is None:
         blackjack = conn.execute("SELECT 1 FROM bj_sessions LIMIT 1").fetchone() is not None
-    return {"blackjack": blackjack}
+    business_on = chosen.get("business")
+    if business_on is None:
+        business_on = conn.execute(
+            "SELECT 1 FROM accounts WHERE default_in_category IS NOT NULL OR default_out_category IS NOT NULL LIMIT 1"
+        ).fetchone() is not None
+    return {"blackjack": blackjack, "business": business_on}
 
 
 @bp.app_context_processor
@@ -869,6 +875,8 @@ def save_account():
     institution = " ".join(form.get("institution", "").split()) or None
     opened, closed = _month_input(form.get("opened")), _month_input(form.get("closed"))
     since = _month_input(form.get("bank_from"))
+    # Only forms that show the checkbox change it (an unticked box sends nothing).
+    flip = int(bool(form.get("csv_flip_sign"))) if "flip_sign_shown" in form else None
     if not name:
         flash("An account needs a name.", "error")
         return redirect(url_for(".accounts_page"))
@@ -879,14 +887,15 @@ def save_account():
     try:
         if aid:
             conn.execute(
-                "UPDATE accounts SET name = ?, kind = ?, institution = ?, opened = ?, closed = ?, bank_from = ? "
-                "WHERE id = ?",
-                (name, kind, institution, opened, closed, since, aid),
+                "UPDATE accounts SET name = ?, kind = ?, institution = ?, opened = ?, closed = ?, bank_from = ?, "
+                "csv_flip_sign = COALESCE(?, csv_flip_sign) WHERE id = ?",
+                (name, kind, institution, opened, closed, since, flip, aid),
             )
         else:
             conn.execute(
-                "INSERT INTO accounts (name, kind, institution, opened, closed, bank_from) VALUES (?, ?, ?, ?, ?, ?)",
-                (name, kind, institution, opened, closed, since),
+                "INSERT INTO accounts (name, kind, institution, opened, closed, bank_from, csv_flip_sign) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, kind, institution, opened, closed, since, flip or 0),
             )
         conn.commit()
         flash(f"Saved “{name}”." + (f" Marked closed as of {month_label(closed)}." if closed else ""), "ok")
@@ -1096,6 +1105,11 @@ def upload():
             flash("Pick which account these transactions belong to.", "error")
         elif not files:
             flash("Choose at least one CSV file.", "error")
+        if account_id and "flip_sign_shown" in request.form:
+            # The checkbox starts out as the account's setting, so leaving it alone keeps it.
+            conn.execute("UPDATE accounts SET csv_flip_sign = ? WHERE id = ?",
+                         (int(bool(request.form.get("csv_flip_sign"))), account_id))
+        flip = bool(account_id) and flips_sign(conn, account_id)
         for f in files if account_id else []:
             content = f.read()
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1108,7 +1122,7 @@ def upload():
             except UnicodeDecodeError:
                 text = content.decode("latin-1")
             try:
-                parsed = parse_csv(text)
+                parsed = parse_csv(text, flip_sign=flip)
             except CsvFormatError as exc:
                 flash(f"{f.filename}: {exc}", "error")
                 continue

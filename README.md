@@ -16,6 +16,7 @@ companies, brokerages and lenders.
 **Optional parts** switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
 for tracking blackjack sessions against their expected value). Without a setting, Blackjack is on once
 there are blackjack sessions and off otherwise.
+`business` (the Business page) is on once an account has its own categories (Accounts → Business accounts).
 
 ## Run it
 
@@ -142,6 +143,12 @@ startup, so restart after editing. Changes you make in the app win over the file
   category, date and notes for each entry move to the bank row with the same amount nearest in
   date. To keep spreadsheet months you already checked against the bank, set the account's
   *Bank exports from* month on the Accounts page: export rows before it are left out.
+- **Which CSVs work:** US Bank exports; any file with Date / Description (or Name, Payee) / Amount
+  columns; files with separate Debit and Credit columns; and headerless files whose rows start with a
+  date and an amount (like Wells Fargo's). Dates are read in US formats (MM/DD/YYYY, MM/DD/YY or
+  YYYY-MM-DD). Some banks (Amex, Discover, many card exports) list purchases as *positive* amounts:
+  tick "This bank lists purchases as positive amounts" when uploading (or "Purchases are +" on the
+  Accounts page) and the account remembers it. Debit/credit files never need it.
 - **Old budget spreadsheet:** describe its layout in the `[spreadsheet]` section of
   `data/personal.toml`, then use *Upload data → Old budget workbook*, or:
 

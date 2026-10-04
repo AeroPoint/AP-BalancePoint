@@ -20,12 +20,12 @@
       <label class="field">
         <span>Account</span>
         <select name="account_id">
-          {% for acct in accounts if not acct.closed %}<option value="{{ acct.id }}" {{ 'selected' if acct.id == last_account_id }}>{{ acct.name }}</option>{% endfor %}
+          {% for acct in accounts if not acct.closed %}<option value="{{ acct.id }}" data-flip="{{ acct.csv_flip_sign }}" {{ 'selected' if acct.id == last_account_id }}>{{ acct.name }}</option>{% endfor %}
           <option value="" {{ 'selected' if not accounts }}>A new account</option>
           {% set closed_accounts = accounts|selectattr('closed')|list %}
           {% if closed_accounts %}
           <optgroup label="Closed accounts">
-            {% for acct in closed_accounts %}<option value="{{ acct.id }}" {{ 'selected' if acct.id == last_account_id }}>{{ acct.name }}</option>{% endfor %}
+            {% for acct in closed_accounts %}<option value="{{ acct.id }}" data-flip="{{ acct.csv_flip_sign }}" {{ 'selected' if acct.id == last_account_id }}>{{ acct.name }}</option>{% endfor %}
           </optgroup>
           {% endif %}
         </select>
@@ -41,7 +41,21 @@
         </label>
       </div>
       <small class="muted">Only fill in a new account name if the account isn't in the list above; a name here takes priority.</small>
+      {% set chosen = (accounts|selectattr('id', 'equalto', last_account_id)|first) if last_account_id else (accounts|rejectattr('closed')|first) %}
+      <label class="check">
+        <input type="hidden" name="flip_sign_shown" value="1">
+        <input type="checkbox" name="csv_flip_sign" value="1" id="csv-flip-sign"{% if chosen and chosen.csv_flip_sign %} checked{% endif %}>
+        This bank lists purchases as positive amounts (Amex, Discover, many card exports)
+      </label>
+      <small class="muted">Remembered on the account. Files with separate debit and credit columns don't need it.</small>
       <div><button class="btn primary">Upload CSV files</button></div>
+      <script>
+        (() => {
+          const select = document.querySelector('select[name="account_id"]');
+          const box = document.getElementById("csv-flip-sign");
+          select.addEventListener("change", () => { box.checked = select.selectedOptions[0]?.dataset.flip === "1"; });
+        })();
+      </script>
     </form>
   </section>
 

@@ -56,9 +56,39 @@ def _find(header, names):
     return None
 
 
-def parse_csv(text):
-    """Return a list of {date, amount, raw, memo, mcc} dicts."""
-    rows = [r for r in csv.reader(io.StringIO(text.lstrip("﻿"))) if any(c.strip() for c in r)]
+def _headerless_columns(rows):
+    """(date, description, amount) column indexes for an export with no header row, like Wells Fargo's
+    "03/02/2026","-54.21","*","","SAFEWAY #1234": the first column holding a date, the first after it
+    holding an amount, and the widest text column. None unless the first rows all agree."""
+    sample = rows[:5]
+
+    def is_text(cell):
+        return bool(cell.strip()) and parse_date(cell) is None and parse_amount(cell) is None
+
+    first = sample[0]
+    date_i = next((i for i, c in enumerate(first) if parse_date(c)), None)
+    if date_i is None:
+        return None
+    amount_i = next((i for i in range(date_i + 1, len(first)) if parse_amount(first[i]) is not None), None)
+    texts = [i for i, c in enumerate(first) if is_text(c) and len(c.strip()) > 1]
+    if amount_i is None or not texts:
+        return None
+    desc_i = max(texts, key=lambda i: len(first[i]))
+    for row in sample:
+        if len(row) <= max(date_i, amount_i, desc_i) or not parse_date(row[date_i]) \
+                or parse_amount(row[amount_i]) is None or not is_text(row[desc_i]):
+            return None
+    return date_i, desc_i, amount_i
+
+
+def parse_csv(text, flip_sign=False):
+    """Return a list of {date, amount, raw, memo, mcc} dicts.
+
+    Amounts are negative for money out. Some banks (Amex, Discover, many card exports) list purchases
+    as positive numbers in a single Amount column; flip_sign=True (the account's csv_flip_sign setting)
+    turns those around. Separate debit and credit columns are already unambiguous and never flipped.
+    """
+    rows = [r for r in csv.reader(io.StringIO(text.lstrip("\ufeff"))) if any(c.strip() for c in r)]
     for h_idx, row in enumerate(rows[:15]):
         header = [c.strip().lower() for c in row]
         date_i, desc_i = _find(header, DATE_COLS), _find(header, DESC_COLS)
@@ -67,7 +97,10 @@ def parse_csv(text):
         if date_i is not None and desc_i is not None and (amount_i is not None or debit_i is not None):
             break
     else:
-        raise CsvFormatError("Couldn't find Date / Name (or Description) / Amount columns in this file.")
+        found = _headerless_columns(rows) if rows else None
+        if found is None:
+            raise CsvFormatError("Couldn't find Date / Name (or Description) / Amount columns in this file.")
+        (date_i, desc_i, amount_i), h_idx, header = found, -1, []
     memo_i = _find(header, ("memo", "notes"))
 
     out = []
@@ -78,6 +111,8 @@ def parse_csv(text):
             continue
         if amount_i is not None:
             amount = parse_amount(cell(amount_i))
+            if amount and flip_sign:
+                amount = -amount
         else:
             amount = -(parse_amount(cell(debit_i)) or 0) + (parse_amount(cell(credit_i)) or 0)
         if amount is None:
@@ -91,6 +126,12 @@ def parse_csv(text):
             "mcc": mcc_from_memo(memo),
         })
     return out
+
+
+def flips_sign(conn, account_id):
+    """True when the account's bank lists purchases as positive amounts (Accounts page setting)."""
+    row = conn.execute("SELECT csv_flip_sign FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    return bool(row and row[0])
 
 
 def bank_from(conn, account_id):

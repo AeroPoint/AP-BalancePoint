@@ -27,7 +27,7 @@ if _VENV_PYTHON.exists() and Path(sys.prefix).resolve() != _VENV_PYTHON.parent.p
     os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), *sys.argv])
 
 from budget import create_app, personal, simplefin_import
-from budget.csv_import import parse_csv, replace_spreadsheet_rows, store_transactions
+from budget.csv_import import flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from budget.db import connect
 from budget.excel_import import ensure_account, import_workbook
 
@@ -112,6 +112,8 @@ def main():
     csv_cmd.add_argument("path")
     csv_cmd.add_argument("--account", required=True)
     csv_cmd.add_argument("--kind", default="checking", choices=["checking", "credit", "savings"])
+    csv_cmd.add_argument("--purchases-positive", action="store_true",
+                         help="this bank lists purchases as positive amounts (Amex, Discover); remembered on the account")
     bj = sub.add_parser("import-blackjack", help="import the blackjack tracker workbook (sessions, research, training); keeps sessions logged in the app")
     bj.add_argument("path")
     bj.add_argument("--account", default="Blackjack Bankroll")
@@ -187,8 +189,10 @@ def main():
     elif args.command == "import-csv":
         conn = connect(app.config["DATABASE"])
         account_id = ensure_account(conn, args.account, args.kind)
+        if args.purchases_positive:
+            conn.execute("UPDATE accounts SET csv_flip_sign = 1 WHERE id = ?", (account_id,))
         text = Path(args.path).read_text(encoding="utf-8-sig", errors="replace")
-        parsed = parse_csv(text)
+        parsed = parse_csv(text, flip_sign=flips_sign(conn, account_id))
         _, read, added, _, _ = store_transactions(conn, account_id, Path(args.path).name, parsed)
         replaced, carried = replace_spreadsheet_rows(conn, account_id, parsed, Path(args.path).name)
         conn.commit()

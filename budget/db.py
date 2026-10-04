@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- A business account's own categories: everything on it lands in these unless it's a transfer or
     -- picked by hand (rules.RuleEngine.resolve).
     default_in_category  INTEGER REFERENCES categories(id) ON DELETE SET NULL,  -- money in
-    default_out_category INTEGER REFERENCES categories(id) ON DELETE SET NULL   -- money out
+    default_out_category INTEGER REFERENCES categories(id) ON DELETE SET NULL,  -- money out
+    csv_flip_sign INTEGER NOT NULL DEFAULT 0  -- 1 = its bank's CSVs list purchases as positive amounts (Amex, Discover)
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -236,7 +237,8 @@ def migrate(conn):
     for column, ddl in (("institution", "TEXT"), ("opened", "TEXT"), ("closed", "TEXT"),
                         ("sort", "INTEGER NOT NULL DEFAULT 0"), ("bank_from", "TEXT"),
                         ("default_in_category", "INTEGER REFERENCES categories(id) ON DELETE SET NULL"),
-                        ("default_out_category", "INTEGER REFERENCES categories(id) ON DELETE SET NULL")):
+                        ("default_out_category", "INTEGER REFERENCES categories(id) ON DELETE SET NULL"),
+                        ("csv_flip_sign", "INTEGER NOT NULL DEFAULT 0")):
         if column not in existing:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {column} {ddl}")
 
