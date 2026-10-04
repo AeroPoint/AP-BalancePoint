@@ -3,7 +3,7 @@ from argparse import Namespace
 
 import pytest
 
-PAGES = ["/", "/plan", "/trends", "/business", "/transactions", "/categorize", "/net-worth", "/bankroll",
+PAGES = ["/", "/plan", "/trends", "/business", "/recurring", "/transactions", "/categorize", "/net-worth", "/bankroll",
          "/accounts", "/bank-sync", "/upload", "/rules", "/categories", "/transactions?flag=check", "/categorize?mode=guessed",
          "/?view=year", "/transactions?source=mcc", "/tax"]
 

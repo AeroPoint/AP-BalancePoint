@@ -741,3 +741,11 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
   .tax-more > summary { display: none; }
   a { color: inherit; text-decoration: none; }
 }
+
+
+/* recurring */
+.recurring-table .chip { display: inline-block; margin-left: 4px; padding: 1px 8px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.recurring-table .rc-up, .recurring-table .rc-missed { background: var(--error-wash); color: var(--error); }
+.recurring-table td.actions form { margin: 0; }
+details.panel.tucked > summary { margin: 0; }
+details.panel.tucked[open] > summary { margin-bottom: 12px; }

@@ -314,6 +314,13 @@ def migrate(conn):
     if "flag" not in _columns(conn, "categories"):
         conn.execute("ALTER TABLE categories ADD COLUMN flag TEXT")
 
+    # Merchants marked "Not recurring" on the Recurring page (recurring.py): its merchant key, kept apart.
+    conn.execute("""CREATE TABLE IF NOT EXISTS recurring_ignored (
+                        key        TEXT PRIMARY KEY,
+                        name       TEXT,
+                        ignored_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )""")
+
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:
         _fold_old_categories(conn)

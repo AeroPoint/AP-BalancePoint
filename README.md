@@ -455,6 +455,20 @@ shortfall comes from backup accounts in the order you pick (say savings, then a 
 each down to its own "keeping at least" amount (blank means it can be emptied), and the page shows when
 that starts and how much each one gives. The Overview warns when a backup is below its amount.
 
+## Recurring charges
+
+The **Recurring** page finds bills and subscriptions in the transactions you already have: the same
+merchant (its clean name, on any account) charging on a regular schedule, weekly, every 2 weeks, monthly,
+quarterly or yearly, over about the last 18 months (two years for yearly). It needs a few charges first:
+three monthly ones, four weekly ones, or two a year apart. Transfers and income are left out. A store that
+also bills a membership is checked per exact amount, so a monthly membership still shows up.
+
+Each one shows its charge (bills that change, like utilities, show a typical amount and "varies"), what it
+comes to per month, the last charge and when the next is due. Flags: **New** (started in the last couple
+of cycles), **Price went up** (over 5% and $1 above the earlier price), **Missed?** (overdue by more than
+half a cycle, maybe cancelled). Ones with nothing for two cycles move to **Ended**. **Not recurring** hides a
+false match; it's listed under Ignored to restore.
+
 ## Cash
 
 Bank exports only see cash leave the bank. Keep cash you hold onto in its own account (type Cash):
