@@ -22,8 +22,6 @@ security problems seriously and report them privately.
 
 Please **do not open a public issue** for a security problem. Instead use GitHub's private
 vulnerability reporting: the repository's **Security** tab, then **Report a vulnerability**.
-<!-- TODO(owner): if private reporting is not enabled on the GitHub repo, enable it under
-     Settings > Code security, or put a contact address here. -->
 
 Include what you found, how to reproduce it (with made-up data, never your real data), and the
 version or commit. You should get a reply within a week. Once fixed, the fix is released and noted in

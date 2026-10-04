@@ -371,7 +371,8 @@ one name and email given (`git filter-repo --mailmap`), applies text replacement
 format, also applied to commit messages; git ignores the file), checks the whole rewritten history
 for personal data, and prints the next steps (review, create the GitHub repo, push).
 
-Licensed under the MIT License (`LICENSE`).
+Licensed under the MIT License (`LICENSE`). After creating the GitHub repository, turn on private vulnerability reporting
+(Settings, then Code security) so `SECURITY.md`'s reporting route works.
 
 ## Layout
 
