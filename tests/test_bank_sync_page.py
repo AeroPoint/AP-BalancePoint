@@ -139,3 +139,18 @@ def test_scheduled_sync_log_shows_when_it_last_ran(client, app, bridge):  # noqa
     html = client.get("/bank-sync").get_data(as_text=True)
     assert "Last automatic sync" in html and "2026-09-30 06:00" in html
     assert "Automatic sync log" in html and "Synced: 3 new transactions." in html
+
+
+def test_new_token_while_connected_keeps_mappings(client, conn, bridge, app):  # noqa: F811
+    """Connected: a collapsed "Use a new setup token"; a bad token keeps the old access, a good one swaps it."""
+    sf.save_access_url(data_dir(app), "https://old:secret@bridge.example.com/simplefin")
+    sf.map_account(conn, "ACT-CHK", account(conn, "Checking"), sync_from="2026-01-01")
+    conn.commit()
+    html = client.get("/bank-sync").get_data(as_text=True)
+    assert "Use a new setup token" in html and "secret" not in html
+    r = client.post("/bank-sync/connect", data={"token": bridge.token("/claim/used")}, follow_redirects=True)
+    assert b"turned down the setup token" in r.data
+    assert sf.load_access_url(data_dir(app)) == "https://old:secret@bridge.example.com/simplefin"
+    client.post("/bank-sync/connect", data={"token": bridge.token("/claim/good")})
+    assert sf.load_access_url(data_dir(app)) == bridge.url
+    assert conn.execute("SELECT external_id FROM simplefin_accounts").fetchall()[0][0] == "ACT-CHK"

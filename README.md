@@ -67,7 +67,9 @@ to sort anything the app wasn't sure about. That's it.
 - **By hand, free:** on your bank's website, download your transactions as a CSV file (often under
   "Download" or "Export"), then use **Upload data** in the app. Do this once a month or so.
 - **Automatically, about $15 a year:** sign up at [SimpleFIN Bridge](https://bridge.simplefin.org),
-  connect your banks there, and paste the setup token into the app's **Bank sync** page. To have it
+  connect your banks there, and paste the setup token into the app's **Bank sync** page (the box shows
+  until you're connected; after that the page shows your accounts, and a new token goes under
+  *Disconnect → Use a new setup token*). To have it
   sync every morning on its own, the setup person follows
   [Automatic bank sync](#automatic-bank-sync-simplefin-bridge).
 
@@ -256,6 +258,9 @@ $15 a year for up to 25 institutions, paid to them directly. With a daily sync s
 The **Bank sync** page (linked from Accounts) does steps 2 to 4 in the browser: paste the token, pick an
 account for each bank account, Sync now, and see each account's last pull and, when a daily sync is
 scheduled, its log. It asks the Bridge only when you connect, press *Refresh accounts* or *Sync now*, and never shows the access.
+The setup-token box shows only until you're connected. Once connected, *Use a new setup token* (under
+Disconnect) swaps in a fresh token if the Bridge asks you to reconnect, keeping which account syncs where;
+to add a bank, connect it at the Bridge and press *Refresh accounts*, no new token needed.
 
 1. Sign up at bridge.simplefin.org, connect each bank there, and create a **setup token**.
 2. `run.py simplefin-setup <token>`. The token works once; the long-lived access it's exchanged for

@@ -165,6 +165,18 @@
     </form>
   </div>
   <p class="muted">Removes this computer's access. To stop the Bridge's side too, remove the app at bridge.simplefin.org.</p>
+  <details class="sf-new-token">
+    <summary>Use a new setup token</summary>
+    <p class="muted">If the Bridge asks you to reconnect, or you made a new token there: paste it here. Which account
+      syncs where stays as it is. The current connection is replaced only once the new token works.
+      (To add a bank, you don't need this: connect it at the Bridge, then press Refresh accounts.)</p>
+    <form method="post" action="{{ url_for('main.bank_sync_connect') }}" class="inline" data-busy="Connecting…">
+      <label class="field grow"><span>New setup token</span>
+        <textarea class="sf-token" name="token" rows="2" required autocomplete="off" spellcheck="false" placeholder="aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmlu…"></textarea>
+      </label>
+      <button class="btn">Use this token</button>
+    </form>
+  </details>
 </section>
 {% endif %}
 {% endblock %}
