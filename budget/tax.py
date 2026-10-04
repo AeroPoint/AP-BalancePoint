@@ -92,11 +92,29 @@ def notes(conn, year):
     return [r for r in rows if ACCOUNTANT_NOTE.search(r["notes"] or "")]
 
 
+def questions(conn, year):
+    """Questions written down for the accountant for this tax year: open ones first."""
+    return [dict(r) for r in conn.execute(
+        "SELECT * FROM tax_questions WHERE year = ? ORDER BY done, id", (year,))]
+
+
+def save_question(conn, year, question, qid=None, answer=None, done=None):
+    question = " ".join((question or "").split())
+    if qid:
+        # answer None (not sent, e.g. Reopen) keeps the saved one; an emptied box clears it.
+        conn.execute("""UPDATE tax_questions SET question = COALESCE(NULLIF(?, ''), question),
+                        answer = CASE WHEN ? THEN NULLIF(?, '') ELSE answer END,
+                        done = COALESCE(?, done) WHERE id = ?""",
+                     (question, answer is not None, (answer or "").strip(), None if done is None else int(bool(done)), qid))
+    elif question:
+        conn.execute("INSERT INTO tax_questions (year, question) VALUES (?, ?)", (year, question))
+
+
 def summary(conn, year, today=None, with_business=True):
     boxes, to_check = checkboxes(conn, year)
     biz = businesses(conn, year, today) if with_business else []
     return {"year": year, "boxes": boxes, "to_check": to_check, "businesses": biz, "income": income(conn, year),
-            "notes": notes(conn, year), "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
+            "notes": notes(conn, year), "questions": questions(conn, year), "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
 
 
 def _checkbox_text(r):
@@ -131,6 +149,10 @@ def to_csv(data, section="all"):
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(CSV_COLUMNS)
+    if section in ("all", "notes"):  # the written-down questions lead their section
+        for q in data.get("questions", []):
+            text = q["question"] + (f" | Answer: {q['answer']}" if q["answer"] else "") + (" | (done)" if q["done"] else "")
+            w.writerow([SECTIONS["notes"], "", "", "", "", "", "", _cell(text)])
     for s, r in csv_rows(data, section):
         w.writerow([SECTIONS[s], r["effective_date"], _cell(r["account"]), _cell(r["name"]), _cell(r["category"] or "Uncategorized"),
                     f"{r['amount']:.2f}", _cell(_checkbox_text(r)), _cell(r["notes"])])

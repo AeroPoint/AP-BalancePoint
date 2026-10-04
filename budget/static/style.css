@@ -717,6 +717,10 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
 .pace-cushion { margin-top: 8px; font-size: 0.9rem; }
 .pace-warning { margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: var(--error-wash); color: var(--error); font-weight: 500; }
 /* tax time */
+.tax-questions { list-style: none; padding: 0; margin: 0 0 12px; }
+.tax-questions li { padding: 8px 0; border-top: 1px solid var(--rule); }
+.tax-q { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.tax-q > b { flex-basis: 100%; font-weight: 600; }
 .tax-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .tax-group { padding: 14px 0; border-top: 1px solid var(--rule); }
 .tax-group:first-of-type { border-top: 0; padding-top: 0; }
@@ -733,7 +737,7 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
 }
 @media print {
   :root { color-scheme: light; --ground: #fff; --panel: #fff; --ink: #000; --ink-2: #333; --muted: #555; --rule: #ccc; --rule-strong: #999; --in: #0d6b2f; }
-  .side, .tabbar, .no-print, .tax-tools, .flash, .tip, .toast { display: none !important; }
+  .side, .tabbar, .no-print, .tax-tools, .flash, .tip, .toast, .tax-q button { display: none !important; }
   .app { display: block; }
   .main { max-width: none; padding: 0; }
   body { background: #fff; }

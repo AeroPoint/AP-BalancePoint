@@ -1375,6 +1375,20 @@ def tax_page():
                            years=sorted(set(reports.years(conn)) | {year, tax.default_year()}, reverse=True))
 
 
+@bp.post("/tax/questions")
+def tax_questions_save():
+    conn = get_db()
+    year, form = _tax_year(), request.form
+    qid = _int(form.get("id"))
+    if form.get("delete") and qid:
+        conn.execute("DELETE FROM tax_questions WHERE id = ?", (qid,))
+    else:
+        done = {"1": True, "0": False}.get(form.get("done", ""))
+        tax.save_question(conn, year, form.get("question"), qid=qid, answer=form.get("answer"), done=done)
+    conn.commit()
+    return redirect(url_for(".tax_page", year=year) + "#notes")
+
+
 @bp.route("/tax/export.csv")
 def tax_export():
     conn = get_db()

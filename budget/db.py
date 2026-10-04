@@ -321,6 +321,16 @@ def migrate(conn):
                         ignored_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )""")
 
+    # Questions to take to an accountant for a tax year (Tax time page), answered and checked off there.
+    conn.execute("""CREATE TABLE IF NOT EXISTS tax_questions (
+                        id       INTEGER PRIMARY KEY,
+                        year     INTEGER NOT NULL,
+                        question TEXT NOT NULL,
+                        answer   TEXT,
+                        done     INTEGER NOT NULL DEFAULT 0,
+                        created  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )""")
+
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:
         _fold_old_categories(conn)

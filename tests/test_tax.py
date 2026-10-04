@@ -126,3 +126,24 @@ def test_empty_database(client):
     page = client.get("/tax").get_data(as_text=True)
     assert "No category has a tax checkbox yet" in page and "No income recorded" in page
     assert client.get("/tax/export.csv").get_data(as_text=True).strip() == ",".join(tax.CSV_COLUMNS)
+
+
+def test_questions_for_the_accountant(client, conn):
+    """Written-down questions per tax year: add, answer, reopen, delete; in the CSV too."""
+    client.post("/tax/questions?year=2025", data={"question": "Is the  supervision a business cost?"})
+    client.post("/tax/questions?year=2026", data={"question": "Another year's question"})
+    html = client.get("/tax?year=2025").get_data(as_text=True)
+    assert "Is the supervision a business cost?" in html and "Another year" not in html
+    qid = conn.execute("SELECT id FROM tax_questions WHERE year = 2025").fetchone()[0]
+    client.post("/tax/questions?year=2025", data={"id": qid, "answer": "=Yes, both", "done": "1"})
+    row = conn.execute("SELECT answer, done FROM tax_questions WHERE id = ?", (qid,)).fetchone()
+    assert (row[0], row[1]) == ("=Yes, both", 1)
+    assert "Answered (1)" in client.get("/tax?year=2025").get_data(as_text=True)
+    csv_text = client.get("/tax/export.csv?year=2025&section=notes").get_data(as_text=True)
+    assert "Is the supervision a business cost? | Answer: =Yes, both | (done)" in csv_text
+    client.post("/tax/questions?year=2025", data={"id": qid, "done": "0"})
+    assert tuple(conn.execute("SELECT done, answer FROM tax_questions WHERE id = ?", (qid,)).fetchone()) == (0, "=Yes, both")
+    client.post("/tax/questions?year=2025", data={"id": qid, "answer": "", "done": "0"})
+    assert conn.execute("SELECT answer FROM tax_questions WHERE id = ?", (qid,)).fetchone()[0] is None
+    client.post("/tax/questions?year=2025", data={"id": qid, "delete": "1"})
+    assert conn.execute("SELECT COUNT(*) FROM tax_questions WHERE year = 2025").fetchone()[0] == 0

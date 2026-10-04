@@ -165,13 +165,46 @@
 <section class="panel" id="notes">
   <div class="panel-head">
     <h2>Questions for your accountant</h2>
-    {% if t.notes %}{{ download('notes') }}{% endif %}
+    {% if t.notes or t.questions %}{{ download('notes') }}{% endif %}
   </div>
+  {% set open_q = t.questions|rejectattr('done')|list %}{% set done_q = t.questions|selectattr('done')|list %}
+  <ul class="tax-questions">
+    {% for q in open_q %}
+    <li>
+      <form method="post" action="{{ url_for('main.tax_questions_save', year=year) }}" class="tax-q">
+        <input type="hidden" name="id" value="{{ q.id }}">
+        <b>{{ q.question }}</b>
+        <label class="field grow"><span>Answer</span><input name="answer" value="{{ q.answer or '' }}" placeholder="What the accountant said"></label>
+        <button class="btn small" name="done" value="1">Answered</button>
+        <button class="btn small quiet" name="done" value="0">Save</button>
+        <button class="btn small quiet danger" name="delete" value="1" data-confirm="Delete this question?">Delete</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{{ url_for('main.tax_questions_save', year=year) }}" class="inline no-print">
+    <label class="field grow"><span>Add a question for {{ year }}</span>
+      <input name="question" required placeholder="Is the home office deductible?"></label>
+    <button class="btn">Add</button>
+  </form>
+  {% if done_q %}
+  <details class="tax-more">
+    <summary>Answered ({{ done_q|length }})</summary>
+    <ul class="tax-questions">
+      {% for q in done_q %}
+      <li><s>{{ q.question }}</s>{% if q.answer %}: {{ q.answer }}{% endif %}
+        <form method="post" action="{{ url_for('main.tax_questions_save', year=year) }}" class="inline no-print">
+          <input type="hidden" name="id" value="{{ q.id }}"><button class="btn small quiet" name="done" value="0">Reopen</button>
+        </form></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
   {% if t.notes %}
   <p class="muted tax-check">Transactions in {{ year }} whose notes mention a CPA or taxes.</p>
   {{ txn_table(t.notes, show_box=true) }}
   {% else %}
-  <p class="muted">No notes mention a CPA or taxes in {{ year }}. Add a note to a transaction on
+  <p class="muted">No transaction notes mention a CPA or taxes in {{ year }}. Add a note to a transaction on
     <a href="{{ url_for('main.transactions', period=year) }}">Transactions</a> (say "ask the CPA: repair or improvement?") and it shows up here.</p>
   {% endif %}
 </section>
