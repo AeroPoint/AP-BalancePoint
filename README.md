@@ -10,6 +10,12 @@ Everything runs on your machine. Data lives in `data/`, which git ignores.
 
 **Not technical? Start with [Minimum steps for non-technical users](#minimum-steps-for-non-technical-users).**
 
+![The Overview: how the month is going against the flexible target, with a pace check](docs/screenshot-overview.png)
+
+![Recurring: bills and subscriptions with monthly cost, new ones and price increases](docs/screenshot-recurring.png)
+
+*Screenshots show the made-up demo household.*
+
 **What it assumes:** US dollars and English. Bank CSVs work from any bank with a date, a description
 and an amount (or debit and credit) column; US Bank exports are understood best (their card memos also
 carry the merchant type, used to guess categories). SimpleFIN Bridge covers most US banks, card

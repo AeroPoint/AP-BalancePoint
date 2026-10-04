@@ -5,7 +5,20 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-04
+
+The first public release. The last changes before it are listed first; everything the app does
+follows under "What's in 0.1.0".
+
 ### Added
+- **Recurring** page: bills and subscriptions found in your spending, with monthly and yearly cost,
+  next expected date, and flags for new ones, price increases, missed and ended charges.
+- **Tax time** page: tax-checkbox items, business profit, income and "ask your accountant" notes for a
+  year, with CSV downloads and a print layout.
+- Optional notifications after the bank sync (email or ntfy), off unless set up in `[notify]`.
+- Plan: a "keeping at least" amount for each backup account.
+- The pace check counts this month's still-pending charges.
+- Bank sync: use a new setup token while connected.
 - Open-source housekeeping: `CONTRIBUTING.md`, `SECURITY.md`, this changelog, issue and pull request
   templates.
 - `scripts/check_no_personal_data.py`: fails if tracked files include personal data files, look like
@@ -33,7 +46,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The Mac scripts keep their executable bit in git (a merge had dropped it, so launchd couldn't
   start the app).
 
-## [0.1.0] - first public release (unreleased)
+## What's in 0.1.0
 
 Everything up to the first public release.
 
@@ -71,3 +84,6 @@ Everything up to the first public release.
   before and after.
 - `python run.py demo`: a made-up demo household (Pat and Sam Smith) in its own `demo-data/` folder.
 - Test suite on made-up data, run by GitHub Actions on macOS, Windows and Linux.
+
+[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/AeroPoint/AP-BalancePoint/releases/tag/v0.1.0
