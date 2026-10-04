@@ -29,6 +29,7 @@
         ('main.business_page', 'Business') if features.business else none,
         ('main.transactions', 'Transactions'),
         ('main.categorize', 'Categorize'),
+        ('main.recurring_page', 'Recurring'),
         ('main.net_worth', 'Net worth'),
         ('main.bankroll', 'Bankroll') if features.blackjack else none,
         ('main.accounts_page', 'Accounts'),
@@ -66,7 +67,7 @@
     <details class="tab-more{{ ' on' if endpoint not in tab_eps }}">
       <summary><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>More</summary>
       <div class="more-sheet">
-        {% for ep, text in [('main.plan', 'Plan'), ('main.trends', 'Year trends'), ('main.business_page', 'Business'),
+        {% for ep, text in [('main.plan', 'Plan'), ('main.trends', 'Year trends'), ('main.business_page', 'Business'), ('main.recurring_page', 'Recurring'),
                             ('main.net_worth', 'Net worth'), ('main.accounts_page', 'Accounts'), ('main.bank_sync', 'Bank sync'),
                             ('main.upload', 'Upload data'),
                             ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories')]

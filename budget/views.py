@@ -9,7 +9,7 @@ from uuid import uuid4
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import blackjack, budgeting, business, personal, reports, seed, simplefin_import
+from . import blackjack, budgeting, business, personal, recurring, reports, seed, simplefin_import
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import BAD_DATES_NOTE, CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -1357,6 +1357,41 @@ def save_bj_mile_rate():
 def business_page():
     conn = get_db()
     return render_template("business.html", reports=[business.report(conn, b) for b in business.businesses(conn)])
+
+
+# ---------------------------------------------------------------- recurring charges
+
+@bp.route("/recurring")
+def recurring_page():
+    conn = get_db()
+    r = recurring.report(conn)
+    cadence = request.args.get("cadence", "")
+    if cadence not in recurring.CADENCE_LABELS:
+        cadence = ""
+    shown = [i for i in r["active"] if not cadence or i["cadence"] == cadence]
+    return render_template("recurring.html", r=r, shown=shown, cadence=cadence,
+                           has_data=conn.execute("SELECT 1 FROM transactions LIMIT 1").fetchone() is not None)
+
+
+@bp.post("/recurring/ignore")
+def recurring_ignore():
+    conn = get_db()
+    key = request.form.get("key", "").strip()
+    if key:
+        recurring.ignore(conn, key, request.form.get("name", "").strip() or None)
+        conn.commit()
+        flash(f"Marked {request.form.get('name') or key} as not recurring.", "ok")
+    return redirect(url_for(".recurring_page", cadence=request.form.get("cadence") or None))
+
+
+@bp.post("/recurring/restore")
+def recurring_restore():
+    conn = get_db()
+    key = request.form.get("key", "").strip()
+    if key:
+        recurring.restore(conn, key)
+        conn.commit()
+    return redirect(url_for(".recurring_page") + "#ignored")
 
 
 # ---------------------------------------------------------------- bank sync (SimpleFIN Bridge)

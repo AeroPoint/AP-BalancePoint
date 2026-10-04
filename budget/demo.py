@@ -9,7 +9,7 @@ import json
 import random
 from datetime import date, timedelta
 
-from . import blackjack, budgeting
+from . import blackjack, budgeting, reports
 from .csv_import import store_transactions
 from .excel_import import ensure_account, set_balance
 
@@ -97,6 +97,8 @@ def build(conn, today=None):
     conn.execute("UPDATE categories SET flag = 'Rental property' WHERE name = 'Home & Garden'")
     conn.execute("UPDATE categories SET flag = 'Should be FSA/HSA' WHERE name = 'Health & Fitness'")
 
+    price_up = reports.add_months(today.year, today.month, -1)
+    gym_until = reports.add_months(today.year, today.month, -4)
     rows = {k: [] for k in acct}
     add = lambda k, day, amount, raw, mcc=None: day and rows[k].append(  # noqa: E731
         {"date": day.isoformat(), "amount": round(amount, 2), "raw": raw, "memo": None, "mcc": mcc})
@@ -109,7 +111,11 @@ def build(conn, today=None):
         add("checking", d(5), -500.00, "TRANSFER TO SAVINGS")
         add("savings", d(5), 500.00, "TRANSFER FROM CHECKING")
         for raw, amount, n, where in BILLS:
+            if raw == "NETFLIX.COM" and (y, m) >= price_up:
+                amount = -17.99  # the Recurring page flags the price increase
             add(where, d(n), amount if amount else -rnd.uniform(70, 165), raw)
+        if (y, m) <= gym_until:
+            add("card", d(4), -24.99, "PLANET FITNESS CLUB FEES")  # cancelled: Recurring lists it under Ended
         card_total = 0.0
         for raw, low, high, times, where in EVERYDAY:
             for _ in range(times + rnd.choice([-1, 0, 0, 1]) if times > 1 else times):
@@ -124,6 +130,11 @@ def build(conn, today=None):
         for _ in range(2):
             add("studio", d(rnd.randint(3, 27)), rnd.uniform(180, 900), "SQUARE INC DEPOSIT")
         add("studio", d(9), -59.99, "ADOBE CREATIVE CLOUD")
+    # Recurring: a streaming service started two months ago, and a yearly membership.
+    for i in range(3):
+        add("card", today - timedelta(days=4 + 30 * i), -13.99, "DISNEY PLUS 888-905-7888")
+    for days_ago in (300, 665):
+        add("card", today - timedelta(days=days_ago), -139.00, "AMAZON PRIME*2K4LJ0 AMZN.COM/BILL WA")
     add("checking", start.replace(day=10), -1500.00, "TRANSFER TO STUDIO")
     add("studio", start.replace(day=10), 1500.00, "TRANSFER FROM JOINT")
     trip = today.replace(day=1) - timedelta(days=120)

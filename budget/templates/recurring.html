@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty_upload %}
+{% block title %}Recurring{% endblock %}
+
+{% macro row(i, action) -%}
+<tr>
+  <td class="c-main">
+    <a href="{{ url_for('main.transactions', name=i.name) }}">{{ i.name }}</a>{% if '|' in i.key %} <span class="muted">({{ i.typical|money }} charges)</span>{% endif %}
+    {% if i.new %}<span class="chip rc-new">New</span>{% endif %}
+    {% if i.price_up %}<span class="chip rc-up" title="Was {{ i.previous|money }}">Price went up</span>{% endif %}
+    {% if i.missed %}<span class="chip rc-missed" title="Expected by {{ i.next|day_label }}">Missed?</span>{% endif %}
+  </td>
+  <td class="c-meta muted">{{ i.category or 'Uncategorized' }}</td>
+  <td class="c-meta" data-label="Every">{{ i.cadence_label }}</td>
+  <td class="num c-meta" data-label="Charge">{{ i.typical|money }}{% if i.varies %} <span class="muted">varies</span>{% endif %}{% if i.price_up %} <span class="muted">was {{ i.previous|money }}</span>{% endif %}</td>
+  <td class="num c-side">{{ i.monthly|money }}</td>
+  <td class="nowrap c-meta" data-label="Last">{{ i.last|day_label }}</td>
+  <td class="nowrap c-meta" data-label="{{ 'Ended after' if i.stopped else 'Next' }}">{% if i.stopped %}{{ i.count }} charges{% else %}{{ i.next|day_label }}{% endif %}</td>
+  <td class="actions c-meta">
+    <form method="post" action="{{ url_for('main.recurring_' ~ action) }}">
+      <input type="hidden" name="key" value="{{ i.key }}"><input type="hidden" name="name" value="{{ i.name }}">
+      {% if cadence %}<input type="hidden" name="cadence" value="{{ cadence }}">{% endif %}
+      <button class="btn small quiet" title="{{ 'Hide it from this page' if action == 'ignore' else 'Show it again' }}">{{ 'Not recurring' if action == 'ignore' else 'Restore' }}</button>
+    </form>
+  </td>
+</tr>
+{%- endmacro %}
+
+{% macro table(items, action) -%}
+<div class="table-wrap">
+  <table class="ledger cards recurring-table">
+    <thead><tr><th>Merchant</th><th>Category</th><th>How often</th><th class="num">Charge</th><th class="num">A month</th><th>Last charge</th><th>{{ 'Ended' if action == 'restore' else 'Next expected' }}</th><th></th></tr></thead>
+    <tbody>{% for i in items %}{{ row(i, action) }}{% endfor %}</tbody>
+  </table>
+</div>
+{%- endmacro %}
+
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Recurring</h1>
+    <p class="sub">
+      Bills and subscriptions found in your spending: the same merchant charging on a regular schedule. Each one's
+      monthly cost is its charge spread over a month. Mark anything that isn't really recurring and it moves to Ignored.
+    </p>
+  </div>
+</header>
+
+{% if not has_data %}
+  {{ empty_upload("No transactions yet") }}
+{% elif not r.active and not r.ended and not r.ignored %}
+<section class="empty">
+  <h1>Nothing recurring found yet</h1>
+  <p>A charge shows up here once it has repeated a few times on a regular schedule (three monthly charges, or two a year apart).
+     More history makes this more complete.</p>
+  <a class="btn primary" href="{{ url_for('main.upload') }}">Upload data</a>
+</section>
+{% else %}
+<section class="statement">
+  <h1>
+    {{ r.active|length }} recurring charge{{ 's' if r.active|length != 1 }}, about <b>{{ r.monthly|money(false) }} a month</b>
+    ({{ r.yearly|money(false) }} a year).
+  </h1>
+  {% if r.new or r.price_up or r.missed %}
+  <p class="compare">
+    {%- set parts = [] %}
+    {%- if r.new %}{% set _ = parts.append(r.new ~ ' new') %}{% endif %}
+    {%- if r.price_up %}{% set _ = parts.append(r.price_up ~ (' price increase' if r.price_up == 1 else ' price increases')) %}{% endif %}
+    {%- if r.missed %}{% set _ = parts.append(r.missed ~ ' missed, maybe cancelled') %}{% endif %}
+    {{ parts|join(', ') }}.
+  </p>
+  {% endif %}
+</section>
+
+{% if r.active %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>{{ 'All' if not cadence else r.cadences|selectattr(0, 'equalto', cadence)|map(attribute=1)|first }}</h2>
+    {% if r.cadences|length > 1 %}
+    <nav class="seg" aria-label="How often">
+      <a href="{{ url_for('main.recurring_page') }}" class="{{ 'on' if not cadence }}">All {{ r.active|length }}</a>
+      {% for key, label, n in r.cadences %}<a href="{{ url_for('main.recurring_page', cadence=key) }}" class="{{ 'on' if cadence == key }}">{{ label }} {{ n }}</a>{% endfor %}
+    </nav>
+    {% endif %}
+  </div>
+  {{ table(shown, 'ignore') }}
+</section>
+{% endif %}
+
+{% if r.ended %}
+<details class="panel tucked" id="ended">
+  <summary>Ended ({{ r.ended|length }}): nothing charged for two cycles or more</summary>
+  {{ table(r.ended, 'ignore') }}
+</details>
+{% endif %}
+
+{% if r.ignored %}
+<details class="panel tucked" id="ignored">
+  <summary>Ignored ({{ r.ignored|length }}): marked not recurring</summary>
+  {{ table(r.ignored, 'restore') }}
+</details>
+{% endif %}
+{% endif %}
+{% endblock %}
