@@ -12,7 +12,7 @@ part you decide on together. Savings rate is total saved (cash kept plus what pa
 retirement accounts, employer match included) over income including those contributions.
 """
 import statistics
-from datetime import date
+from datetime import date, timedelta
 
 from . import reports
 from .balances import load_ledgers
@@ -177,6 +177,41 @@ def scorecard(conn, year, month, accounts=None):
         "invested": invested(conn, start, end, accounts),
         "work": work, "saved": saved, "rate": saved / gross if gross > 0 else None,
     }
+
+
+def pace(conn, today=None):
+    """How this month is going so far: flexible spending against the share of the target that should be
+    gone by today, and the plan's spending account against its cushion. None without a target or plan.
+
+    {"day", "days", "spent", "target", "expected", "ahead" (positive = spent more than the pace),
+     "per_day_left", "warnings": [text]}
+    """
+    today = today or date.today()
+    start, end = reports.bounds(today.year, today.month)
+    days = (date.fromisoformat(end) - date.fromisoformat(start)).days
+    target = get_setting(conn, "flex_target")
+    out = {"day": today.day, "days": days, "target": target, "warnings": [], "spent": None}
+    if target:
+        spent = by_group(conn, start, (today + timedelta(days=1)).isoformat())[0]["flexible"]
+        expected = target * today.day / days
+        left_days = days - today.day + 1
+        out.update(spent=spent, expected=expected, ahead=spent - expected,
+                   per_day_left=(target - spent) / left_days if left_days else None)
+        if spent > target:
+            out["warnings"].append(f"Flexible spending is ${spent - target:,.0f} over the month's ${target:,.0f} target.")
+        elif spent - expected > max(50, 0.1 * target):
+            out["warnings"].append(f"Flexible spending is ${spent - expected:,.0f} ahead of pace for day {today.day}: "
+                                   f"${(target - spent) / left_days:,.0f} a day left for the rest of the month.")
+    account, cushion = get_setting(conn, "plan_account", cast=int), get_setting(conn, "plan_buffer")
+    if account and cushion:
+        ledger = load_ledgers(conn).get(account)
+        balance = ledger.on(today.isoformat()) if ledger else None
+        if balance is not None:
+            out.update(account=ledger.account["name"], balance=balance, cushion=cushion)
+            if balance < cushion:
+                out["warnings"].append(f"{ledger.account['name']} is at ${balance:,.0f}, ${cushion - balance:,.0f} below "
+                                       f"its ${cushion:,.0f} cushion.")
+    return out if target or out["warnings"] else None
 
 
 def savings_rate(conn, start, end, accounts=None):

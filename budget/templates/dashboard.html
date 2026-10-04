@@ -26,6 +26,29 @@
   </div>
 </header>
 
+{% if pace %}
+{# How this month is going so far, and anything to act on. #}
+<section class="panel pace{{ ' warn' if pace.warnings }}" aria-label="Pace check">
+  {% if pace.spent is not none %}
+  {% set pct = (pace.spent / pace.target * 100) if pace.target else 0 %}
+  <div class="pace-line">
+    <p>
+      <b>Day {{ pace.day }} of {{ pace.days }}:</b> flexible spending {{ pace.spent|money(false) }} of {{ pace.target|money(false) }}.
+      {% if pace.ahead > 0 %}<span class="over">{{ pace.ahead|money(false) }} ahead of pace</span>{% else %}<span class="good">{{ (-pace.ahead)|money(false) }} under pace</span>{% endif %}{% if pace.per_day_left is not none and pace.per_day_left >= 0 %}, {{ pace.per_day_left|money(false) }} a day left{% endif %}.
+    </p>
+    <div class="meter pace-meter" data-tip="Spent {{ pace.spent|money }}; by today the pace is {{ pace.expected|money }}">
+      <span class="meter-fill{{ ' over' if pace.ahead > 0 }}" style="width: {{ [pct, 100]|min }}%"></span>
+      <span class="meter-mark" style="left: {{ (pace.day / pace.days * 100)|round(1) }}%"></span>
+    </div>
+  </div>
+  {% endif %}
+  {% if pace.account is defined %}
+  <p class="muted pace-cushion">{{ pace.account }}: {{ pace.balance|money(false) }}, cushion {{ pace.cushion|money(false) }}.</p>
+  {% endif %}
+  {% for w in pace.warnings %}<p class="pace-warning" role="alert">⚠ {{ w }}</p>{% endfor %}
+</section>
+{% endif %}
+
 {% if current.count == 0 %}
   {{ empty_upload("Nothing recorded for " ~ label) }}
 {% else %}

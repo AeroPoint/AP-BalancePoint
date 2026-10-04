@@ -257,6 +257,14 @@ def main():
             print(f"  {name}: mapped, but the Bridge didn't return it (removed at bridge.simplefin.org?)")
         for s in report["stale"]:
             print(f"  STALE: {s['account']} last pulled {s['last_synced'] or 'never'}")
+        from budget import budgeting
+
+        check = budgeting.pace(connect(app.config["DATABASE"]))
+        if check and check["spent"] is not None:
+            print(f"  Pace: day {check['day']} of {check['days']}, flexible ${check['spent']:,.0f} of ${check['target']:,.0f} "
+                  f"({'+' if check['ahead'] >= 0 else '-'}${abs(check['ahead']):,.0f} against the pace)")
+        for w in (check or {}).get("warnings", []):
+            print(f"  WARNING: {w}")
         if report["unmapped"]:
             print('  Not mapped yet (run.py simplefin-map <id> --account "Local Account Name"):')
             for external_id, org, label in report["unmapped"]:

@@ -206,8 +206,10 @@ def dashboard():
     for row in spending:
         row["average"] = averages.get(row["id"])
     card = budgeting.scorecard(conn, year, month, acct) if view == "month" else None
+    today = date.today()
+    pace = budgeting.pace(conn, today) if view == "month" and (year, month) == (today.year, today.month) and not acct else None
     return render_template(
-        "dashboard.html", card=card, saving=budgeting.savings_rate(conn, start, end, acct),
+        "dashboard.html", card=card, pace=pace, saving=budgeting.savings_rate(conn, start, end, acct),
         year_groups=budgeting.by_group(conn, start, end, acct)[0] if view == "year" else None,
         view=view, year=year, month=month, months=MONTHS, acct=acct, accounts=_accounts(conn),
         years=sorted(set(reports.years(conn)) | {year}, reverse=True),

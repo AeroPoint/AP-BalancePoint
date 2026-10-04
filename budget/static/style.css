@@ -696,3 +696,12 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
   table.sf-table td.actions.c-side { flex-basis: 100%; display: flex; justify-content: flex-end; gap: 8px; }
   .sf-table select { max-width: none; }
 }
+/* overview: pace check */
+.pace { padding-top: 14px; padding-bottom: 14px; }
+.pace.warn { border-color: var(--error); }
+.pace-line p { margin-bottom: 8px; }
+.pace .over { color: var(--error); font-weight: 600; }
+.pace .good { color: var(--in); font-weight: 600; }
+.pace-meter { margin-bottom: 4px; }
+.pace-cushion { margin-top: 8px; font-size: 0.9rem; }
+.pace-warning { margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: var(--error-wash); color: var(--error); font-weight: 500; }
