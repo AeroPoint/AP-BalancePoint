@@ -12,6 +12,8 @@
     python run.py simplefin-status                       # when each account was last pulled
     python run.py demo [--dir demo-data]                 # a made-up household to try the app on
     python run.py simplefin-unmap <id>                   # stop syncing one (an old id after reconnecting)
+    python run.py notify-test                            # send a test message ([notify] in personal.toml)
+    python run.py notify-setup-password                  # save the SMTP password for email notifications
 """
 import argparse
 import os
@@ -97,6 +99,24 @@ def build_demo(args):
     print(f"Try it (your real data is untouched):  BUDGET_DATA_DIR={args.dir} python run.py serve --port 5001")
 
 
+def _notify_after_sync(app, data_dir, **sync):
+    """The optional message after a sync ([notify] in personal.toml). Without one: nothing, not even output.
+    Whatever goes wrong here is one line in the log, never a failed sync."""
+    try:
+        settings = personal.load(app.config["PERSONAL_CONFIG"])
+        if not settings.notify:
+            return
+        from budget import notify
+
+        conn = connect(app.config["DATABASE"])
+        try:
+            notify.after_sync(settings, conn, data_dir, **sync)
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001  a notification must never fail the sync
+        print(f"  Notification not sent: {exc if isinstance(exc, personal.PersonalConfigError) else type(exc).__name__}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="BalancePoint: a local personal budget app")
     sub = parser.add_subparsers(dest="command")
@@ -140,6 +160,8 @@ def main():
     sf_sync = sub.add_parser("simplefin-sync", help="pull balances/transactions for every mapped SimpleFIN account")
     sf_sync.add_argument("--since", help="pull from this date instead of each account's last sync (YYYY-MM-DD)")
     sub.add_parser("simplefin-status", help="when each SimpleFIN account was last pulled")
+    sub.add_parser("notify-test", help="send a test notification with today's numbers ([notify] in personal.toml)")
+    sub.add_parser("notify-setup-password", help="save the SMTP password for email notifications (only you can read it)")
     demo = sub.add_parser("demo", help="build a made-up household in its own folder (never your real data) to try the app")
     demo.add_argument("--dir", default="demo-data", help="folder for the demo (default: demo-data)")
     demo.add_argument("--replace", action="store_true", help="rebuild it if that folder already has a demo")
@@ -247,6 +269,7 @@ def main():
             report = simplefin_import.sync(conn, access_url, date.today(), since)
         except simplefin_import.SimpleFinError as exc:
             conn.close()
+            _notify_after_sync(app, data_dir, failure=str(exc))
             raise SystemExit(f"{datetime.now():%Y-%m-%d %H:%M} SimpleFIN sync FAILED, nothing changed: {exc}")
         conn.commit()
         conn.close()
@@ -281,6 +304,32 @@ def main():
             print('  Not mapped yet (run.py simplefin-map <id> --account "Local Account Name"):')
             for external_id, org, label in report["unmapped"]:
                 print(f"    {external_id}  {_sf_name(org, label)}")
+        _notify_after_sync(app, data_dir, report=report, check=check)
+    elif args.command == "notify-test":
+        from budget import budgeting, notify
+
+        cfg = notify.config(personal.load(app.config["PERSONAL_CONFIG"]))
+        if cfg is None:
+            raise SystemExit("Notifications aren't set up: add a [notify] section to data/personal.toml "
+                             "(personal.example.toml shows it; README: 'Notifications (optional)').")
+        conn = connect(app.config["DATABASE"])
+        try:
+            title, body = notify.build(conn, cfg, date.today(), check=budgeting.pace(conn), test=True)
+            notify.send(cfg, data_dir, title, body)
+        except notify.NotifyError as exc:
+            raise SystemExit(f"Notification not sent: {exc}")
+        finally:
+            conn.close()
+        print(f"Sent a test message ({notify.describe(cfg).rsplit(', ', 1)[0]}). It said:\n\n{title}\n{body}")
+    elif args.command == "notify-setup-password":
+        from getpass import getpass
+
+        from budget import notify
+
+        password = getpass("SMTP password (for Gmail and the like, an app password; not shown as you type): ")
+        if not password or password != getpass("Again: "):
+            raise SystemExit("The two didn't match (or were empty); nothing saved.")
+        print(f"Saved to {notify.save_password(data_dir, password)} (only your user can read it).")
     elif args.command == "simplefin-status":
         conn = connect(app.config["DATABASE"])
         rows = simplefin_import.status(conn)

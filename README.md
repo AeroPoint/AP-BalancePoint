@@ -361,6 +361,33 @@ balance replaces one you typed only when the bank's date is newer. Pending trans
 they post. The Bridge asks for no more than 24 requests a day; a daily run uses one (more only when
 catching up past 90 days).
 
+#### Notifications (optional)
+
+After each `run.py simplefin-sync` (so after the scheduled one too), the app can send a short message:
+how flexible spending is going against the pace ("Day 4 of 31: flexible $200 of $5,500, $510 under
+pace"), any warnings, how the sync went (new transactions, stale accounts, errors), how many
+transactions wait on the Categorize page, and a link to the app if you give one. It's **off** until you
+add a `[notify]` section to `data/personal.toml` (`personal.example.toml` shows it); without one nothing
+is sent and the sync log looks exactly as before.
+
+- `when = "warnings"` (the default) sends only when there's a pace or cushion warning, a stale account
+  or a sync error; `"daily"` after every sync; `"monthly"` on the 1st: last month's flexible spending
+  against the target and whether cash grew or shrank, plus how the new month starts.
+- **Email:** `method = "email"`, `smtp_host`, `smtp_port` (587 with STARTTLS, the default, or 465 with
+  SSL), `smtp_user`, `from` and `to = ["you@example.com"]`. The password never goes in
+  `personal.toml`: `run.py notify-setup-password` asks for it without showing it and saves it to
+  `data/notify-password` (only your user can read it; kept out of `data/`'s own git), or set
+  `BUDGET_SMTP_PASSWORD` for the scheduled job. Gmail and most others want an *app password* here, not
+  your usual one.
+- **ntfy** (a phone notification, [ntfy.sh](https://ntfy.sh) or your own server): `method = "ntfy"`,
+  `ntfy_url = "https://ntfy.sh/<long random topic>"`. An ntfy.sh topic is public to anyone who knows
+  its name, so make it long and random, or run your own server.
+
+Either way this sends a summary of your finances to that service (your mail provider, or ntfy). Then
+run `run.py notify-test`: it sends a test message with today's numbers. A message that can't be sent is
+one `Notification not sent: <reason>` line in the log; the sync itself still counts as done. The Bank
+sync page shows where messages go (addresses masked). *Sync now* on that page sends nothing.
+
 ## Accounts and net worth
 
 *Accounts* lists every account with its type, opened and closed month, activity and latest

@@ -16,6 +16,30 @@
 blackjack = false
 # business = true
 
+# ------------------------------------------------------------------ notifications (optional)
+# A short message after the scheduled bank sync (README: "Notifications (optional)"). Leave this section
+# out and nothing is ever sent. Try it with: run.py notify-test
+#   when:   "warnings" (only with pace/cushion warnings, stale accounts or sync errors; the default),
+#           "daily" (after every sync), or "monthly" (on the 1st: last month's result and this month's start)
+#   method: "email" or "ntfy"
+#   app_url: optional link to the app, added at the end of each message
+
+# [notify]
+# when = "warnings"
+# method = "email"
+# smtp_host = "smtp.gmail.com"
+# smtp_port = 587                # 587 = STARTTLS (default), 465 = SSL
+# smtp_user = "you@gmail.com"    # the password is NOT here: run.py notify-setup-password
+# from = "you@gmail.com"         # default: smtp_user
+# to = ["you@gmail.com", "partner@example.com"]
+# app_url = "http://your-mac:5000"
+
+# Or a phone notification by ntfy (ntfy.sh or your own server). Anyone who knows an ntfy.sh topic can
+# read it, so make the topic long and random:
+# [notify]
+# method = "ntfy"
+# ntfy_url = "https://ntfy.sh/budget-7f3k9q2x8w4m1z6v"
+
 # ------------------------------------------------------------------ extra categories
 # kind is expense, income or transfer (transfers aren't counted as income or spending).
 

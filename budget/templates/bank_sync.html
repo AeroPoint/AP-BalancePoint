@@ -179,4 +179,8 @@
   </details>
 </section>
 {% endif %}
+
+{% if notify_line %}
+<p class="muted">Notifications after the scheduled sync: {{ notify_line.rstrip('.') }}.</p>
+{% endif %}
 {% endblock %}
