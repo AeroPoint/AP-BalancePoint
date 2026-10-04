@@ -414,6 +414,22 @@ The **Business** page shows each business account's income, costs and profit by 
 its two categories on any account (a business cost paid on a household card counts), with the money you
 moved in and out of the business account shown apart.
 
+## Tax time
+
+The **Tax time** page gathers what an accountant asks for, for one calendar year (last year until the end
+of April, then this year; pick any year at the top). Like every report it counts on the effective date.
+
+- **Checkbox items**: for each category checkbox (Categories page), the transactions ticked yes and their
+  total, plus how many are still "to check", with a link to finish them on Transactions.
+- **Business**: each business account's income, costs and profit for the year (the same numbers as the
+  Business page) and its transactions.
+- **Income** by category, uncategorized deposits worth a look, and paycheck retirement savings if set up.
+- **Questions for your accountant**: transactions whose notes mention "CPA" or taxes. Write "ask the CPA:
+  ..." in a transaction's note during the year and it lands here.
+
+Each section downloads as a CSV (section, date, account, merchant, category, amount, checkbox, notes), or
+all of them in one file. *Print or save PDF* prints every section with its lists opened, without the menu.
+
 ## Judging a month, and planning ahead
 
 A single month's savings rate swings with every big purchase, so the Overview judges a month on

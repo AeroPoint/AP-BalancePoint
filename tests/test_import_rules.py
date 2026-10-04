@@ -62,6 +62,8 @@ def test_hand_picked_category_survives_rules(conn):
 
 
 def test_category_checkbox_and_filter(demo_conn, client):
+    demo_conn.execute("UPDATE transactions SET flag = NULL WHERE flag = 'yes'")  # start with none ticked
+    demo_conn.commit()
     tid = demo_conn.execute("SELECT id FROM transactions WHERE flag = 'check' LIMIT 1").fetchone()[0]
     assert client.post(f"/api/transactions/{tid}", json={"flag": "yes"}).status_code == 200
     home_garden = category(demo_conn, "Home & Garden")

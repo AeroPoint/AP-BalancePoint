@@ -6,10 +6,10 @@ from datetime import date, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import blackjack, budgeting, business, personal, reports, seed, simplefin_import
+from . import blackjack, budgeting, business, personal, reports, seed, simplefin_import, tax
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import BAD_DATES_NOTE, CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -1357,6 +1357,35 @@ def save_bj_mile_rate():
 def business_page():
     conn = get_db()
     return render_template("business.html", reports=[business.report(conn, b) for b in business.businesses(conn)])
+
+
+# ---------------------------------------------------------------- tax time
+
+def _tax_year():
+    year = _int(request.args.get("year"))
+    return year if year and 1900 <= year <= 2999 else tax.default_year()
+
+
+@bp.route("/tax")
+def tax_page():
+    conn = get_db()
+    year = _tax_year()
+    data = tax.summary(conn, year, with_business=features(conn)["business"])
+    return render_template("tax.html", t=data, year=year, sections=tax.SECTIONS,
+                           years=sorted(set(reports.years(conn)) | {year, tax.default_year()}, reverse=True))
+
+
+@bp.route("/tax/export.csv")
+def tax_export():
+    conn = get_db()
+    year = _tax_year()
+    section = request.args.get("section", "all")
+    if section != "all" and section not in tax.SECTIONS:
+        section = "all"
+    data = tax.summary(conn, year, with_business=features(conn)["business"])
+    name = f"tax-{year}.csv" if section == "all" else f"tax-{year}-{section}.csv"
+    return Response(tax.to_csv(data, section), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # ---------------------------------------------------------------- bank sync (SimpleFIN Bridge)
