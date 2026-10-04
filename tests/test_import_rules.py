@@ -69,3 +69,88 @@ def test_category_checkbox_and_filter(demo_conn, client):
     assert "1 transaction" in page and "Rental property" in page
     client.post(f"/api/transactions/{tid}", json={"flag": None})
     assert client.get(f"/transactions?flag=yes:{home_garden}").get_data(as_text=True).count('class="flag-check" checked') == 0
+
+
+AMEX_STYLE = "Date,Description,Amount\n03/02/2026,ACME HARDWARE,54.21\n03/04/2026,PAYMENT RECEIVED,-500.00\n"
+
+
+def test_flip_sign_for_banks_that_list_purchases_as_positive():
+    assert [r["amount"] for r in parse_csv(AMEX_STYLE)] == [54.21, -500.0]  # default: as the file says
+    assert [r["amount"] for r in parse_csv(AMEX_STYLE, flip_sign=True)] == [-54.21, 500.0]
+    # Debit/credit columns already say which way money went: never flipped.
+    both = "Posted Date,Description,Debit,Credit\n03/04/2026,COFFEE,4.50,\n03/05/2026,REFUND,,20.00\n"
+    assert [r["amount"] for r in parse_csv(both, flip_sign=True)] == [-4.5, 20.0]
+
+
+def test_headerless_export():
+    text = '"03/02/2026","-54.21","*","","SAFEWAY #1234 SPRINGFIELD"\n"03/03/2026","2650.00","*","","ACME CORP PAYROLL"\n'
+    rows = parse_csv(text)
+    assert [(r["date"], r["amount"], r["raw"]) for r in rows] == [
+        ("2026-03-02", -54.21, "SAFEWAY #1234 SPRINGFIELD"), ("2026-03-03", 2650.0, "ACME CORP PAYROLL")]
+
+
+def test_flip_sign_is_remembered_on_the_account(conn, client):
+    import io
+
+    acct = account(conn, "Rewards Card", "credit")
+    conn.commit()
+    flag = lambda: conn.execute("SELECT csv_flip_sign FROM accounts WHERE id = ?", (acct,)).fetchone()[0]  # noqa: E731
+    assert flag() == 0  # default off
+
+    client.post("/upload", data={"account_id": acct, "flip_sign_shown": "1", "csv_flip_sign": "1",
+                                 "files": (io.BytesIO(AMEX_STYLE.encode()), "jan.csv")},
+                content_type="multipart/form-data")
+    amounts = sorted(r[0] for r in conn.execute("SELECT amount FROM transactions WHERE account_id = ?", (acct,)))
+    assert amounts == [-54.21, 500.0]
+    assert flag() == 1
+    assert 'data-flip="1"' in client.get("/upload").get_data(as_text=True)
+    # A form without the box leaves it alone; the Accounts page row (which has it) unticked turns it off.
+    client.post("/accounts/save", data={"id": acct, "name": "Rewards Card", "kind": "credit"})
+    assert flag() == 1
+    client.post("/accounts/save", data={"id": acct, "name": "Rewards Card", "kind": "credit", "flip_sign_shown": "1"})
+    assert flag() == 0
+
+
+def test_older_database_gets_the_flip_setting_off(conn):
+    from budget.db import migrate
+
+    acct = account(conn, "Checking")
+    conn.execute("ALTER TABLE accounts DROP COLUMN csv_flip_sign")
+    migrate(conn)
+    assert conn.execute("SELECT csv_flip_sign FROM accounts WHERE id = ?", (acct,)).fetchone()[0] == 0
+
+
+REMOVED_BUILTINS = [("raw", "CLOUDFLARE"), ("raw", "MERRILL"), ("raw", "ML "),
+                    ("raw", "VOYA"), ("name", "Chase Card"), ("name", "Merrill"), ("name", "Merrill Lynch"),
+                    ("name", "Check Deposit"), ("name", "Xmas"), ("name", "Christmas"), ("name", "Student Loans")]
+
+
+def _rule(conn, match_on, pattern):
+    return conn.execute("SELECT rename_to, category_id, source FROM rules WHERE match_on = ? AND pattern = ?",
+                        (match_on, pattern)).fetchone()
+
+
+def test_fresh_database_has_only_national_merchants(conn):
+    for match_on, pattern in REMOVED_BUILTINS:
+        assert _rule(conn, match_on, pattern) is None, pattern
+    assert _rule(conn, "raw", "CARDMEMBER SERV")["rename_to"] == "Card Payment"
+
+
+def test_existing_database_keeps_rules_dropped_from_the_built_in_list(conn):
+    """Taking an entry out of seed.py, or renaming one, never deletes or rewrites what a database already has."""
+    from budget.db import init_db
+
+    other = category(conn, "Other Income")
+    for match_on, pattern in REMOVED_BUILTINS:
+        conn.execute("INSERT INTO rules (match_on, pattern, rename_to, category_id, source) VALUES (?, ?, ?, ?, 'builtin')",
+                     (match_on, pattern, pattern.title() if match_on == "raw" else None, other))
+    conn.execute("UPDATE rules SET rename_to = 'US Bank Card Payment' WHERE pattern = 'CARDMEMBER SERV'")
+    conn.execute("UPDATE rules SET rename_to = 'My Card', source = 'user' WHERE pattern = 'PAYMENT THANK YOU'")
+    conn.commit()
+    init_db(conn)
+    for match_on, pattern in REMOVED_BUILTINS:
+        row = _rule(conn, match_on, pattern)
+        assert row is not None and row["source"] == "builtin" and row["category_id"] == other, pattern
+    assert _rule(conn, "raw", "CARDMEMBER SERV")["rename_to"] == "US Bank Card Payment"
+    row = _rule(conn, "raw", "PAYMENT THANK YOU")
+    assert (row["rename_to"], row["source"]) == ("My Card", "user")

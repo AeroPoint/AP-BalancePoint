@@ -13,7 +13,9 @@ and an amount (or debit and credit) column; US Bank exports are understood best 
 carry the merchant type, used to guess categories). SimpleFIN Bridge covers most US banks, card
 companies, brokerages and lenders.
 
-**Optional parts** (a blackjack bankroll tracker) are described under [Optional features](#optional-features).
+**Optional parts** switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
+for tracking blackjack sessions; off for new installs, on once there are sessions) and `business` (the
+Business page; on once an account has its own categories). See [Optional features](#optional-features).
 
 ## Run it
 
@@ -161,6 +163,12 @@ startup, so restart after editing. Changes you make in the app win over the file
   category, date and notes for each entry move to the bank row with the same amount nearest in
   date. To keep spreadsheet months you already checked against the bank, set the account's
   *Bank exports from* month on the Accounts page: export rows before it are left out.
+- **Which CSVs work:** US Bank exports; any file with Date / Description (or Name, Payee) / Amount
+  columns; files with separate Debit and Credit columns; and headerless files whose rows start with a
+  date and an amount (like Wells Fargo's). Dates are read in US formats (MM/DD/YYYY, MM/DD/YY or
+  YYYY-MM-DD). Some banks (Amex, Discover, many card exports) list purchases as *positive* amounts:
+  tick "This bank lists purchases as positive amounts" when uploading (or "Purchases are +" on the
+  Accounts page) and the account remembers it. Debit/credit files never need it.
 - **Old budget spreadsheet:** describe its layout in the `[spreadsheet]` section of
   `data/personal.toml`, then use *Upload data → Old budget workbook*, or:
 

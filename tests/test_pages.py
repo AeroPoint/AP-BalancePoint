@@ -130,3 +130,50 @@ def test_bundled_font_is_served(client):
     r = client.get("/static/fonts/OFL.txt")
     assert r.status_code == 200 and b"SIL Open Font License" in r.data
     r.close()
+
+
+def _app_with(tmp_path, monkeypatch, toml=""):
+    from budget import create_app
+
+    data = tmp_path / "data"
+    data.mkdir(exist_ok=True)
+    (data / "personal.toml").write_text(toml)
+    monkeypatch.setenv("BUDGET_DATA_DIR", str(data))
+    return create_app()
+
+
+def _business_links(app):
+    return app.test_client().get("/").get_data(as_text=True).count('href="/business"')
+
+
+def _add_business_account(app):
+    from budget.db import connect
+
+    conn = connect(app.config["DATABASE"])
+    conn.execute("INSERT INTO accounts (name, kind, default_in_category) "
+                 "SELECT 'Studio', 'checking', id FROM categories WHERE name = 'Side Income'")
+    conn.commit()
+    conn.close()
+
+
+def test_business_is_off_for_a_new_install_but_can_be_set_up(tmp_path, monkeypatch):
+    app = _app_with(tmp_path, monkeypatch)
+    assert _business_links(app) == 0
+    accounts = app.test_client().get("/accounts").get_data(as_text=True)
+    assert "Business accounts" in accounts and "Set up a business account" in accounts
+
+
+def test_business_turns_on_once_an_account_has_its_own_categories(tmp_path, monkeypatch):
+    """An install with business accounts (like the one this came from) keeps it without setting anything."""
+    app = _app_with(tmp_path, monkeypatch)
+    _add_business_account(app)
+    assert _business_links(app) == 2  # the sidebar and the phone's More sheet
+
+
+@pytest.mark.parametrize("setting, business_accounts, shown", [("false", True, False), ("true", False, True)])
+def test_business_setting_wins(tmp_path, monkeypatch, setting, business_accounts, shown):
+    app = _app_with(tmp_path, monkeypatch, f"[features]\nbusiness = {setting}\n")
+    if business_accounts:
+        _add_business_account(app)
+    assert (_business_links(app) > 0) == shown
+    assert "Business accounts" in app.test_client().get("/accounts").get_data(as_text=True)  # always there to set one up

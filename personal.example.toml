@@ -5,11 +5,15 @@
 # Anything you change on the Merchant dictionary page in the app wins over this file.
 
 # ------------------------------------------------------------------ optional features
-# Leave a feature out and the app decides: blackjack is on once there are blackjack sessions (so an
-# install that uses it keeps it) and off for a new one. Set it to switch it on or off for good.
+# Leave a feature out and the app decides: each is on once it's in use (so an install that uses it
+# keeps it) and off for a new one. Set it to switch it on or off for good.
+#   blackjack: the Bankroll page; on once there are blackjack sessions.
+#   business:  the Business page (income, costs and profit per business account); on once an account
+#              has its own categories (Accounts -> Business accounts, which is always there to set one up).
 
 [features]
 blackjack = false
+# business = true
 
 # ------------------------------------------------------------------ extra categories
 # kind is expense, income or transfer (transfers aren't counted as income or spending).

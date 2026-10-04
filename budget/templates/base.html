@@ -26,7 +26,7 @@
         ('main.dashboard', 'Overview'),
         ('main.plan', 'Plan'),
         ('main.trends', 'Year trends'),
-        ('main.business_page', 'Business'),
+        ('main.business_page', 'Business') if features.business else none,
         ('main.transactions', 'Transactions'),
         ('main.categorize', 'Categorize'),
         ('main.net_worth', 'Net worth'),
@@ -69,7 +69,8 @@
         {% for ep, text in [('main.plan', 'Plan'), ('main.trends', 'Year trends'), ('main.business_page', 'Business'),
                             ('main.net_worth', 'Net worth'), ('main.accounts_page', 'Accounts'), ('main.bank_sync', 'Bank sync'),
                             ('main.upload', 'Upload data'),
-                            ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories')] if ep not in tab_eps %}
+                            ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories')]
+                            if ep not in tab_eps and (features.business or ep != 'main.business_page') %}
         <a href="{{ url_for(ep) }}" class="{{ 'on' if endpoint == ep }}">{{ text }}</a>
         {% endfor %}{% if config.LOGIN_REQUIRED %}<a href="{{ url_for('auth.logout') }}">Log out</a>{% endif %}
       </div>
