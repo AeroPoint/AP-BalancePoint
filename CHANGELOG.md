@@ -12,6 +12,26 @@ and versions follow [Semantic Versioning](https://semver.org/).
   secrets, or contain words from a local, untracked `.personal-words` deny-list. Runs in CI;
   `scripts/install-git-hooks.sh` installs it as an opt-in pre-commit hook.
 - `scripts/prepare_public_repo.sh`: builds a public copy with rewritten author identities.
+- Pace check-in on the Overview (and in the sync log): flexible spending against the month so far,
+  with warnings when ahead of pace, over target, or the spending account is under its cushion.
+- CSV import: a per-account "lists purchases as positive amounts" setting (Amex, Discover and many
+  card exports), and headerless exports.
+- `[features] business`: the Business page is optional, on automatically once an account has its own
+  categories.
+- Scheduling the daily bank sync on Linux (cron, systemd), Windows (Task Scheduler) and Docker;
+  `MAINTAINING.md` for maintainer-only notes.
+
+### Changed
+- The font (Libre Franklin, SIL Open Font License) is bundled, so pages contact no outside service.
+- The built-in merchant dictionary is national merchants only; household-specific entries were
+  removed. Existing databases keep the rules they already have.
+- The bank card payment rule is named "Card Payment" on new installs.
+- `start-mac.sh` finds Python 3.11+ on Intel Macs and from python.org, not only Apple-silicon Homebrew.
+- Upload data shows a quiet note instead of an error when no old spreadsheet is configured.
+
+### Fixed
+- The Mac scripts keep their executable bit in git (a merge had dropped it, so launchd couldn't
+  start the app).
 
 ## [0.1.0] - first public release (unreleased)
 
