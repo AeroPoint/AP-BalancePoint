@@ -140,7 +140,7 @@ def run_sync(monkeypatch, capsys, app, rep=None, fail=None):
 
     dd = data_dir(app)
     monkeypatch.setattr(sys, "argv", ["run.py", "simplefin-sync"])
-    monkeypatch.setattr(run.simplefin_import, "load_access_url", lambda d: "https://user:pw@bridge.example/simplefin")
+    monkeypatch.setattr(run.simplefin_import, "load_access_url", lambda d: "https://user:pw@bridge.example.com/simplefin")
 
     def fake_sync(conn, url, today, since):
         if fail:
@@ -198,7 +198,7 @@ def test_warnings_mode_sends_only_with_warnings(app, conn, fake_smtp):
     assert notify.after_sync(s, conn, dd, report(), budgeting.pace(conn, today), today=today, out=lines.append)
     assert "ahead of pace" in fake_smtp[-1].msg.get_content()
     # and a failed sync
-    assert notify.after_sync(s, conn, dd, failure="Couldn't reach https://u:pw@bridge/x", today=today, out=lines.append)
+    assert notify.after_sync(s, conn, dd, failure="Couldn't reach https://u:pw@bridge.example.com/x", today=today, out=lines.append)
     failed = fake_smtp[-1].msg.get_content()
     assert "Bank sync FAILED" in failed and "pw" not in failed
 
