@@ -15,7 +15,9 @@ follows under "What's in 0.1.0".
   next expected date, and flags for new ones, price increases, missed and ended charges.
 - **Tax time** page: tax-checkbox items, business profit, income and "ask your accountant" notes for a
   year, with CSV downloads and a print layout.
-- Optional notifications after the bank sync (email or ntfy), off unless set up in `[notify]`.
+- Optional notifications after the bank sync (email or ntfy): when there are warnings, daily, weekly or
+  monthly; set up in the browser (Bank sync → set up notifications) or `[notify]`. Off until set up.
+- Tax time: questions for your accountant, written down per tax year and checked off when answered.
 - Plan: a "keeping at least" amount for each backup account.
 - The pace check counts this month's still-pending charges.
 - Bank sync: use a new setup token while connected.
