@@ -218,3 +218,37 @@ def test_plan_backup_with_no_balance_yet(conn):
     budgeting.set_setting(conn, "plan_backup_account", empty)
     p = budgeting.project(conn, today=TODAY)
     assert p["total_drawn"] == 0 and p["start_left"] == {empty: 0.0}
+
+
+def test_plan_keeps_each_backups_minimum(conn, client):
+    """Each backup has its own "keep at least": drawing stops there and moves on to the next account."""
+    checking, (savings, brokerage) = plan(conn, income=5000, fixed=4000, flex=2500, nonmonthly=0,
+                                          buffer=1000, start=2000.0, backups=((2000.0, "Savings"), (20_000.0, "Brokerage")))
+    conn.commit()
+    client.post("/plan/settings", data={"plan_backup_min": "1,200", "plan_backup_min_2": "17000"})
+    p = budgeting.project(conn, today=TODAY)
+    r = p["rows"]
+    assert p["floors"] == {savings: 1200.0, brokerage: 17_000.0}
+    # Nov: 500 from Savings (2000 -> 1500). Dec: only 300 more (down to 1200), the other 1200 from Brokerage.
+    assert r[0]["draws"] == {savings: 500.0}
+    assert r[1]["draws"] == {savings: 300.0, brokerage: 1200.0} and r[1]["left"][savings] == 1200.0
+    # Brokerage gives 3000 in all down to 17,000; then the plan runs short instead of going under either minimum.
+    assert r[2]["draws"] == {brokerage: 1500.0} and r[3]["draws"] == {brokerage: 300.0}
+    assert p["first_short"] == "2027-02" and min(x["left"][brokerage] for x in r) == 17_000.0
+    html = client.get("/plan").get_data(as_text=True)
+    assert 'name="plan_backup_min" inputmode="decimal" value="1200"' in html and "reaches what you keep in it" in html
+
+
+def test_blank_backup_minimum_is_zero(conn, client):
+    checking, (savings,) = plan(conn, income=5000, fixed=4000, flex=2500, nonmonthly=0,
+                                buffer=1000, start=2000.0, backups=((2000.0, "Savings"),))
+    conn.commit()
+    client.post("/plan/settings", data={"plan_backup_min": ""})
+    assert budgeting.project(conn, today=TODAY)["rows"][1]["left"][savings] == 0.0
+
+
+def test_pace_warns_when_a_backup_is_under_its_minimum(conn):
+    checking, (savings,) = plan(conn, backups=((800.0, "Savings"),))
+    budgeting.set_setting(conn, "plan_backup_min", 1000)
+    assert any("Savings is at $800, $200 below the $1,000 the plan keeps in it." == w
+               for w in budgeting.pace(conn, TODAY)["warnings"])

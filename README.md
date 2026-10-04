@@ -408,8 +408,9 @@ the Overview and in yearly savings rates. For a raise or a new rate, add an entr
 The **Plan** page projects the account you spend from over the next 12 months: planned income,
 fixed and non-monthly spending, the flexible target, and changes you expect (time off work,
 overtime, a planned purchase). When the account would drop below the cushion you set, the
-shortfall comes from backup accounts in the order you pick (say savings, then a brokerage account), and
-the page shows when that starts and how much each one gives.
+shortfall comes from backup accounts in the order you pick (say savings, then a brokerage account),
+each down to its own "keeping at least" amount (blank means it can be emptied), and the page shows when
+that starts and how much each one gives. The Overview warns when a backup is below its amount.
 
 ## Cash
 

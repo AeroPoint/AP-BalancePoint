@@ -232,6 +232,16 @@ def pace(conn, today=None):
             if balance < cushion:
                 out["warnings"].append(f"{ledger.account['name']} is at ${balance:,.0f}, ${cushion - balance:,.0f} below "
                                        f"its ${cushion:,.0f} cushion.")
+    ledgers = None
+    for key, min_key in zip(BACKUP_KEYS, BACKUP_MIN_KEYS):
+        backup, floor = get_setting(conn, key, cast=int), get_setting(conn, min_key)
+        if backup and floor:
+            ledgers = ledgers or load_ledgers(conn)
+            ledger = ledgers.get(backup)
+            bal = ledger.on(today.isoformat()) if ledger else None
+            if bal is not None and bal < floor:
+                out["warnings"].append(f"{ledger.account['name']} is at ${bal:,.0f}, ${floor - bal:,.0f} below the "
+                                       f"${floor:,.0f} the plan keeps in it.")
     return out if target or out["warnings"] else None
 
 
@@ -247,6 +257,7 @@ def savings_rate(conn, start, end, accounts=None):
 
 PLAN_KEYS = ("plan_income", "plan_fixed", "plan_nonmonthly", "flex_target", "plan_buffer")
 BACKUP_KEYS = ("plan_backup_account", "plan_backup_account_2")  # drawn from in this order
+BACKUP_MIN_KEYS = ("plan_backup_min", "plan_backup_min_2")  # each backup's own "keep at least" (blank = 0)
 
 
 def complete_months(conn, count, before=None):
@@ -302,7 +313,7 @@ def project(conn, months=12, today=None):
 
     Each month: planned income - fixed - flexible target - non-monthly + plan items. When the plan
     account would drop below the buffer, the difference is drawn from the backup accounts in order
-    (BACKUP_KEYS): the first until it's empty, then the next.
+    (BACKUP_KEYS): the first down to its own minimum (BACKUP_MIN_KEYS; blank = empty), then the next.
     """
     today = today or date.today()
     values = {k: get_setting(conn, k) for k in PLAN_KEYS}
@@ -311,7 +322,9 @@ def project(conn, months=12, today=None):
     ledgers = load_ledgers(conn)
     account = get_setting(conn, "plan_account", cast=int)
     iso = today.isoformat()
-    backups = [b for b in (get_setting(conn, k, cast=int) for k in BACKUP_KEYS) if b in ledgers]
+    chosen = [(get_setting(conn, k, cast=int), get_setting(conn, mk) or 0.0) for k, mk in zip(BACKUP_KEYS, BACKUP_MIN_KEYS)]
+    backups = [b for b, _ in chosen if b in ledgers]
+    floors = {b: f for b, f in chosen if b in ledgers}
     balance = (ledgers[account].on(iso) or 0.0) if account in ledgers else 0.0
     left = {b: ledgers[b].on(iso) or 0.0 for b in backups}
     buffer = values["plan_buffer"] or 0.0
@@ -332,7 +345,7 @@ def project(conn, months=12, today=None):
         for b in backups:
             if balance >= buffer:
                 break
-            take = min(buffer - balance, max(left[b], 0.0))
+            take = min(buffer - balance, max(left[b] - floors[b], 0.0))
             if take > 0:
                 draws[b] = take
                 balance += take
@@ -346,7 +359,7 @@ def project(conn, months=12, today=None):
         })
     return {
         "values": values, "items": items, "rows": rows, "start_balance": start_balance, "start_left": start_left,
-        "account": account, "backups": backups, "drawn": drawn, "total_drawn": sum(drawn.values()),
+        "account": account, "backups": backups, "floors": floors, "drawn": drawn, "total_drawn": sum(drawn.values()),
         "average_net": sum(r["net"] for r in rows) / len(rows) if rows else 0.0,
         "first_draw": next((r["key"] for r in rows if r["draw"] > 0), None),
         "first_short": next((r["key"] for r in rows if r["short"]), None),

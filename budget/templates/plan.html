@@ -26,7 +26,7 @@
   </h1>
   <p class="compare">
     A planned month runs {{ p.average_net|abs|money(false) }} {{ 'ahead' if p.average_net >= 0 else 'short' }} on average.
-    {% if p.first_short %}{{ backup_name }} runs out in {{ p.first_short|month_label }}.
+    {% if p.first_short %}{{ backup_name }} {{ 'reaches what you keep in it' if p.floors.values()|select|list else 'runs out' }} in {{ p.first_short|month_label }}.
     {% elif p.total_drawn %}Left at the end: {% for b in p.backups %}{{ names[b] }} {{ last.left[b]|money(false) }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% endif %}
   </p>
 </section>
@@ -34,7 +34,7 @@
 <section class="panel">
   <div class="panel-head">
     <h2>Next 12 months</h2>
-    <p class="muted">Balances at each month's end. When {{ acct_name }} would drop below the cushion, the difference comes from {{ backup_name }}.</p>
+    <p class="muted">Balances at each month's end. When {{ acct_name }} would drop below the cushion, the difference comes from {{ backup_name }}{% if p.floors.values()|select|list %}, never taking one below what you keep in it{% endif %}.</p>
   </div>
   {# One small chart per account, each on its own scale: a big backup account would otherwise flatten the rest. #}
   <div class="runway-grid">
@@ -111,8 +111,12 @@
     <div class="plan-row">
       {% for key in ['plan_backup_account', 'plan_backup_account_2'] %}
       {% set i = loop.index0 %}
+      {% set min_key = ['plan_backup_min', 'plan_backup_min_2'][i] %}
       <label class="field"><span>{{ 'Then draw from' if loop.first else 'After that' }}</span>
         <select name="{{ key }}"><option value="">Nothing</option>{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == backup_accounts[i] %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
+      </label>
+      <label class="field"><span>Keeping at least</span>
+        <input name="{{ min_key }}" inputmode="decimal" value="{{ '%.0f'|format(backup_mins[i]) if backup_mins[i] is not none else '' }}" placeholder="0">
       </label>
       {% endfor %}
     </div>
@@ -222,6 +226,7 @@
     Charts.lines(document.getElementById("runway-{{ b }}"), {
       labels, titles, height: 150, colors: [Charts.seriesColor({{ loop.index }})],
       series: [{ name: {{ names[b]|tojson }}, values: rows.map((r) => r.left[{{ b|tojson }}]) }],
+      refs: {{ projection.floors[b]|tojson }} ? [{ value: {{ projection.floors[b]|tojson }}, label: `Keep ${Charts.money({{ projection.floors[b]|tojson }})}` }] : [],
     });
     {% endfor %}
   })();
