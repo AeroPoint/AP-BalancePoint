@@ -30,6 +30,9 @@ for personal data, and prints the next steps (review, create the GitHub repo, pu
 a fast-forward of what's already published (it never rewrites published history). If a check flags
 made-up test values in history that's already public, list that file version's blob id in
 `scripts/personal-data-reviewed.txt` after reviewing it.
+Tag a release in that public copy (`git tag -a vX.Y.Z`, `git push origin vX.Y.Z`, then
+`gh release create vX.Y.Z`): publish_update.sh sets the copy's git identity to the public one, so
+the tag doesn't carry this computer's email (GitHub refuses a private email anyway).
 
 Licensed under the MIT License (`LICENSE`). After creating the GitHub repository, turn on private vulnerability reporting
 (Settings, then Code security) so `SECURITY.md`'s reporting route works.

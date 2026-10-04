@@ -22,6 +22,9 @@ fi
 
 sh "$(dirname "$0")/prepare_public_repo.sh" "$target" "$name" "$email" "$@"
 
+# Anything made in the copy later (a release tag) carries the public identity, never this computer's.
+git -C "$target" config user.name "$name"
+git -C "$target" config user.email "$email"
 git -C "$target" remote add origin "$remote"
 git -C "$target" fetch -q origin
 branch=$(git -C "$target" rev-parse --abbrev-ref HEAD)
