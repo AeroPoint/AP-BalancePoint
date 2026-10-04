@@ -47,13 +47,15 @@
         <input type="checkbox" name="csv_flip_sign" value="1" id="csv-flip-sign"{% if chosen and chosen.csv_flip_sign %} checked{% endif %}>
         This bank lists purchases as positive amounts (Amex, Discover, many card exports)
       </label>
-      <small class="muted">Remembered on the account. Files with separate debit and credit columns don't need it.</small>
+      <small class="muted">Remembered on the account. Files with separate debit and credit columns don't need it. Set it before the first upload: changing it later makes re-uploaded files look like new transactions.</small>
       <div><button class="btn primary">Upload CSV files</button></div>
       <script>
         (() => {
           const select = document.querySelector('select[name="account_id"]');
           const box = document.getElementById("csv-flip-sign");
-          select.addEventListener("change", () => { box.checked = select.selectedOptions[0]?.dataset.flip === "1"; });
+          const sync = () => { box.checked = select.selectedOptions[0]?.dataset.flip === "1"; };
+          sync();  // match whichever account the list actually shows
+          select.addEventListener("change", sync);
         })();
       </script>
     </form>

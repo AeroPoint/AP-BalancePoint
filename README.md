@@ -87,7 +87,7 @@ that stays on, as below, or in Docker with `restart: unless-stopped` (the defaul
    (Apple silicon or Intel), else `python3` if it's 3.11 or newer, so it doesn't depend on conda or
    whatever `python` means in your shell. The installer starts the app, and makes it start again at
    every login and after a crash. It prints the address for phones and other computers, e.g.
-   `http://mac-mini:5000`. Allow incoming connections if macOS asks.
+   `http://my-computer:5000`. Allow incoming connections if macOS asks.
 4. Log: `data/server.log`. Remove the auto-start (and the daily bank sync) with
    `./install-mac.sh remove`; run it by hand with `./start-mac.sh`.
 

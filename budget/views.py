@@ -1105,7 +1105,7 @@ def upload():
             flash("Pick which account these transactions belong to.", "error")
         elif not files:
             flash("Choose at least one CSV file.", "error")
-        if account_id and "flip_sign_shown" in request.form:
+        if account_id and files and "flip_sign_shown" in request.form:
             # The checkbox starts out as the account's setting, so leaving it alone keeps it.
             conn.execute("UPDATE accounts SET csv_flip_sign = ? WHERE id = ?",
                          (int(bool(request.form.get("csv_flip_sign"))), account_id))
