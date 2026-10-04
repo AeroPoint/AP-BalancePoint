@@ -139,3 +139,21 @@ def test_this_repo_is_clean(tmp_path):
     empty = tmp_path / "empty-words"
     empty.write_text("")
     assert checker.main(["--repo", str(ROOT), "--words", str(empty)]) == 0
+
+
+def test_reviewed_history_versions_skip_only_the_secret_check(repo, tmp_path):
+    """A version listed in scripts/personal-data-reviewed.txt passes the secret check in history; the
+    deny-list still applies to it, and the same text in a new version still fails."""
+    old = "url = 'https://u:pw@bridge/x'  # Zebulon\n"  # personal-data-check: ignore
+    add(repo, "tests/t.py", old, commit=True)
+    blob = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD:tests/t.py"], capture_output=True, text=True).stdout.strip()
+    (repo / "tests/t.py").write_text("url = 'https://u:pw@bridge.example.com/x'\n")
+    git(repo, "commit", "-qam", "fix")
+    assert run(repo, "--history") == 1
+    add(repo, "scripts/personal-data-reviewed.txt", f"# reviewed\n{blob} fake test URL\n", commit=True)
+    assert run(repo, "--history") == 0
+    words = tmp_path / "w.txt"
+    words.write_text("zebulon\n")
+    assert run(repo, "--words", str(words), "--history") == 1
+    add(repo, "tests/t2.py", "url = 'https://u:pw@bridge/y'\n", commit=True)  # personal-data-check: ignore
+    assert run(repo, "--history") == 1

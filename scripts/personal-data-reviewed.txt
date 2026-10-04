@@ -1,0 +1,4 @@
+# File versions in git history whose "looks like a secret" matches were reviewed and are made-up test
+# values. The history check skips only its secret check for these exact versions (the deny-list still
+# applies). Format: full blob id, then why. Only for history that can no longer be rewritten.
+e1985e629ece5bfd6735120327340d27e23f92ee tests/test_notify.py: fake "user:pw@bridge.example" and "u:pw@bridge" URLs in tests

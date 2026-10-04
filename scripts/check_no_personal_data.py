@@ -15,6 +15,9 @@ Checks, for the files git tracks (or, with --history, every file ever committed)
    the output is safe to paste or to show in CI logs.
 
 A line containing "personal-data-check: ignore" is skipped for checks 2 and 3.
+With --history, file versions listed in scripts/personal-data-reviewed.txt (full blob id, then why) were
+reviewed and their "secret" matches are made-up test values: check 2 is skipped for exactly those
+versions (the deny-list still applies). Use it only for history that can no longer be rewritten.
 
 Exit status 0 when clean, 1 when something was found, 2 on a usage error.
 
@@ -86,7 +89,7 @@ def check_paths(paths: list[str]) -> list[str]:
     return problems
 
 
-def check_text(name: str, data: bytes, words: list[str]) -> list[str]:
+def check_text(name: str, data: bytes, words: list[str], secrets: bool = True) -> list[str]:
     if b"\0" in data[:8192]:
         return []  # binary
     text = data.decode("utf-8", errors="replace")
@@ -95,7 +98,7 @@ def check_text(name: str, data: bytes, words: list[str]) -> list[str]:
     for lineno, line in enumerate(text.splitlines(), 1):
         if IGNORE_MARKER in line:
             continue
-        for pattern, why in SECRET_PATTERNS:
+        for pattern, why in SECRET_PATTERNS if secrets else ():
             if pattern.search(line):
                 problems.append(f"{name}:{lineno}: looks like a secret ({why})")
         low = line.lower()
@@ -115,6 +118,16 @@ def scan_head(repo: Path, words: list[str]) -> list[str]:
     return problems
 
 
+def reviewed_blobs(repo: Path) -> set[str]:
+    """Full blob ids from scripts/personal-data-reviewed.txt (as committed at HEAD)."""
+    try:
+        text = git(repo, "show", "HEAD:scripts/personal-data-reviewed.txt").decode()
+    except subprocess.CalledProcessError:
+        return set()
+    return {line.split()[0] for line in text.splitlines()
+            if line.strip() and not line.startswith("#") and len(line.split()[0]) == 40}
+
+
 def scan_history(repo: Path, words: list[str]) -> list[str]:
     """Every path and every blob ever committed on any ref."""
     out = git(repo, "log", "--all", "--format=", "--name-only", "-z").decode()
@@ -132,9 +145,10 @@ def scan_history(repo: Path, words: list[str]) -> list[str]:
     proc = subprocess.run(["git", "-C", str(repo), "cat-file", "--batch-check=%(objectname) %(objecttype)"],
                           input="\n".join(seen).encode() + b"\n", capture_output=True, check=True)
     blobs = [line.split()[0] for line in proc.stdout.decode().splitlines() if line.endswith(" blob")]
+    reviewed = reviewed_blobs(repo)
     for sha in blobs:
         data = git(repo, "cat-file", "blob", sha)
-        for problem in check_text(seen[sha], data, words):
+        for problem in check_text(seen[sha], data, words, secrets=sha not in reviewed):
             problems.append(f"{problem} (blob {sha[:10]})")
     return problems
 
