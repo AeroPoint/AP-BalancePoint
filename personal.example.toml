@@ -17,19 +17,23 @@ blackjack = false
 # business = true
 
 # ------------------------------------------------------------------ notifications (optional)
-# A short message after the scheduled bank sync (README: "Notifications (optional)"). Leave this section
-# out and nothing is ever sent. Try it with: run.py notify-test
+# A short message after the scheduled bank sync (README: "Notifications (optional)"). Easier: set it up on
+# the Notifications page (Bank sync -> set up notifications). A [notify] section here wins over that page.
+# Leave both out and nothing is ever sent. Try it with: run.py notify-test
 #   when:   "warnings" (only with pace/cushion warnings, stale accounts or sync errors; the default),
-#           "daily" (after every sync), or "monthly" (on the 1st: last month's result and this month's start)
+#           "daily" (after every sync), "weekly" (a recap of the last 7 days, on weekday), or
+#           "monthly" (on the 1st: last month's result and this month's start)
+#   weekday: for "weekly", the day it goes out: "monday" (the default) to "sunday"
 #   method: "email" or "ntfy"
 #   app_url: optional link to the app, added at the end of each message
 
 # [notify]
 # when = "warnings"
+# weekday = "monday"             # only for when = "weekly"
 # method = "email"
 # smtp_host = "smtp.gmail.com"
 # smtp_port = 587                # 587 = STARTTLS (default), 465 = SSL
-# smtp_user = "you@gmail.com"    # the password is NOT here: run.py notify-setup-password
+# smtp_user = "you@gmail.com"    # the password is NOT here: Notifications page or run.py notify-setup-password
 # from = "you@gmail.com"         # default: smtp_user
 # to = ["you@gmail.com", "partner@example.com"]
 # app_url = "http://your-mac:5000"

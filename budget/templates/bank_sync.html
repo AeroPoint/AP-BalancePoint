@@ -181,6 +181,10 @@
 {% endif %}
 
 {% if notify_line %}
-<p class="muted">Notifications after the scheduled sync: {{ notify_line.rstrip('.') }}.</p>
+<p class="muted">Notifications after the scheduled sync: {{ notify_line.rstrip('.') }}.
+  <a href="{{ url_for('main.notifications_page') }}">Change</a></p>
+{% else %}
+<p class="muted">Get an email or a phone notification after the scheduled sync:
+  <a href="{{ url_for('main.notifications_page') }}">set up notifications</a>.</p>
 {% endif %}
 {% endblock %}
