@@ -21,7 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t balancepoint .
+      - name: Build the image (retries when Docker Hub has a hiccup)
+        run: |
+          for i in 1 2 3; do
+            docker build -t balancepoint . && exit 0
+            echo "Build failed (try $i of 3); retrying in 30 seconds"; sleep 30
+          done
+          exit 1
       - name: The image serves the demo household
         run: |
           docker run --rm -v bp-demo:/demo balancepoint python run.py demo --dir /demo
