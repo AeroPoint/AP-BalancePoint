@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Notifications</h1>
+    <p class="sub">
+      A short message after the scheduled bank sync: how spending is going against the pace, warnings, how the
+      sync went and what waits on the Categorize page. Sync now on the Bank sync page sends nothing.
+    </p>
+  </div>
+  <a class="btn" href="{{ url_for('main.bank_sync') }}">Bank sync</a>
+</header>
+
+{% if error %}<p class="flash error" role="alert">{{ error }}</p>{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>{% if line %}On{% else %}Off{% endif %}</h2>
+  </div>
+  <p class="muted">
+    {% if line %}Messages go by {{ line }}.{% else %}Nothing is sent.{% endif %}
+    {% if toml %}Set in personal.toml ({{ toml_path }}, the [notify] section): change them there. That file wins over this page.{% endif %}
+  </p>
+</section>
+
+<form method="post" action="{{ url_for('main.notifications_save') }}" class="stack plan-form">
+{% set show_password = not toml or not cfg or cfg.method == 'email' %}
+{% if not toml %}
+<section class="panel stack">
+  <div class="panel-head"><h2>When and how</h2></div>
+  <div class="plan-row">
+    <label class="field"><span>Send</span>
+      <select name="when">
+        {% for value, label in [('warnings', 'Only when there are warnings'), ('daily', 'After every sync'),
+                                ('weekly', 'A weekly recap'), ('monthly', 'On the 1st: last month')] %}
+        <option value="{{ value }}"{% if form.when == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>Weekly recap on</span>
+      <select name="weekday">
+        {% for d in weekdays %}<option value="{{ d }}"{% if form.weekday == d %} selected{% endif %}>{{ d|capitalize }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span>By</span>
+      <select name="method" id="notify-method">
+        <option value="email"{% if form.method == 'email' %} selected{% endif %}>Email</option>
+        <option value="ntfy"{% if form.method == 'ntfy' %} selected{% endif %}>Phone notification (ntfy)</option>
+      </select>
+    </label>
+  </div>
+  <label class="field"><span>Link to the app <small>added at the end of each message (optional)</small></span>
+    <input name="app_url" value="{{ form.app_url or '' }}" inputmode="url" autocomplete="off" spellcheck="false">
+  </label>
+</section>
+
+<section class="panel stack" data-method="email">
+  <div class="panel-head"><h2>Email</h2></div>
+  <div class="plan-row">
+    <label class="field grow"><span>Mail server</span>
+      <input name="smtp_host" value="{{ form.smtp_host or '' }}" autocomplete="off" spellcheck="false" autocapitalize="off">
+    </label>
+    <label class="field"><span>Port <small>587, or 465</small></span>
+      <input name="smtp_port" value="{{ form.smtp_port or '' }}" inputmode="numeric" size="5">
+    </label>
+  </div>
+  <div class="plan-row">
+    <label class="field grow"><span>User name <small>your full address</small></span>
+      <input name="smtp_user" value="{{ form.smtp_user or '' }}" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+    <label class="field grow"><span>From <small>blank: the user name</small></span>
+      <input name="from" value="{{ form['from'] or '' }}" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </label>
+  </div>
+  <label class="field"><span>To <small>one or more addresses, separated by commas</small></span>
+    <input name="to" value="{{ form.to or '' }}" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </label>
+{% elif show_password %}
+<section class="panel stack">
+  <div class="panel-head"><h2>Email password</h2></div>
+{% endif %}
+{% if show_password %}
+  <label class="field"><span>Password
+      <small>{% if password == 'env' %}{{ env_name }} is set, so that one is used.{% elif password == 'saved' %}One is saved (never shown). Leave blank to keep it.{% else %}None saved yet.{% endif %}</small></span>
+    <input name="password" type="password" value="" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+  </label>
+  {% if password == 'saved' %}
+  <label class="check"><input type="checkbox" name="remove_password" value="1"> Remove saved password</label>
+  {% endif %}
+  <p class="note">
+    Gmail: use a Gmail app password (Google Account → Security → 2-Step Verification → App passwords), not your
+    normal password. It is saved in the data folder where only your user can read it, and never shown again.
+  </p>
+</section>
+{% endif %}
+
+{% if not toml %}
+<section class="panel stack" data-method="ntfy">
+  <div class="panel-head"><h2>Phone notification (ntfy)</h2></div>
+  <label class="field"><span>ntfy link <small>like https://ntfy.sh/&lt;a long random topic&gt;</small></span>
+    <input name="ntfy_url" value="{{ form.ntfy_url or '' }}" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </label>
+  {% if form.ntfy_login %}<p class="note">The saved link has a login in it: it's kept, and not shown. Change the link to drop it.</p>{% endif %}
+  <p class="note">
+    Install the ntfy app and subscribe to the same topic. An ntfy.sh topic is public to anyone who knows its name,
+    so make it long and random, or run your own ntfy server. Either way a summary of your finances goes to that service.
+  </p>
+</section>
+{% endif %}
+
+<div class="form-actions">
+  {% if show_password %}<button class="btn primary" name="action" value="save">Save</button>{% endif %}
+  <button class="btn" name="action" value="test">Send a test message</button>
+  {% if not toml and saved and line %}
+  <button class="btn quiet danger" name="action" value="off" formnovalidate>Turn off</button>
+  {% endif %}
+</div>
+<p class="note">
+  Send a test message saves first, then sends one with today's numbers. Anyone who can open this app can change
+  these settings, as with everything else here.
+</p>
+</form>
+
+{% if not toml %}
+<script>
+(function () {
+  var method = document.getElementById("notify-method");
+  function show() {
+    document.querySelectorAll("[data-method]").forEach(function (el) {
+      el.hidden = el.getAttribute("data-method") !== method.value;
+    });
+  }
+  method.addEventListener("change", show);
+  show();
+})();
+</script>
+{% endif %}
+{% endblock %}

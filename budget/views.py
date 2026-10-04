@@ -1,5 +1,6 @@
 """Pages and small JSON endpoints."""
 import json
+import os
 import re
 import sqlite3
 from datetime import date, datetime
@@ -1532,11 +1533,11 @@ def bank_sync():
 
 
 def _notify_line():
-    """'email to a…@example.com, when there are warnings' when [notify] is set up; None (no line) otherwise."""
+    """'email to a…@example.com, when there are warnings' when notifications are on; None (no line) otherwise."""
     from . import notify
 
     try:
-        cfg = notify.config(personal.load(current_app.config["PERSONAL_CONFIG"]))
+        cfg = notify.config(personal.load(current_app.config["PERSONAL_CONFIG"]), get_db())
     except personal.PersonalConfigError as exc:
         return f"not working: {exc}"
     return notify.describe(cfg) if cfg else None
@@ -1670,3 +1671,144 @@ def bank_sync_disconnect():
     conn.commit()
     flash("Disconnected. Which account syncs where is kept, in case you connect again.", "ok")
     return redirect(url_for(".bank_sync"))
+
+
+# ---------------------------------------------------------------- notifications (set up from the browser)
+# The same settings as personal.toml's [notify], kept in the settings table (notify.WEB_KEY) when there's no
+# [notify] section; with one, this page only shows it. The SMTP password goes to data/notify-password the way
+# run.py notify-setup-password puts it there: write-only, never put back into a page, a message or a log.
+
+_APP_PASSWORD = re.compile(r"[a-z]{4}( [a-z]{4}){3}")  # Google shows app passwords as "abcd efgh ijkl mnop"
+
+
+def _notify_saved(conn):
+    from . import notify
+
+    try:
+        return notify.web_settings(conn)
+    except personal.PersonalConfigError:
+        return None
+
+
+def _notify_form(saved):
+    """The form's values: what was saved, else the defaults (Gmail, port 587, this app's address)."""
+    from . import notify
+
+    saved = dict(saved or {})
+    if saved.get("ntfy_url"):
+        saved["ntfy_url"], login = notify.strip_login(saved["ntfy_url"])
+        saved["ntfy_login"] = bool(login)
+    if isinstance(saved.get("to"), list):
+        saved["to"] = ", ".join(saved["to"])
+    defaults = {"method": "email", "when": "warnings", "weekday": "monday", "smtp_host": "smtp.gmail.com",
+                "smtp_port": 587, "app_url": request.host_url.rstrip("/")}
+    return {**defaults, **{k: v for k, v in saved.items() if v not in (None, "")}}
+
+
+def _notify_raw(form, saved):
+    """Settings as the page saves them: personal.toml's [notify] keys, plus enabled."""
+    from . import notify
+
+    raw = {"enabled": True, "method": form.get("method") or "email", "when": form.get("when") or "warnings",
+           "weekday": form.get("weekday") or "monday"}
+    for key in ("smtp_host", "smtp_user", "from", "app_url"):
+        value = (form.get(key) or "").strip()
+        if value:
+            raw[key] = value
+    port = (form.get("smtp_port") or "").strip()
+    if port:
+        raw["smtp_port"] = int(port) if port.isdigit() else port
+    to = [a for a in re.split(r"[,;\s]+", form.get("to") or "") if a]
+    if to:
+        raw["to"] = to
+    url = (form.get("ntfy_url") or "").strip()
+    if url:
+        old = (saved or {}).get("ntfy_url")
+        if old and notify.strip_login(url)[1] is None and notify.strip_login(old)[0] == url:
+            url = old  # the page never shows a user:password in the link; the same link keeps it
+        raw["ntfy_url"] = url
+    return raw
+
+
+def _notify_page(form=None, error=None, status=200):
+    from . import notify
+
+    conn = get_db()
+    settings = personal.load(current_app.config["PERSONAL_CONFIG"])
+    toml = bool(settings.notify)
+    cfg = None
+    try:
+        cfg = notify.config(settings, conn)
+    except personal.PersonalConfigError as exc:
+        error = error or str(exc)
+    saved = None if toml else _notify_saved(conn)
+    data_dir = _sf_data_dir()
+    password = ("env" if os.environ.get(notify.PASSWORD_ENV)
+                else "saved" if notify.password_path(data_dir).exists() else None)
+    return render_template(
+        "notifications.html", toml=toml, toml_path=settings.path, cfg=cfg, error=error,
+        line=notify.describe(cfg) if cfg else None, saved=bool(saved),
+        form=form if form is not None else _notify_form(saved), password=password,
+        weekdays=notify.WEEKDAYS, env_name=notify.PASSWORD_ENV,
+    ), status
+
+
+@bp.route("/notifications")
+def notifications_page():
+    return _notify_page()
+
+
+@bp.post("/notifications")
+def notifications_save():
+    """Save, Send a test message (saves first) or Turn off. The password field is write-only."""
+    from . import notify
+
+    conn = get_db()
+    settings = personal.load(current_app.config["PERSONAL_CONFIG"])
+    toml = bool(settings.notify)
+    action = request.form.get("action") or "save"
+    if action == "off":
+        if toml:
+            flash(f"These are set in {settings.path} ([notify]): remove that section there to turn them off.", "error")
+            return redirect(url_for(".notifications_page"))
+        saved = _notify_saved(conn)
+        if saved:
+            notify.save_web_settings(conn, {**saved, "enabled": False})
+            conn.commit()
+        flash("Notifications are off. The settings stay here for next time.", "ok")
+        return redirect(url_for(".notifications_page"))
+
+    if not toml:
+        raw = _notify_raw(request.form, _notify_saved(conn))
+        try:
+            notify.check({k: v for k, v in raw.items() if k != "enabled"}, notify.WEB_WHERE, "web")
+        except personal.PersonalConfigError as exc:
+            form = {k: v for k, v in request.form.items() if k not in ("password", "remove_password", "action")}
+            form["ntfy_url"] = notify.strip_login(form.get("ntfy_url") or "")[0]
+            return _notify_page(form, str(exc), 400)
+        notify.save_web_settings(conn, raw)
+        conn.commit()
+    data_dir = _sf_data_dir()
+    if request.form.get("remove_password"):
+        notify.password_path(data_dir).unlink(missing_ok=True)
+    password = (request.form.get("password") or "").strip()
+    if password:
+        notify.save_password(data_dir, password.replace(" ", "") if _APP_PASSWORD.fullmatch(password) else password)
+    if action != "test":
+        try:
+            cfg = notify.config(settings, conn)
+        except personal.PersonalConfigError:
+            cfg = None
+        flash(f"Saved. Messages go by {notify.describe(cfg)}." if cfg else "Saved.", "ok")
+        return redirect(url_for(".notifications_page"))
+    try:
+        cfg = notify.config(settings, conn)
+        title, body = notify.build(conn, cfg, date.today(), check=budgeting.pace(conn), test=True)
+        notify.send(cfg, data_dir, title, body)
+    except (notify.NotifyError, personal.PersonalConfigError) as exc:
+        flash(f"Test message not sent: {exc}", "error")
+    except Exception as exc:  # noqa: BLE001  never a traceback (or anything in it) on this page
+        flash(f"Test message not sent: {type(exc).__name__}", "error")
+    else:
+        flash(f"Sent a test message ({notify.describe(cfg).rsplit(', ', 1)[0]}). Check that it arrived.", "ok")
+    return redirect(url_for(".notifications_page"))

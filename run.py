@@ -12,7 +12,7 @@
     python run.py simplefin-status                       # when each account was last pulled
     python run.py demo [--dir demo-data]                 # a made-up household to try the app on
     python run.py simplefin-unmap <id>                   # stop syncing one (an old id after reconnecting)
-    python run.py notify-test                            # send a test message ([notify] in personal.toml)
+    python run.py notify-test                            # send a test message (Notifications page or [notify])
     python run.py notify-setup-password                  # save the SMTP password for email notifications
 """
 import argparse
@@ -100,16 +100,16 @@ def build_demo(args):
 
 
 def _notify_after_sync(app, data_dir, **sync):
-    """The optional message after a sync ([notify] in personal.toml). Without one: nothing, not even output.
-    Whatever goes wrong here is one line in the log, never a failed sync."""
+    """The optional message after a sync ([notify] in personal.toml, or set up on the Notifications page).
+    Without either: nothing, not even output. Whatever goes wrong here is one line in the log, never a failed sync."""
     try:
         settings = personal.load(app.config["PERSONAL_CONFIG"])
-        if not settings.notify:
-            return
         from budget import notify
 
         conn = connect(app.config["DATABASE"])
         try:
+            if not notify.configured(settings, conn):
+                return
             notify.after_sync(settings, conn, data_dir, **sync)
         finally:
             conn.close()
@@ -160,7 +160,7 @@ def main():
     sf_sync = sub.add_parser("simplefin-sync", help="pull balances/transactions for every mapped SimpleFIN account")
     sf_sync.add_argument("--since", help="pull from this date instead of each account's last sync (YYYY-MM-DD)")
     sub.add_parser("simplefin-status", help="when each SimpleFIN account was last pulled")
-    sub.add_parser("notify-test", help="send a test notification with today's numbers ([notify] in personal.toml)")
+    sub.add_parser("notify-test", help="send a test notification with today's numbers (Notifications page or [notify] in personal.toml)")
     sub.add_parser("notify-setup-password", help="save the SMTP password for email notifications (only you can read it)")
     demo = sub.add_parser("demo", help="build a made-up household in its own folder (never your real data) to try the app")
     demo.add_argument("--dir", default="demo-data", help="folder for the demo (default: demo-data)")
@@ -308,11 +308,17 @@ def main():
     elif args.command == "notify-test":
         from budget import budgeting, notify
 
-        cfg = notify.config(personal.load(app.config["PERSONAL_CONFIG"]))
-        if cfg is None:
-            raise SystemExit("Notifications aren't set up: add a [notify] section to data/personal.toml "
-                             "(personal.example.toml shows it; README: 'Notifications (optional)').")
         conn = connect(app.config["DATABASE"])
+        try:
+            cfg = notify.config(personal.load(app.config["PERSONAL_CONFIG"]), conn)
+        except personal.PersonalConfigError:
+            conn.close()
+            raise
+        if cfg is None:
+            conn.close()
+            raise SystemExit("Notifications aren't set up: use the Notifications page (from Bank sync), or add a "
+                             "[notify] section to data/personal.toml (personal.example.toml shows it; "
+                             "README: 'Notifications (optional)').")
         try:
             title, body = notify.build(conn, cfg, date.today(), check=budgeting.pace(conn), test=True)
             notify.send(cfg, data_dir, title, body)

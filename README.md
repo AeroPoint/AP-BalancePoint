@@ -373,26 +373,46 @@ After each `run.py simplefin-sync` (so after the scheduled one too), the app can
 how flexible spending is going against the pace ("Day 4 of 31: flexible $200 of $5,500, $510 under
 pace"), any warnings, how the sync went (new transactions, stale accounts, errors), how many
 transactions wait on the Categorize page, and a link to the app if you give one. It's **off** until you
-add a `[notify]` section to `data/personal.toml` (`personal.example.toml` shows it); without one nothing
-is sent and the sync log looks exactly as before.
+set it up; until then nothing is sent and the sync log looks exactly as before.
+
+**From the browser (a phone works):** *Bank sync* → *set up notifications* at the bottom (or open
+`/notifications`). Pick when and how, fill in the fields, *Save*, then *Send a test message*. For Gmail:
+mail server `smtp.gmail.com`, port 587, user name your Gmail address, *To* any addresses (commas
+between them), and as password a Gmail app password (Google Account → Security → 2-Step Verification →
+App passwords), not your normal password. The password box is write-only: it's always empty, leaving
+it blank keeps the saved one, and *Remove saved password* deletes it. *Turn off* stops the messages and
+keeps the rest for next time. These settings live in the database, the password in
+`data/notify-password` as below. Anyone who can open the app can change them, same as everything
+else: the app only answers this computer and your Tailscale devices (and asks for the optional login,
+if set).
+
+**Or in `data/personal.toml`:** a `[notify]` section (`personal.example.toml` shows it). When there is
+one, it wins: the Notifications page then only shows it ("set in personal.toml") and lets you save the
+email password.
 
 - `when = "warnings"` (the default) sends only when there's a pace or cushion warning, a stale account
-  or a sync error; `"daily"` after every sync; `"monthly"` on the 1st: last month's flexible spending
-  against the target and whether cash grew or shrank, plus how the new month starts.
+  or a sync error; `"daily"` after every sync; `"weekly"` once a week on `weekday` (default
+  `"monday"`; any day name): the last 7 days' spending by group (fixed, flexible, non-monthly) with
+  the top 3 flexible categories, the month's pace, warnings, new regular charges and price increases
+  from the Recurring page, what waits on Categorize and any sync problems; `"monthly"` on the 1st: last
+  month's flexible spending against the target and whether cash grew or shrank, plus how the new month
+  starts. Weekly and monthly messages go out once, even if the sync runs twice that day.
 - **Email:** `method = "email"`, `smtp_host`, `smtp_port` (587 with STARTTLS, the default, or 465 with
   SSL), `smtp_user`, `from` and `to = ["you@example.com"]`. The password never goes in
-  `personal.toml`: `run.py notify-setup-password` asks for it without showing it and saves it to
-  `data/notify-password` (only your user can read it; kept out of `data/`'s own git), or set
-  `BUDGET_SMTP_PASSWORD` for the scheduled job. Gmail and most others want an *app password* here, not
-  your usual one.
+  `personal.toml`: save it on the Notifications page, or `run.py notify-setup-password` asks for it
+  without showing it. Either way it goes to `data/notify-password` (only your user can read it; kept
+  out of `data/`'s own git) and is never shown again; or set `BUDGET_SMTP_PASSWORD` for the scheduled
+  job. Gmail and most others want an *app password* here, not your usual one.
 - **ntfy** (a phone notification, [ntfy.sh](https://ntfy.sh) or your own server): `method = "ntfy"`,
   `ntfy_url = "https://ntfy.sh/<long random topic>"`. An ntfy.sh topic is public to anyone who knows
-  its name, so make it long and random, or run your own server.
+  its name, so make it long and random, or run your own server (a `user:password@` in the link is sent
+  as its login and never shown on the page).
 
 Either way this sends a summary of your finances to that service (your mail provider, or ntfy). Then
-run `run.py notify-test`: it sends a test message with today's numbers. A message that can't be sent is
-one `Notification not sent: <reason>` line in the log; the sync itself still counts as done. The Bank
-sync page shows where messages go (addresses masked). *Sync now* on that page sends nothing.
+send a test (the page's button, or `run.py notify-test`): it sends one with today's numbers. A message
+that can't be sent is one `Notification not sent: <reason>` line in the log; the sync itself still
+counts as done. The Bank sync page shows where messages go (addresses masked). *Sync now* on that page
+sends nothing.
 
 ## Accounts and net worth
 
