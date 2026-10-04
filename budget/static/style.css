@@ -716,3 +716,28 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
 .pace-meter { margin-bottom: 4px; }
 .pace-cushion { margin-top: 8px; font-size: 0.9rem; }
 .pace-warning { margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: var(--error-wash); color: var(--error); font-weight: 500; }
+/* tax time */
+.tax-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tax-group { padding: 14px 0; border-top: 1px solid var(--rule); }
+.tax-group:first-of-type { border-top: 0; padding-top: 0; }
+.tax-group h3 { margin-bottom: 8px; font-size: 1.05rem; line-height: 1.5; }
+.tax-group h3 .muted { font-size: 0.9rem; font-weight: 400; }
+.tax-check { margin-bottom: 12px; }
+.tax-more > summary { color: var(--accent); cursor: pointer; font-weight: 500; }
+.tax-more[open] > summary { margin-bottom: 8px; }
+.tax-cats { max-width: 32rem; margin-bottom: 12px; }
+.tax-note { max-width: 28rem; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  table.tax-txns .tax-note { flex-basis: 100%; }
+  table.tax-txns .tax-note:empty { display: none; }
+}
+@media print {
+  :root { color-scheme: light; --ground: #fff; --panel: #fff; --ink: #000; --ink-2: #333; --muted: #555; --rule: #ccc; --rule-strong: #999; --in: #0d6b2f; }
+  .side, .tabbar, .no-print, .tax-tools, .flash, .tip, .toast { display: none !important; }
+  .app { display: block; }
+  .main { max-width: none; padding: 0; }
+  body { background: #fff; }
+  .tax-group h3, .panel-head { break-after: avoid; }
+  .tax-more > summary { display: none; }
+  a { color: inherit; text-decoration: none; }
+}

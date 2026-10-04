@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Tax time{% endblock %}
+
+{% macro signed(v) -%}
+<span class="{{ 'in' if v > 0 }}">{{ '+' if v > 0 }}{{ v|money }}</span>
+{%- endmacro %}
+
+{% macro txn_table(rows, show_box=false) %}
+<div class="table-wrap">
+  <table class="ledger cards tax-txns">
+    <thead><tr><th>Date</th><th>Merchant</th><th>Category · account</th><th>Notes</th><th class="num">Amount</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="nowrap c-meta">{{ r.effective_date|day_label }}</td>
+        <td class="c-main">{{ r.name }}</td>
+        <td class="muted c-meta">{{ r.category or 'Uncategorized' }} · {{ r.account }}{% if show_box and r.checkbox and r.flag == 'yes' %} · {{ r.checkbox }}{% endif %}</td>
+        <td class="c-meta tax-note">{{ r.notes or '' }}</td>
+        <td class="num c-side">{{ signed(r.amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% macro download(section, label='Download CSV') %}
+<a class="btn small quiet no-print" href="{{ url_for('main.tax_export', year=year, section=section) }}">{{ label }}</a>
+{% endmacro %}
+
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Tax time</h1>
+    <p class="sub">
+      What your accountant will ask for, for one calendar year: checkbox items, business income and costs, income,
+      and notes that mention a CPA or taxes. Counted on the same dates as every other report.
+    </p>
+  </div>
+  <div class="tax-tools no-print">
+    <form method="get">
+      <select name="year" aria-label="Year" onchange="this.form.submit()">
+        {% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}
+      </select>
+    </form>
+    <a class="btn small" href="{{ url_for('main.tax_export', year=year, section='all') }}">Download all (CSV)</a>
+    <button type="button" class="btn small primary" id="tax-print">Print or save PDF</button>
+  </div>
+</header>
+
+<section class="statement">
+  <h1>
+    {{ year }}:
+    {%- for b in t.boxes %} {{ b.label }} <b>{{ (-b.total if b.total < 0 else b.total)|money(false) }}</b>,{% endfor %}
+    {%- if t.businesses %} business profit <b>{{ t.profit|money(false) }}</b>,{% endif %}
+    {%- if t.to_check %} <a href="{{ url_for('main.transactions', flag='check', period=year) }}"><b>{{ t.to_check }}</b> item{{ 's' if t.to_check != 1 }} still to check</a>.
+    {%- else %} nothing left to check.{% endif %}
+  </h1>
+  {% if not t.boxes and not t.businesses and not t.income.categories and not t.notes %}
+  <p class="compare">Nothing recorded for {{ year }} yet. Pick another year, or give a category a tax checkbox on
+    <a href="{{ url_for('main.categories_page') }}">Categories</a>.</p>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ checkbox items #}
+<section class="panel" id="checkbox">
+  <div class="panel-head">
+    <h2>Checkbox items</h2>
+    {% if t.boxes %}{{ download('checkbox') }}{% endif %}
+  </div>
+  {% if not t.boxes %}
+  <p class="muted">No category has a tax checkbox yet. On <a href="{{ url_for('main.categories_page') }}">Categories</a>, give one a
+    checkbox like "Rental property" or "Should be FSA/HSA", then tick its transactions.</p>
+  {% else %}
+  {% if t.to_check %}
+  <p class="tax-check">{{ t.to_check }} transaction{{ 's' if t.to_check != 1 }} in {{ year }} still {{ 'need' if t.to_check != 1 else 'needs' }} a look.
+    <a href="{{ url_for('main.transactions', flag='check', period=year) }}">Finish checking them</a></p>
+  {% endif %}
+  {% for b in t.boxes %}
+  <div class="tax-group">
+    <h3>{{ b.label }}: {{ signed(b.total) }} <span class="muted">· {{ b.n }} transaction{{ 's' if b.n != 1 }}
+      ({% for c in b.categories %}<a href="{{ url_for('main.transactions', flag='yes:' ~ c.id, period=year) }}">{{ c.name }}</a>{{ ', ' if not loop.last }}{% endfor %})</span></h3>
+    {% if b.rows %}
+    <details class="tax-more">
+      <summary>Show the {{ b.n }} transaction{{ 's' if b.n != 1 }}</summary>
+      {{ txn_table(b.rows) }}
+    </details>
+    {% else %}
+    <p class="muted">None ticked in {{ year }}.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ business #}
+{% if t.businesses %}
+<section class="panel" id="business">
+  <div class="panel-head">
+    <h2>Business</h2>
+    {{ download('business') }}
+  </div>
+  {% for b in t.businesses %}
+  {% set a, y = b.account, b.totals %}
+  <div class="tax-group">
+    <h3>{{ a.name }}</h3>
+    <p class="biz-line">Income <b>{{ y.income|money }}</b>, costs <b>{{ y.costs|money }}</b>, profit <b>{{ signed(y.profit) }}</b>.
+      {% if y.put_in or y.took_out %}<span class="muted">You put in {{ y.put_in|money }} and took out {{ y.took_out|money }} (not income or costs).</span>{% endif %}</p>
+    {% if b.by_category %}
+    <div class="table-wrap">
+      <table class="ledger tax-cats">
+        <tbody>{% for c in b.by_category %}<tr><td>{{ c.name }}</td><td class="num">{{ signed(c.total) }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    <details class="tax-more">
+      <summary>Show the {{ b.rows|length }} transaction{{ 's' if b.rows|length != 1 }}</summary>
+      {{ txn_table(b.rows) }}
+    </details>
+    {% else %}
+    <p class="muted">No business income or costs in {{ year }}.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{# ------------------------------------------------------------ income #}
+<section class="panel" id="income">
+  <div class="panel-head">
+    <h2>Income</h2>
+    {% if t.income.rows %}{{ download('income') }}{% endif %}
+  </div>
+  {% if not t.income.categories %}
+  <p class="muted">No income recorded for {{ year }}.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table class="ledger tax-cats">
+      <tbody>
+        {% for c in t.income.categories %}
+        <tr><td><a href="{{ url_for('main.transactions', category=c.id, period=year) }}">{{ c.name }}</a> <span class="muted">· {{ c.n }}</span></td><td class="num">{{ c.total|money }}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td>Total</td><td class="num">{{ t.income.categories|sum(attribute='total')|money }}</td></tr></tfoot>
+    </table>
+  </div>
+  {% endif %}
+  {% if t.income.deposits.n %}
+  <p class="muted tax-check">Plus {{ t.income.deposits.n }} uncategorized deposit{{ 's' if t.income.deposits.n != 1 }} ({{ t.income.deposits.total|money }}),
+    <a href="{{ url_for('main.transactions', category='none', period=year) }}">worth a look</a>: some may be income.</p>
+  {% endif %}
+  {% if t.income.work %}
+  <p class="tax-check">Paycheck retirement savings (estimated from <a href="{{ url_for('main.accounts_page') }}">your settings</a>, before
+    the bank sees the pay): yours <b>{{ t.income.work.yours|money(false) }}</b>, employer <b>{{ t.income.work.employer|money(false) }}</b>
+    over {{ t.income.work.paychecks }} paycheck{{ 's' if t.income.work.paychecks != 1 }}. Your W-2 has the exact numbers.</p>
+  {% endif %}
+  {% if t.income.rows %}
+  <details class="tax-more">
+    <summary>Show the {{ t.income.rows|length }} transaction{{ 's' if t.income.rows|length != 1 }}</summary>
+    {{ txn_table(t.income.rows) }}
+  </details>
+  {% endif %}
+</section>
+
+{# ------------------------------------------------------------ notes #}
+<section class="panel" id="notes">
+  <div class="panel-head">
+    <h2>Questions for your accountant</h2>
+    {% if t.notes %}{{ download('notes') }}{% endif %}
+  </div>
+  {% if t.notes %}
+  <p class="muted tax-check">Transactions in {{ year }} whose notes mention a CPA or taxes.</p>
+  {{ txn_table(t.notes, show_box=true) }}
+  {% else %}
+  <p class="muted">No notes mention a CPA or taxes in {{ year }}. Add a note to a transaction on
+    <a href="{{ url_for('main.transactions', period=year) }}">Transactions</a> (say "ask the CPA: repair or improvement?") and it shows up here.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Printing shows every list, not just the totals.
+  const openAll = () => document.querySelectorAll("details.tax-more").forEach((d) => {
+    if (!d.open) { d.dataset.closed = "1"; d.open = true; }
+  });
+  const restore = () => document.querySelectorAll('details.tax-more[data-closed="1"]').forEach((d) => {
+    d.open = false; delete d.dataset.closed;
+  });
+  window.addEventListener("beforeprint", openAll);
+  window.addEventListener("afterprint", restore);
+  document.getElementById("tax-print").addEventListener("click", () => { openAll(); window.print(); });
+</script>
+{% endblock %}

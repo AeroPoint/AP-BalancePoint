@@ -5,7 +5,7 @@ import pytest
 
 PAGES = ["/", "/plan", "/trends", "/business", "/transactions", "/categorize", "/net-worth", "/bankroll",
          "/accounts", "/bank-sync", "/upload", "/rules", "/categories", "/transactions?flag=check", "/categorize?mode=guessed",
-         "/?view=year", "/transactions?source=mcc"]
+         "/?view=year", "/transactions?source=mcc", "/tax"]
 
 
 def test_demo_builds_a_household(demo_conn):

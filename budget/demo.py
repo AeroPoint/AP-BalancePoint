@@ -135,8 +135,17 @@ def build(conn, today=None):
         if parsed:
             added += store_transactions(conn, acct[k], "Demo data", parsed)[2]
     conn.execute("UPDATE transactions SET one_off = 1 WHERE raw_description LIKE 'UNITED.COM%'")
-    conn.execute("""UPDATE transactions SET flag = 'check' WHERE category_id = (SELECT id FROM categories WHERE name = 'Home & Garden')
-                    AND amount < -150""")
+    # Tax checkboxes: big rental repairs ticked, mid-sized ones still to check, the dentist for the FSA/HSA.
+    conn.execute("""UPDATE transactions SET flag = CASE WHEN amount < -300 THEN 'yes' ELSE 'check' END
+                    WHERE category_id = (SELECT id FROM categories WHERE name = 'Home & Garden') AND amount < -150""")
+    conn.execute("""UPDATE transactions SET flag = 'yes', notes = 'Ask the CPA: can the HSA pay this back?'
+                    WHERE raw_description LIKE 'SPRINGFIELD SMILES%'""")
+    conn.execute("UPDATE transactions SET flag = 'yes' WHERE raw_description LIKE 'WALGREENS%' AND amount < -40")
+    # Each year's biggest rental repair has a question for the accountant.
+    conn.execute("""UPDATE transactions SET notes = 'Ask the CPA: repair or improvement for the rental?'
+                    WHERE id IN (SELECT (SELECT t2.id FROM transactions t2 WHERE t2.flag = 'yes' AND t2.raw_description LIKE 'HOME DEPOT%'
+                                         AND substr(t2.effective_date, 1, 4) = y ORDER BY t2.amount LIMIT 1)
+                                 FROM (SELECT DISTINCT substr(effective_date, 1, 4) AS y FROM transactions))""")
 
     # Balances: where each account started, and month-end values for ones without transactions.
     first_day = start.isoformat()
