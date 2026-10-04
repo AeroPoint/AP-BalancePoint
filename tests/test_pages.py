@@ -103,3 +103,30 @@ def test_features_setting_wins(tmp_path, monkeypatch, setting, sessions, shown):
         demo.build(conn)
         conn.close()
     assert ('href="/bankroll"' in app.test_client().get("/").get_data(as_text=True)) == shown
+
+
+def test_upload_page_without_a_spreadsheet_setup_is_a_quiet_note(client):
+    """Most people have no old workbook: a collapsed hint, not an error or an import form that can't work."""
+    html = client.get("/upload").get_data(as_text=True)
+    assert "Have an old budget spreadsheet?" in html and "personal.example.toml" in html
+    assert "flash error" not in html and "Import workbook" not in html
+    assert "app&#39;s data folder" in html or "app's data folder" in html
+    assert "which git ignores" not in html  # not true in Docker, where the data is a volume
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_pages_load_nothing_from_google(demo_conn, client, path):
+    """Fonts are bundled, so opening a page contacts no one."""
+    html = client.get(path).get_data(as_text=True)
+    assert "googleapis" not in html and "gstatic" not in html
+
+
+def test_bundled_font_is_served(client):
+    css = client.get("/static/style.css").get_data(as_text=True)
+    assert "@font-face" in css and "fonts/LibreFranklin-latin.woff2" in css and "googleapis" not in css
+    r = client.get("/static/fonts/LibreFranklin-latin.woff2")
+    assert r.status_code == 200 and r.data[:4] == b"wOF2"
+    r.close()
+    r = client.get("/static/fonts/OFL.txt")
+    assert r.status_code == 200 and b"SIL Open Font License" in r.data
+    r.close()

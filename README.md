@@ -13,13 +13,21 @@ and an amount (or debit and credit) column; US Bank exports are understood best 
 carry the merchant type, used to guess categories). SimpleFIN Bridge covers most US banks, card
 companies, brokerages and lenders.
 
-**Optional parts** switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
-for tracking blackjack sessions against their expected value). Without a setting, Blackjack is on once
-there are blackjack sessions and off otherwise.
+**Optional parts** (a blackjack bankroll tracker) are described under [Optional features](#optional-features).
 
 ## Run it
 
-Double-click `start.bat`, or:
+You need Python 3.11 or newer, or Docker.
+
+**macOS or Linux**, in a terminal in the app folder:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python run.py            # opens http://127.0.0.1:5000
+```
+
+**Windows:** double-click `start.bat` (it sets everything up the first time), or:
 
 ```powershell
 python -m venv .venv
@@ -27,42 +35,9 @@ python -m venv .venv
 .venv\Scripts\python.exe run.py            # opens http://127.0.0.1:5000
 ```
 
-### On your phone
+**Docker:** see [Run it with Docker](#run-it-with-docker).
 
-The app has no login, so it only answers this computer, and, when started with
-`start-phones.bat` (`run.py serve --phones`), devices on your own [Tailscale](https://tailscale.com)
-network. Anyone else, even on the same Wi-Fi, gets "Forbidden".
-
-1. Install Tailscale on this computer and sign in (Google or Microsoft account is fine).
-2. Install the Tailscale app on each phone and sign in with the same account (or invite your
-   partner's account from the Tailscale admin page).
-3. Start the app with `start-phones.bat`. It prints the phone address, like
-   `http://your-pc-name:5000`. The first time, allow Python through the Windows firewall on
-   **private** networks.
-4. Open that address on the phone and use *Add to Home Screen* (Safari's share menu, or Chrome's
-   menu) to get a BalancePoint icon that opens full screen.
-
-The computer has to be on with the app running. For always-on access, run the app on a small
-always-on machine at home instead, the same way.
-
-### On a Mac (always-on home server)
-
-1. Copy the whole `Budget` folder, including `data/`, to somewhere **outside** Desktop, Documents
-   and Downloads (macOS blocks background apps there), e.g. `~/Budget`. Stop the app on any other
-   computer first, so only one copy of the database is in use.
-2. Install Tailscale for Mac and sign in to the same account. In System Settings → Energy, turn on
-   *Prevent automatic sleeping* and *Start up automatically after a power failure*.
-3. In Terminal: `brew install python@3.12`, then `cd ~/Budget && chmod +x *.sh && ./install-mac.sh`.
-   The app gets its own environment in `.venv`, built from Homebrew's Python so it doesn't depend on
-   conda or whatever `python` means in your shell; `python run.py ...` switches into it by itself.
-   The installer starts the app, and makes it start again at every login and after a
-   crash. It prints the address for phones and other computers, e.g. `http://mac-mini:5000`.
-   Allow incoming connections if macOS asks.
-4. Log: `data/server.log`. Remove the auto-start (and the daily bank sync) with
-   `./install-mac.sh remove`; run it by hand with `./start-mac.sh`.
-
-For the app to come back after a power cut, the Mac needs to log in to that account on its own
-(System Settings → Users & Groups → automatic login), since it starts at login.
+Once `.venv` exists, `python run.py ...` switches into it by itself, whichever `python` you type.
 
 ### Try it with made-up data
 
@@ -70,11 +45,55 @@ For the app to come back after a power cut, the Mac needs to log in to that acco
 with a 401(k), a mortgage, a rental, a small business, a child's 529, a plan and a few blackjack
 sessions) in its own `demo-data/` folder. It never touches your real data folder. Then:
 
-```
+```sh
 BUDGET_DATA_DIR=demo-data python run.py serve --port 5001
 ```
 
+On Windows (PowerShell): `$env:BUDGET_DATA_DIR="demo-data"; .venv\Scripts\python.exe run.py serve --port 5001`.
 `python run.py demo --replace` rebuilds it.
+
+### Optional: open it on your phone (Tailscale)
+
+The app has no login by default, so it only answers this computer, and, when started with
+`run.py serve --phones` (`start-phones.bat` on Windows), devices on your own
+[Tailscale](https://tailscale.com) network. Anyone else, even on the same Wi-Fi, gets "Forbidden".
+(Other ways in, like a password or another trusted network, are under *Security*.)
+
+1. Install Tailscale on this computer and sign in.
+2. Install the Tailscale app on each phone and sign in with the same account (or invite another
+   person's account from the Tailscale admin page).
+3. Start the app with `python run.py serve --phones` (or `start-phones.bat`). It prints the phone
+   address, like `http://your-computer-name:5000`. Allow incoming connections if the system asks
+   (on Windows: Python, on **private** networks).
+4. Open that address on the phone and use *Add to Home Screen* (Safari's share menu, or Chrome's
+   menu) to get a BalancePoint icon that opens full screen.
+
+The computer has to be on with the app running. For access at any hour, run the app on a machine
+that stays on, as below, or in Docker with `restart: unless-stopped` (the default in
+`docker-compose.yml`).
+
+### Optional: keep it running on an always-on Mac
+
+1. Put the app folder (with its `data/` folder, if you've used the app elsewhere) somewhere
+   **outside** Desktop, Documents and Downloads (macOS blocks background apps there), e.g.
+   `~/BalancePoint`. Stop the app on any other computer first, so only one copy of the database is in use.
+2. Optional, for phones: install Tailscale for Mac and sign in to the same account. In System
+   Settings → Energy, turn on *Prevent automatic sleeping* and *Start up automatically after a power failure*.
+3. You need Python 3.11+: Homebrew's (`brew install python@3.12`), one from python.org, or any other
+   (set `BUDGET_PYTHON` to its path). Then in Terminal: `cd ~/BalancePoint && chmod +x *.sh && ./install-mac.sh`.
+   The app gets its own environment in `.venv`, built from Homebrew's python@3.12 when it's installed
+   (Apple silicon or Intel), else `python3` if it's 3.11 or newer, so it doesn't depend on conda or
+   whatever `python` means in your shell. The installer starts the app, and makes it start again at
+   every login and after a crash. It prints the address for phones and other computers, e.g.
+   `http://mac-mini:5000`. Allow incoming connections if macOS asks.
+4. Log: `data/server.log`. Remove the auto-start (and the daily bank sync) with
+   `./install-mac.sh remove`; run it by hand with `./start-mac.sh`.
+
+For the app to come back after a power cut, the Mac needs to log in to that account on its own
+(System Settings → Users & Groups → automatic login), since it starts at login.
+
+On Linux, a systemd user service running `.venv/bin/python run.py serve --phones --no-browser` from
+the app folder does the same job.
 
 ### Run it with Docker
 
@@ -93,7 +112,7 @@ each request came from; add its network. Before publishing the port wider, set a
 *Security*).
 
 For the daily bank sync, uncomment the `sync` service in `docker-compose.yml`. It runs
-`python run.py simplefin-sync` at start and every 24 hours after.
+`python run.py simplefin-sync` at start and every 24 hours after (see *Automatic bank sync*).
 
 Without Compose:
 
@@ -135,7 +154,7 @@ startup, so restart after editing. Changes you make in the app win over the file
 
 ## Getting data in
 
-- **US Bank CSV:** in the app, open *Upload data*, choose one or more CSV files and
+- **Bank CSV:** in the app, open *Upload data*, choose one or more CSV files and
   the account they belong to. Re-uploading overlapping date ranges is safe;
   duplicates are skipped. A bank export replaces entries imported from an old spreadsheet for
   the same account and dates, since the bank's record is the one to keep. The spreadsheet's
@@ -165,17 +184,17 @@ startup, so restart after editing. Changes you make in the app win over the file
 ### Automatic bank sync (SimpleFIN Bridge)
 
 [SimpleFIN Bridge](https://bridge.simplefin.org) is a read-only bank-data service: $1.50 a month or
-$15 a year for up to 25 institutions, paid to them directly. The app pulls from it once a day, so bank
-CSVs aren't needed for the accounts it covers.
+$15 a year for up to 25 institutions, paid to them directly. With a daily sync scheduled (see
+*Scheduling the daily sync* below), bank CSVs aren't needed for the accounts it covers.
 
 The **Bank sync** page (linked from Accounts) does steps 2 to 4 in the browser: paste the token, pick an
-account for each bank account, Sync now, and see each account's last pull and the morning log. It asks
-the Bridge only when you connect, press *Refresh accounts* or *Sync now*, and never shows the access.
+account for each bank account, Sync now, and see each account's last pull and, when a daily sync is
+scheduled, its log. It asks the Bridge only when you connect, press *Refresh accounts* or *Sync now*, and never shows the access.
 
 1. Sign up at bridge.simplefin.org, connect each bank there, and create a **setup token**.
 2. `run.py simplefin-setup <token>`. The token works once; the long-lived access it's exchanged for
-   is saved to `data/simplefin-access-url` (only your user can read it, and `data/`'s own git repo
-   ignores it). It lists every account the Bridge sees, each with an id.
+   is saved to `data/simplefin-access-url` (only your user can read it). It lists every account the
+   Bridge sees, each with an id.
 3. For each: `run.py simplefin-map <id> --account "Joint Checking"`. The account must already exist on
    the Accounts page.
    - Checking, savings, credit card and cash accounts sync **transactions and the balance**.
@@ -192,19 +211,73 @@ the Bridge only when you connect, press *Refresh accounts* or *Sync now*, and ne
 5. Loans: a synced lender balance replaces the loan schedule from its date on, while it's less than
    35 days old, so the schedule still covers history and takes over again if the sync stops.
 
-On the Mac, `install-mac.sh` runs `sync-mac.sh` **every day at 6:00** (after the banks' overnight
-posting) and again whenever the Mac starts up. It commits `data/` before and after, so a bad sync is
-one `git revert` away. Log: `data/simplefin-sync.log`.
+#### Scheduling the daily sync
+
+*Sync now* on the Bank sync page (or `run.py simplefin-sync`) pulls everything new whenever you ask.
+To have it happen on its own every day, schedule `run.py simplefin-sync`, run from the app folder.
+Around 6:00 works well: after the banks' overnight posting, before anyone opens the app. Send its
+output to `simplefin-sync.log` in the data folder and the Bank sync page shows the latest run.
+
+- **macOS:** `install-mac.sh` (see *Optional: keep it running on an always-on Mac*) runs `sync-mac.sh`
+  **every day at 6:00** and again whenever the Mac starts up. If `data/` is a git repository, it
+  commits `data/` before and after, so a bad sync is one `git revert` away. Log: `data/simplefin-sync.log`.
+- **Linux, cron** (`crontab -e`; use your own path):
+
+  ```
+  0 6 * * * cd /home/you/BalancePoint && .venv/bin/python run.py simplefin-sync >> data/simplefin-sync.log 2>&1
+  ```
+
+- **Linux, systemd timer** (catches up after the computer was off). In `~/.config/systemd/user/`:
+
+  ```ini
+  # balancepoint-sync.service
+  [Unit]
+  Description=BalancePoint bank sync
+
+  [Service]
+  Type=oneshot
+  WorkingDirectory=%h/BalancePoint
+  ExecStart=/bin/sh -c '.venv/bin/python run.py simplefin-sync >> data/simplefin-sync.log 2>&1'
+  ```
+
+  ```ini
+  # balancepoint-sync.timer
+  [Unit]
+  Description=Daily BalancePoint bank sync
+
+  [Timer]
+  OnCalendar=*-*-* 06:00
+  Persistent=true
+
+  [Install]
+  WantedBy=timers.target
+  ```
+
+  Then `systemctl --user daemon-reload && systemctl --user enable --now balancepoint-sync.timer`, and
+  `loginctl enable-linger $USER` so it runs while you're logged out.
+- **Windows, Task Scheduler** (in Command Prompt; use your own path):
+
+  ```bat
+  schtasks /Create /TN "BalancePoint bank sync" /SC DAILY /ST 06:00 /TR "cmd /c cd /d C:\BalancePoint && .venv\Scripts\python.exe run.py simplefin-sync >> data\simplefin-sync.log 2>&1"
+  ```
+
+  It runs while you're logged in. To catch up after the computer was off, open the task in Task
+  Scheduler and tick *Run task as soon as possible after a scheduled start is missed* (Settings tab).
+- **Docker:** uncomment the `sync` service in `docker-compose.yml`. It runs `python run.py
+  simplefin-sync` at start and every 24 hours after, logging to the data volume.
+
+If you keep the data somewhere else with `BUDGET_DATA_DIR`, set it for the scheduled job too and
+write the log there.
 
 Missed days fill in by themselves. Each account remembers its last good pull, and the next run starts
-from the oldest of those, less 5 days for anything that posted late. So after a week with the Mac off
+from the oldest of those, less 5 days for anything that posted late. So after a week with the computer off
 or offline, or with a bank that needed signing in again at the Bridge, the next run pulls the whole
 gap. An account whose bank reported a problem keeps its old date until a clean pull. The log flags any
 account not pulled in 2+ days as **STALE**; the usual fix is signing in to that bank again at
 bridge.simplefin.org.
 
-Month ends: a charge that happened last month but is still pending when a new month starts (the 6:00
-run on the 1st, or the first run after) is kept as a *pending* transaction in last month. When the
+Month ends: a charge that happened last month but is still pending when a new month starts (the first
+sync on the 1st, or the first one after) is kept as a *pending* transaction in last month. When the
 bank posts it (same amount, or the same merchant within 30% for a tip), the posted charge replaces it
 and still counts in last month. A pending charge that never posts (a released hold) goes after 14 days.
 Every synced charge also carries the day it happened: one that happened in an earlier month than it
@@ -246,7 +319,7 @@ moved in and out of the business account shown apart.
 ## Judging a month, and planning ahead
 
 A single month's savings rate swings with every big purchase, so the Overview judges a month on
-**flexible spending** against a monthly target you set together. Each spending category counts as
+**flexible spending** against a monthly target you set. Each spending category counts as
 one of three groups (set on the Categories page):
 
 - **Fixed**: bills that barely change (mortgage, utilities, insurance)
@@ -283,20 +356,27 @@ Transactions added by hand can be deleted from the Transactions page; bank rows 
 upload instead). The hand-entry form starts on your first cash account, so keep "Cash on hand"
 ahead of other cash accounts.
 
+## Optional features
+
+Optional parts switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
+for tracking blackjack sessions against their expected value). Without a setting, Blackjack is on once
+there are blackjack sessions and off otherwise.
+
 ### Blackjack bankroll
 
-The **Bankroll** page is the blackjack tracker: every session (a casino visit, with each table's game,
-rules, conditions, hours and EV), what actually happened next to what was expected, yearly totals like
-the tracker's own (travel is miles × a $/mile rate plus flights and room and board), a running-result
-chart, research by trip (casinos, rules, EV, bet spreads, directions) and a training log.
+The **Bankroll** page is a blackjack tracker: every session (a casino visit, with each table's game,
+rules, conditions, hours and EV), what actually happened next to what was expected, yearly totals
+(travel is miles × a $/mile rate plus flights and room and board), a running-result chart, research
+by trip (casinos, rules, EV, bet spreads, directions) and a training log.
 
 - **Log a session** on the page, on the phone at the casino if you like. Picking a casino you've played
   fills in its last game. Add a table per game played during the visit.
 - Each session's result is a transaction in the *Blackjack Bankroll* cash account, Blackjack category,
   and follows the session when it's edited or deleted. Money moving between it and the bank is a
   Transfer. If the account drifts from the cash you actually hold, enter what you hold on Net worth.
-- The old workbook (`data/source/Blackjack Tracker.xlsx`) was imported once: *Upload data → Blackjack
-  tracker*, or `python run.py import-blackjack "Blackjack Tracker.xlsx"`. Importing again replaces only
+- Legacy: *Upload data → Blackjack tracker* (or `python run.py import-blackjack tracker.xlsx`) imports
+  a tracker workbook. It was built for one particular tracker spreadsheet's layout and won't read
+  others; logging sessions on the page is the way in for everyone else. Importing again replaces only
   what came from a workbook; sessions, research and practice added in the app stay.
 
 ## How naming and categorizing works
@@ -331,9 +411,9 @@ added on the next start without touching anything you've edited.
 
 ## Working on the code
 
-- **Personal data stays in `data/`**, which is git-ignored here and is its own git repo. Code,
-  comments, examples and commit messages use made-up names (Pat Smith, ACME CORP). Household
-  rules go in `data/personal.toml`, not in `seed.py`. Private notes and to-dos: `data/TODO.md`.
+- **Personal data stays in `data/`**, which git ignores. Code, comments, examples and commit
+  messages use made-up names (Pat Smith, ACME CORP). Household rules go in `data/personal.toml`,
+  not in `seed.py`.
 - **Schema changes** go in `db.migrate()` so existing databases upgrade on startup. One-time data
   migrations are gated on `PRAGMA user_version` (currently 2: folded categories, spending groups).
 - **Reports count transactions on `effective_date`** (a date set by hand, else the nearest 1st for
@@ -356,23 +436,10 @@ looks like a secret, and any word listed in `.personal-words` (one per line: you
 numbers; git ignores the file). `scripts/install-git-hooks.sh` runs it before every commit (opt-in).
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
-## Publishing
+## Maintaining
 
-`scripts/prepare_public_repo.sh` builds a public copy in a new folder and never changes this repo:
-
-```sh
-brew install git-filter-repo
-scripts/prepare_public_repo.sh ~/balancepoint-public "Your Name" 12345+you@users.noreply.github.com
-```
-
-It clones `main` with `git clone --no-local`, rewrites every author and committer in that clone to the
-one name and email given (`git filter-repo --mailmap`), applies text replacements from
-`.public-replacements` if present (`Real Name==>Pat Smith` per line, `git filter-repo --replace-text`
-format, also applied to commit messages; git ignores the file), checks the whole rewritten history
-for personal data, and prints the next steps (review, create the GitHub repo, push).
-
-Licensed under the MIT License (`LICENSE`). After creating the GitHub repository, turn on private vulnerability reporting
-(Settings, then Code security) so `SECURITY.md`'s reporting route works.
+Building the public copy of the repository, and the maintainer's own setup notes, are in
+[MAINTAINING.md](MAINTAINING.md). Licensed under the MIT License (`LICENSE`).
 
 ## Layout
 

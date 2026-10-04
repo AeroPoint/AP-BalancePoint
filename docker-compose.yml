@@ -20,13 +20,14 @@ services:
 
   # Optional daily bank sync (README: "Automatic bank sync"). Run setup once first:
   #   docker compose run --rm budget python run.py simplefin-setup <token>
-  # Then uncomment. It syncs at start and every 24 hours after; no cron needed.
+  # Then uncomment. It syncs at start and every 24 hours after; no cron needed. The log also goes to
+  # /data/simplefin-sync.log, which the Bank sync page shows.
   # sync:
   #   image: balancepoint
   #   restart: unless-stopped
   #   volumes:
   #     - budget-data:/data
-  #   entrypoint: ["sh", "-c", "while true; do python run.py simplefin-sync; sleep 86400; done"]
+  #   entrypoint: ["sh", "-c", "while true; do python run.py simplefin-sync 2>&1 | tee -a /data/simplefin-sync.log; sleep 86400; done"]
   #   depends_on:
   #     - budget
 

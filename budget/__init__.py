@@ -1,4 +1,4 @@
-"""Personal budget app: US Bank CSV imports, merchant dictionary, cash flow and net worth."""
+"""Personal budget app: bank CSV imports, merchant dictionary, cash flow and net worth."""
 import ipaddress
 import os
 from pathlib import Path
@@ -34,6 +34,9 @@ def create_app():
         UPLOAD_DIR=str(data_dir / "uploads"),
         SOURCE_DIR=str(data_dir / "source"),
         PERSONAL_CONFIG=str(data_dir / "personal.toml"),
+        # Only a placeholder: without a login it signs just the flash messages, nothing that guards access.
+        # With the optional login on (BUDGET_PASSWORD or BUDGET_PASSWORD_HASH), auth.setup replaces it with
+        # BUDGET_SECRET_KEY or a random key kept in the data folder.
         SECRET_KEY="local-only-budget-app",
         MAX_CONTENT_LENGTH=50 * 1024 * 1024,
     )

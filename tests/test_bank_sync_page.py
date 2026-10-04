@@ -1,5 +1,5 @@
 """The Bank sync page, against the fake SimpleFIN Bridge on localhost (made-up accounts)."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from budget import simplefin_import as sf
@@ -118,3 +118,24 @@ def test_log_tail_never_shows_a_login(client, app):
     r = client.get("/bank-sync")
     assert b"line 39" in r.data and b"line 10" not in r.data
     assert b"hunter2" not in r.data
+
+
+def test_copy_promises_no_sync_that_isnt_scheduled(client, app, bridge):  # noqa: F811
+    """Without a scheduled sync there's no log: no "morning sync", and a pointer to how to schedule one."""
+    sf.save_access_url(data_dir(app), bridge.url)
+    html = client.get("/bank-sync").get_data(as_text=True)
+    assert "morning" not in html.lower()
+    assert "Automatic bank sync" in html and "Last automatic sync" not in html
+    assert "Automatic sync log" not in html
+
+
+def test_scheduled_sync_log_shows_when_it_last_ran(client, app, bridge):  # noqa: F811
+    sf.save_access_url(data_dir(app), bridge.url)
+    log = data_dir(app) / "simplefin-sync.log"
+    log.write_text("Synced: 3 new transactions.\n")
+    import os
+    stamp = datetime(2026, 9, 30, 6, 0).timestamp()
+    os.utime(log, (stamp, stamp))
+    html = client.get("/bank-sync").get_data(as_text=True)
+    assert "Last automatic sync" in html and "2026-09-30 06:00" in html
+    assert "Automatic sync log" in html and "Synced: 3 new transactions." in html
