@@ -232,6 +232,28 @@ def store_pending(conn, account_id, transactions, sync_from, today):
     return added
 
 
+PENDING_NOW_KEY = "pending_this_month"
+
+
+def pending_this_month(conn, account_id, transactions, sync_from, today):
+    """This month's charges that are still pending, as {account_id, amount, raw, category_id} dicts. They
+    aren't stored as transactions (they post within days); the pace check counts them so it isn't
+    behind early in the month. Replaced by every sync."""
+    month_start = today.replace(day=1).isoformat()
+    engine = RuleEngine(conn)
+    out = []
+    for t in transactions:
+        if not t.get("pending") or not t.get("transacted_at"):
+            continue
+        day = _day(t["transacted_at"]).isoformat()
+        if day < month_start or (sync_from and day < sync_from):
+            continue
+        amount, raw = round(float(t["amount"]), 2), clean_description(t.get("description"))
+        out.append({"account_id": account_id, "amount": amount, "raw": raw,
+                    "category_id": engine.resolve(raw, None, None, amount, account_id).category_id})
+    return out
+
+
 def settle_pending(conn, account_id, today):
     """A pending row gives way to its posted charge, which keeps counting in the pending row's month and
     takes anything decided on it (a category picked by hand, a checkbox, notes, one-off). The posted
@@ -378,6 +400,7 @@ def sync(conn, access_url, today=None, since=None):
 
     results, unmapped, seen = [], [], set()
     balances = {}  # local account id -> [total, latest as_of]: several bank accounts can feed one
+    pending_now = []
     for a in fetched:
         m = mapped.get(a["id"])
         if m is None:
@@ -394,6 +417,7 @@ def sync(conn, access_url, today=None, since=None):
             settled, dropped = settle_pending(conn, m["account_id"], today)
             count_in_month_happened(conn, m["account_id"], a.get("transactions") or [], m["sync_from"])
             pending = store_pending(conn, m["account_id"], a.get("transactions") or [], m["sync_from"], today)
+            pending_now += pending_this_month(conn, m["account_id"], a.get("transactions") or [], m["sync_from"], today)
         balance = None
         if a.get("balance") not in (None, ""):
             balance = float(a["balance"])
@@ -420,6 +444,8 @@ def sync(conn, access_url, today=None, since=None):
         if seed.account_side(kind) == "liability":
             total = abs(total)  # stored as what's owed
         set_synced_balance(conn, account_id, round(total, 2), as_of)
+    conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (PENDING_NOW_KEY, json.dumps({"month": today.isoformat()[:7], "items": pending_now})))
     stale = [s for s in status(conn, today) if s["stale"]]
     return {"start": start, "end": today, "accounts": results, "unmapped": unmapped, "missing": missing,
             "errors": errors, "stale": stale}

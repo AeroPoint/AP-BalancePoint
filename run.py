@@ -272,7 +272,8 @@ def main():
 
         check = budgeting.pace(connect(app.config["DATABASE"]))
         if check and check["spent"] is not None:
-            print(f"  Pace: day {check['day']} of {check['days']}, flexible ${check['spent']:,.0f} of ${check['target']:,.0f} "
+            print(f"  Pace: day {check['day']} of {check['days']}, flexible ${check['spent']:,.0f}"
+                  + (f" (with ${check['pending']:,.0f} pending)" if check.get("pending") else "") + f" of ${check['target']:,.0f} "
                   f"({'+' if check['ahead'] >= 0 else '-'}${abs(check['ahead']):,.0f} against the pace)")
         for w in (check or {}).get("warnings", []):
             print(f"  WARNING: {w}")

@@ -179,6 +179,25 @@ def scorecard(conn, year, month, accounts=None):
     }
 
 
+def pending_flexible(conn, today):
+    """Flexible spending in this month's still-pending charges, from the last bank sync's snapshot."""
+    import json
+    raw = conn.execute("SELECT value FROM settings WHERE key = 'pending_this_month'").fetchone()
+    try:
+        snap = json.loads(raw[0]) if raw else None
+    except (TypeError, ValueError):
+        return 0.0
+    if not snap or snap.get("month") != today.isoformat()[:7]:
+        return 0.0
+    cats = {r["id"]: r for r in conn.execute("SELECT id, kind, COALESCE(grp, 'flexible') AS grp FROM categories")}
+    total = 0.0
+    for item in snap.get("items", []):
+        c = cats.get(item.get("category_id"))
+        if (c and c["kind"] == "expense" and c["grp"] == "flexible") or (c is None and item["amount"] < 0):
+            total -= item["amount"]
+    return round(total, 2)
+
+
 def pace(conn, today=None):
     """How this month is going so far: flexible spending against the share of the target that should be
     gone by today, and the plan's spending account against its cushion. None without a target or plan.
@@ -192,7 +211,9 @@ def pace(conn, today=None):
     target = get_setting(conn, "flex_target")
     out = {"day": today.day, "days": days, "target": target, "warnings": [], "spent": None}
     if target:
-        spent = by_group(conn, start, (today + timedelta(days=1)).isoformat())[0]["flexible"]
+        pending = pending_flexible(conn, today)
+        spent = by_group(conn, start, (today + timedelta(days=1)).isoformat())[0]["flexible"] + pending
+        out["pending"] = pending
         expected = target * today.day / days
         left_days = days - today.day + 1
         out.update(spent=spent, expected=expected, ahead=spent - expected,

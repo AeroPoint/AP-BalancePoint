@@ -8,6 +8,8 @@ keeps business accounts' profit apart, and flags transactions for tax time.
 
 Everything runs on your machine. Data lives in `data/`, which git ignores.
 
+**Not technical? Start with [Minimum steps for non-technical users](#minimum-steps-for-non-technical-users).**
+
 **What it assumes:** US dollars and English. Bank CSVs work from any bank with a date, a description
 and an amount (or debit and credit) column; US Bank exports are understood best (their card memos also
 carry the merchant type, used to guess categories). SimpleFIN Bridge covers most US banks, card
@@ -16,6 +18,61 @@ companies, brokerages and lenders.
 **Optional parts** switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
 for tracking blackjack sessions; off for new installs, on once there are sessions) and `business` (the
 Business page; on once an account has its own categories). See [Optional features](#optional-features).
+
+## Minimum steps for non-technical users
+
+You don't need to know any code. Pick the way that fits you.
+
+### Easiest: someone sets it up, you just use it
+
+Most households have one person who doesn't mind a little setup. They do it once; everyone else only
+uses it on their phone, like any other app.
+
+**The person setting it up** (about 30 minutes, on a computer that stays on, such as a Mac mini):
+1. Follow "On a Mac" or "On Windows" below.
+2. Install [Tailscale](https://tailscale.com/download) (free) on that computer and sign in. It makes
+   the app reachable from your own phones and from nobody else.
+3. Invite the rest of the household to the Tailscale network (Tailscale's admin page, "Invite users").
+
+**Everyone else**, on their phone:
+1. Install the Tailscale app, sign in with the invite, and leave it switched on.
+2. Open the link the setup person sends (it looks like `http://their-computer:5000`).
+3. Add it to the home screen: iPhone Safari's Share button, then "Add to Home Screen" (Android
+   Chrome: menu, "Add to Home screen"). It now opens like an app.
+
+**Everyday use:** open it, look at **Overview** to see how the month is going, and use **Categorize**
+to sort anything the app wasn't sure about. That's it.
+
+### On Windows, by yourself
+
+1. Install Python from [python.org/downloads](https://www.python.org/downloads/) (3.11 or newer). In
+   the installer, tick **"Add python.exe to PATH"** first.
+2. At the top of this page, click the green **Code** button, then **Download ZIP**. Unzip it.
+3. In the unzipped folder, double-click **`start.bat`**. The first time it sets itself up (a minute or
+   two), then your browser opens the app. Next time, double-click it again.
+
+### On a Mac, by yourself
+
+1. Install Python from [python.org/downloads](https://www.python.org/downloads/) (3.11 or newer).
+2. At the top of this page, click the green **Code** button, then **Download ZIP**. Unzip it and move
+   the folder into your home folder (the one with your name), not Desktop, Documents or Downloads.
+3. Open **Terminal** (press Cmd+Space, type Terminal, press Return). Type `cd ` (with a space), drag
+   the folder onto the Terminal window, and press Return. Then type `bash start-mac.sh` and press Return.
+4. When it says it's running, open **http://127.0.0.1:5000** in your browser. Leave Terminal open
+   while you use it.
+5. Optional: to have it start by itself whenever the Mac is on, type `bash install-mac.sh` once instead.
+
+### Getting your bank data in
+
+- **By hand, free:** on your bank's website, download your transactions as a CSV file (often under
+  "Download" or "Export"), then use **Upload data** in the app. Do this once a month or so.
+- **Automatically, about $15 a year:** sign up at [SimpleFIN Bridge](https://bridge.simplefin.org),
+  connect your banks there, and paste the setup token into the app's **Bank sync** page. To have it
+  sync every morning on its own, the setup person follows
+  [Automatic bank sync](#automatic-bank-sync-simplefin-bridge).
+
+Want to look around first? The [made-up demo household](#try-it-with-made-up-data) shows every page
+filled in.
 
 ## Run it
 
