@@ -5,7 +5,7 @@
   <div>
     <h1>Bank sync</h1>
     <p class="sub">
-      Pull balances and transactions straight from your banks every morning, so you don't have to upload CSV files.
+      Pull balances and transactions straight from your banks, so you don't have to upload CSV files.
       It goes through SimpleFIN Bridge, a read-only service: it can see your accounts but can't move money.
     </p>
   </div>
@@ -54,7 +54,10 @@
     {% else %}
       Pick an account for each bank account below, then sync.
     {% endif %}
-    The Bridge allows about 24 requests a day. The automatic morning sync uses one; Sync now and Refresh accounts use one each.
+    Sync now pulls everything new since each account's last pull. To sync every day on its own, schedule it
+    (README: <i>Automatic bank sync</i>).
+    {% if log_updated %}Last automatic sync: <span class="nowrap">{{ log_updated }}</span>.{% endif %}
+    The Bridge allows about 24 requests a day: a scheduled daily sync uses one; Sync now and Refresh accounts use one each.
   </p>
 </section>
 
@@ -147,7 +150,7 @@
 
 {% if log_tail %}
 <section class="panel">
-  <div class="panel-head"><h2>Morning sync log</h2><small class="muted">Last 30 lines</small></div>
+  <div class="panel-head"><h2>Automatic sync log</h2><small class="muted">Last 30 lines, updated {{ log_updated }}</small></div>
   <pre class="sf-log">{{ log_tail }}</pre>
 </section>
 {% endif %}
@@ -157,7 +160,7 @@
   <div class="panel-head">
     <h2>Disconnect</h2>
     <form method="post" action="{{ url_for('main.bank_sync_disconnect') }}"
-          data-confirm="Disconnect from SimpleFIN Bridge? Syncing stops, including the morning sync, until you connect with a new setup token. What's already synced stays.">
+          data-confirm="Disconnect from SimpleFIN Bridge? Syncing stops, including any scheduled sync, until you connect with a new setup token. What's already synced stays.">
       <button class="btn small danger">Disconnect</button>
     </form>
   </div>

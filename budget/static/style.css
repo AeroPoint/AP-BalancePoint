@@ -1,4 +1,13 @@
 /* BalancePoint: pale ruled-paper ground, spruce ink. Chart hues follow the validated dataviz palette. */
+/* Libre Franklin, bundled so no page asks Google Fonts for it (fonts/OFL.txt: SIL Open Font License).
+   One variable-weight file, latin subset, covers every weight used here (400 to 700). */
+@font-face {
+  font-family: "Libre Franklin";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("fonts/LibreFranklin-latin.woff2") format("woff2");
+}
 :root {
   color-scheme: light;
   --ground: #eef2ef;
@@ -337,6 +346,8 @@ tr.done select, tr.done input { opacity: 0.6; }
 /* upload */
 .steps ol { margin: 0 0 12px; padding-left: 1.2rem; color: var(--ink-2); }
 .steps li { margin-bottom: 6px; }
+.tucked > summary { color: var(--accent); cursor: pointer; font-weight: 500; }
+.tucked[open] > summary { margin-bottom: 8px; }
 
 /* ------------------------------------------------------------ charts, tooltip, toast */
 .chart { position: relative; width: 100%; }

@@ -5,7 +5,7 @@
     python run.py serve --host 0.0.0.0     # listen on every network (Docker); or set BUDGET_HOST
     python run.py hash-password            # a BUDGET_PASSWORD_HASH for the optional login
     python run.py import-excel data/source/budget.xlsx [--through 2024-12-31]
-    python run.py import-csv path/to/export.csv --account "US Bank Credit" [--kind credit]
+    python run.py import-csv path/to/export.csv --account "Rewards Card" [--kind credit]
     python run.py simplefin-setup <setup token>          # one-time, from bridge.simplefin.org
     python run.py simplefin-map <id> --account "..."     # map each account simplefin-setup listed
     python run.py simplefin-sync                         # pull since each account's last sync (daily)
@@ -48,7 +48,7 @@ def print_phone_address(port):
         host = name[1] if len(name) > 1 else ip
         print(f"On your phones (Tailscale on): http://{host}:{port}  or  http://{ip}:{port}")
     except (OSError, IndexError, subprocess.SubprocessError):
-        print("Tailscale isn't running on this computer yet, so phones can't reach the app. See README: 'On your phone'.")
+        print("Tailscale isn't running on this computer yet, so phones can't reach the app. See README: 'Optional: open it on your phone'.")
 
 
 def _sf_name(org, label):

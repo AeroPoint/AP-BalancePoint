@@ -4,7 +4,7 @@
 <header class="page-head">
   <div>
     <h1>Upload data</h1>
-    <p class="sub">Uploaded files are kept in the project's data folder, which git ignores, so nothing financial ends up in the repository.</p>
+    <p class="sub">Uploaded files are kept in the app's data folder on this computer, never with the code.</p>
   </div>
 </header>
 
@@ -48,7 +48,7 @@
   <section class="panel steps">
     <div class="panel-head"><h2>Getting a CSV from your bank</h2></div>
     <ol>
-      <li>Sign in to your bank's website (US Bank: usbank.com) and open the checking account or card.</li>
+      <li>Sign in to your bank's website and open the checking account or card.</li>
       <li>On the transactions list, choose the download or export option.</li>
       <li>Pick a date range and the CSV format.</li>
       <li>Upload the file here and choose the matching account.</li>
@@ -57,6 +57,7 @@
   </section>
 </div>
 
+{% if sheet_configured %}
 <section class="panel">
   <div class="panel-head">
     <h2>Old budget workbook</h2>
@@ -65,9 +66,6 @@
       following the [spreadsheet] section of data/personal.toml. Running it again skips anything already imported.
     </p>
   </div>
-  {% if not sheet_configured %}
-  <p class="flash error">data/personal.toml has no [spreadsheet] section yet, so there's nothing to read. personal.example.toml shows the format.</p>
-  {% endif %}
   <form method="post" action="{{ url_for('main.upload_excel') }}" enctype="multipart/form-data" class="inline">
     {% if workbooks %}
     <label class="field grow">
@@ -87,6 +85,16 @@
   </form>
   <p class="note">Leave the date blank to use the day the file was last saved; rows after that are bills the sheet projects forward.</p>
 </section>
+{% else %}
+<details class="panel tucked" id="old-workbook">
+  <summary>Have an old budget spreadsheet?</summary>
+  <p class="muted">
+    Describe its layout in personal.toml first (personal.example.toml shows how): the [spreadsheet] section of
+    personal.toml in the app's data folder. Restart the app, and an import for its transaction history, hand-sorted
+    categories, merchant names and balances shows up here.
+  </p>
+</details>
+{% endif %}
 
 {% if features.blackjack %}
 <section class="panel">

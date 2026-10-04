@@ -1,6 +1,7 @@
 #!/bin/bash
 # Make the budget app start whenever you log in to this Mac, and restart if it stops. Also schedules
-# the daily bank sync (sync-mac.sh) at 6:00 and at every startup.
+# the daily bank sync (sync-mac.sh) at 6:00 and at every startup. Needs Python 3.11 or newer: Homebrew's
+# python@3.12, a python.org install, or BUDGET_PYTHON pointing at one (start-mac.sh picks it).
 #   ./install-mac.sh            install (or update) and start it now
 #   ./install-mac.sh remove     stop both and remove the auto-start
 set -euo pipefail
@@ -20,7 +21,7 @@ fi
 
 case "$DIR" in
   "$HOME/Desktop"*|"$HOME/Documents"*|"$HOME/Downloads"*)
-    echo "Move the Budget folder out of Desktop/Documents/Downloads first (e.g. to ~/Budget):"
+    echo "Move the app folder out of Desktop/Documents/Downloads first (e.g. to ~/BalancePoint):"
     echo "macOS blocks background apps from those folders." ; exit 1 ;;
 esac
 

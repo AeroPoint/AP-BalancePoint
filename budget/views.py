@@ -1422,15 +1422,17 @@ def bank_sync():
               "not_listed": bool(cached.get("accounts"))}
              for ext, s in status.items() if ext not in listed]
     log = data_dir / "simplefin-sync.log"
-    log_tail = None
+    log_tail = log_updated = None
+    # The log is written only by a scheduled sync (sync-mac.sh, cron, a timer); without one there is none.
     if log.exists():
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines()[-SF_LOG_LINES:]
         log_tail = "\n".join(_URL_LOGIN.sub("://", line) for line in lines)
+        log_updated = datetime.fromtimestamp(log.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
     return render_template(
         "bank_sync.html", connected=simplefin_import.access_url_path(data_dir).exists(), rows=rows,
         mapped=list(status.values()), fetched=cached.get("fetched"),
         accounts=[a for a in _accounts(conn) if not a["closed"]], last_sync=_sf_json(conn, SF_LAST_SYNC_KEY),
-        log_tail=log_tail, stale_days=simplefin_import.STALE_DAYS,
+        log_tail=log_tail, log_updated=log_updated, stale_days=simplefin_import.STALE_DAYS,
     )
 
 

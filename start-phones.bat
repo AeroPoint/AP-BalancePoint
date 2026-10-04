@@ -1,5 +1,5 @@
 @echo off
-rem Like start.bat, but your phones can open the app too, over Tailscale (see README: "On your phone").
+rem Like start.bat, but your phones can open the app too, over Tailscale (see README: "Optional: open it on your phone").
 cd /d "%~dp0"
 if not exist .venv\Scripts\python.exe (
   echo Run start.bat once first to set things up.

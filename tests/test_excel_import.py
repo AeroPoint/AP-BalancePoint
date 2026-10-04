@@ -230,3 +230,9 @@ def test_upload_route_reads_personal_toml(setup, client):
     r = client.post("/upload/excel", data={"existing": path.name, "through": "2026-02-28"}, follow_redirects=True)
     assert r.status_code == 200 and "Imported budget.xlsx through 2026-02-28" in r.get_data(as_text=True)
     assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 10
+
+
+def test_upload_page_offers_the_workbook_import_once_configured(setup, client):
+    html = client.get("/upload").get_data(as_text=True)
+    assert "Import workbook" in html and "Workbook in data/source" in html
+    assert "Have an old budget spreadsheet?" not in html

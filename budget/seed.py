@@ -3,6 +3,9 @@
 Only general, nationally known merchants live here. Household-specific entries (local
 businesses, extra categories, keywords) go in data/personal.toml; see personal.example.toml.
 
+The dictionary is US-centric: national US chains and services, plus some regional chains. Elsewhere,
+most names won't match until you add your own merchants (in the app or in personal.toml).
+
 Everything is loaded with INSERT OR IGNORE, so edits made in the app are never overwritten,
 and new built-in entries added here show up on the next start.
 """

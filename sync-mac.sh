@@ -2,6 +2,7 @@
 # Pull new bank data from SimpleFIN Bridge (README: "Automatic bank sync"). install-mac.sh runs this at
 # 6:00 every morning and whenever the Mac starts up; each run catches up from every account's last good
 # pull, so a missed morning or an outage fills in on its own. Log: data/simplefin-sync.log
+# (Linux, Windows and Docker schedule `python run.py simplefin-sync` instead; see the README.)
 set -uo pipefail
 cd "$(dirname "$0")"
 
