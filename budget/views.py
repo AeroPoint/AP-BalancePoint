@@ -1449,7 +1449,19 @@ def bank_sync():
         mapped=list(status.values()), fetched=cached.get("fetched"),
         accounts=[a for a in _accounts(conn) if not a["closed"]], last_sync=_sf_json(conn, SF_LAST_SYNC_KEY),
         log_tail=log_tail, log_updated=log_updated, stale_days=simplefin_import.STALE_DAYS,
+        notify_line=_notify_line(),
     )
+
+
+def _notify_line():
+    """'email to a…@example.com, when there are warnings' when [notify] is set up; None (no line) otherwise."""
+    from . import notify
+
+    try:
+        cfg = notify.config(personal.load(current_app.config["PERSONAL_CONFIG"]))
+    except personal.PersonalConfigError as exc:
+        return f"not working: {exc}"
+    return notify.describe(cfg) if cfg else None
 
 
 @bp.post("/bank-sync/connect")

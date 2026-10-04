@@ -22,6 +22,7 @@ class Personal:
     keywords: list = field(default_factory=list)     # [(keyword, category)]
     spreadsheet: dict = field(default_factory=dict)  # raw [spreadsheet] table, read by excel_import
     features: dict = field(default_factory=dict)     # [features]: optional parts switched on or off, e.g. blackjack
+    notify: dict = field(default_factory=dict)       # raw [notify] table, checked and read by notify.config
 
 
 def load(path):
@@ -50,4 +51,5 @@ def load(path):
     except KeyError as exc:
         raise PersonalConfigError(f"{path}: an entry is missing its {exc} value.") from exc
     features = {str(k): bool(v) for k, v in raw.get("features", {}).items()}
-    return Personal(path, categories, merchants, keywords, raw.get("spreadsheet", {}), features)
+    return Personal(path, categories, merchants, keywords, raw.get("spreadsheet", {}), features,
+                    raw.get("notify", {}))
