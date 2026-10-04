@@ -11,7 +11,7 @@ from werkzeug.utils import secure_filename
 
 from . import blackjack, budgeting, business, personal, reports, seed, simplefin_import
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
-from .csv_import import CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
+from .csv_import import BAD_DATES_NOTE, CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
 from .excel_import import ensure_account, import_workbook
 from .rules import RuleEngine, compile_pattern, merchant_key, normalize, reapply, sync_dates
@@ -1131,10 +1131,11 @@ def upload():
             flash(
                 f"{f.filename}: added {added} of {read} transactions ({read - added - before} were already imported)."
                 + (f" Skipped {before} from before the account's “bank exports from” month." if before else "")
+                + (" " + BAD_DATES_NOTE.format(n=parsed.bad_dates) if parsed.bad_dates else "")
                 + (f" Replaced {replaced} spreadsheet entries for the same account and dates" if replaced else "")
                 + (f", keeping your categories, dates and notes on {carried} matching bank rows." if carried
                    else "." if replaced else ""),
-                "ok",
+                "error" if parsed.bad_dates else "ok",
             )
         conn.commit()
         return redirect(url_for(".upload"))

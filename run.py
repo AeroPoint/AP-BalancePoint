@@ -23,11 +23,15 @@ from pathlib import Path
 # Always run inside the app's own environment (.venv), whichever "python" was typed: a conda or
 # system Python won't have Flask.
 _VENV_PYTHON = Path(__file__).resolve().parent / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-if _VENV_PYTHON.exists() and Path(sys.prefix).resolve() != _VENV_PYTHON.parent.parent.resolve():
+# Only when run.py is the program itself: imported (by the tests), it must not replace the process.
+if __name__ == "__main__" and _VENV_PYTHON.exists() and Path(sys.prefix).resolve() != _VENV_PYTHON.parent.parent.resolve():
     os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), *sys.argv])
+if sys.version_info < (3, 11):
+    sys.exit(f"BalancePoint needs Python 3.11 or newer; this is {sys.version.split()[0]}. On a Mac: brew install "
+             "python@3.12, or get it from python.org. Then rebuild the environment (delete .venv, run the setup again).")
 
 from budget import create_app, personal, simplefin_import
-from budget.csv_import import flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
+from budget.csv_import import BAD_DATES_NOTE, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from budget.db import connect
 from budget.excel_import import ensure_account, import_workbook
 
@@ -90,14 +94,15 @@ def build_demo(args):
         else:
             os.environ["BUDGET_DATA_DIR"] = previous
     print(f"Demo household in {target}: {got['transactions']} made-up transactions since {got['from']}.")
-    print(f"Try it (your own app keeps running on 5000):  BUDGET_DATA_DIR={args.dir} python run.py serve --port 5001")
+    print(f"Try it (your real data is untouched):  BUDGET_DATA_DIR={args.dir} python run.py serve --port 5001")
 
 
 def main():
     parser = argparse.ArgumentParser(description="BalancePoint: a local personal budget app")
     sub = parser.add_subparsers(dest="command")
     serve = sub.add_parser("serve", help="run the web app (default)")
-    serve.add_argument("--port", type=int, default=5000)
+    serve.add_argument("--port", type=int, default=5000,
+                       help="port to listen on (default 5000; on a Mac, AirPlay Receiver may hold 5000: try 5001)")
     serve.add_argument("--no-browser", action="store_true")
     serve.add_argument("--phones", action="store_true",
                        help="also answer devices on your Tailscale network (nobody else, even on the same Wi-Fi)")
@@ -200,6 +205,8 @@ def main():
         print(f"Added {added} of {read} transactions to {args.account}"
               + (f"; replaced {replaced} spreadsheet entries for the same dates" if replaced else "")
               + (f", carrying their categories to {carried} bank rows" if carried else ""))
+        if parsed.bad_dates:
+            print(BAD_DATES_NOTE.format(n=parsed.bad_dates))
     elif args.command == "simplefin-setup":
         try:
             access_url = simplefin_import.claim_setup_token(args.token)
@@ -297,4 +304,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except personal.PersonalConfigError as exc:
+        sys.exit(f"Problem in personal.toml: {exc}")

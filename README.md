@@ -19,7 +19,8 @@ Business page; on once an account has its own categories). See [Optional feature
 
 ## Run it
 
-You need Python 3.11 or newer, or Docker.
+You need Python 3.11 or newer (`python3 --version`; a stock Mac has 3.9, so `brew install python@3.12` and use
+`python3.12` below), or Docker. If port 5000 is taken (macOS AirPlay Receiver uses it), add `serve --port 5001`.
 
 **macOS or Linux**, in a terminal in the app folder:
 
@@ -43,12 +44,12 @@ Once `.venv` exists, `python run.py ...` switches into it by itself, whichever `
 
 ### Try it with made-up data
 
-`python run.py demo` builds a made-up household (Pat and Sam Smith: two years of spending, paychecks
+`.venv/bin/python run.py demo` builds a made-up household (Pat and Sam Smith: two years of spending, paychecks
 with a 401(k), a mortgage, a rental, a small business, a child's 529, a plan and a few blackjack
 sessions) in its own `demo-data/` folder. It never touches your real data folder. Then:
 
 ```sh
-BUDGET_DATA_DIR=demo-data python run.py serve --port 5001
+BUDGET_DATA_DIR=demo-data .venv/bin/python run.py serve --port 5001
 ```
 
 On Windows (PowerShell): `$env:BUDGET_DATA_DIR="demo-data"; .venv\Scripts\python.exe run.py serve --port 5001`.
@@ -172,8 +173,8 @@ startup, so restart after editing. Changes you make in the app win over the file
 - **Old budget spreadsheet:** describe its layout in the `[spreadsheet]` section of
   `data/personal.toml`, then use *Upload data → Old budget workbook*, or:
 
-  ```powershell
-  .venv\Scripts\python.exe run.py import-excel data\source\budget.xlsx
+  ```sh
+  .venv/bin/python run.py import-excel data/source/budget.xlsx      # Windows: .venv\Scripts\python.exe run.py ...
   ```
 
   Depending on what you map, it brings in:
@@ -367,8 +368,8 @@ ahead of other cash accounts.
 ## Optional features
 
 Optional parts switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
-for tracking blackjack sessions against their expected value). Without a setting, Blackjack is on once
-there are blackjack sessions and off otherwise.
+for tracking blackjack sessions against their expected value; on once there are sessions) and `business`
+(the Business page; on once an account has its own categories). Without a setting each is off for a new install.
 
 ### Blackjack bankroll
 
@@ -434,7 +435,7 @@ added on the next start without touching anything you've edited.
 
 ## Tests
 
-`python -m pip install -r requirements-dev.txt`, then `python -m pytest tests`. Every test runs in its
+`.venv/bin/python -m pip install -r requirements-dev.txt`, then `.venv/bin/python -m pytest tests`. Every test runs in its
 own temporary data folder, on made-up data (the demo household, a fake SimpleFIN Bridge, a workbook
 built on the fly), so it never reads or changes `data/`. GitHub Actions runs them on macOS, Windows and
 Linux, and fails if a personal data file (`data/`, a database, a spreadsheet or CSV) is ever committed.

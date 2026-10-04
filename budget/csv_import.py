@@ -81,6 +81,14 @@ def _headerless_columns(rows):
     return date_i, desc_i, amount_i
 
 
+class ParsedRows(list):
+    """parse_csv()'s rows, plus how many had a date it couldn't read."""
+    bad_dates = 0
+
+
+BAD_DATES_NOTE = "{n} row(s) had a date it couldn't read and were skipped (dates must look like 03/14/2026 or 2026-03-14)."
+
+
 def parse_csv(text, flip_sign=False):
     """Return a list of {date, amount, raw, memo, mcc} dicts.
 
@@ -103,11 +111,12 @@ def parse_csv(text, flip_sign=False):
         (date_i, desc_i, amount_i), h_idx, header = found, -1, []
     memo_i = _find(header, ("memo", "notes"))
 
-    out = []
+    out = ParsedRows()
     for row in rows[h_idx + 1:]:
         cell = lambda i: row[i] if i is not None and i < len(row) else ""
         date = parse_date(cell(date_i))
         if not date:
+            out.bad_dates += bool(cell(date_i).strip())  # e.g. a DD/MM/YYYY file: say so rather than drop rows quietly
             continue
         if amount_i is not None:
             amount = parse_amount(cell(amount_i))

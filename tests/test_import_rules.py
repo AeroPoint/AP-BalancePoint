@@ -154,3 +154,16 @@ def test_existing_database_keeps_rules_dropped_from_the_built_in_list(conn):
     assert _rule(conn, "raw", "CARDMEMBER SERV")["rename_to"] == "US Bank Card Payment"
     row = _rule(conn, "raw", "PAYMENT THANK YOU")
     assert (row["rename_to"], row["source"]) == ("My Card", "user")
+
+
+def test_unreadable_dates_are_counted_not_dropped_quietly(client, conn):
+    """A DD/MM file: rows whose date can't be read are reported on the upload page."""
+    acct = account(conn, "Checking")
+    conn.commit()
+    body = "Date,Description,Amount\n25/09/2026,CAFE,-4.50\n03/14/2026,BAKERY,-6.00\n"
+    from io import BytesIO
+    r = client.post("/upload", data={"account_id": acct, "files": (BytesIO(body.encode()), "dd-mm.csv")},
+                    content_type="multipart/form-data", follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "added 1 of 1" in html and "1 row(s) had a date it couldn" in html
+    assert parse_csv(body).bad_dates == 1
