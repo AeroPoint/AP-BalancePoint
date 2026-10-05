@@ -10,8 +10,12 @@ import re
 from datetime import date
 
 from . import budgeting, business, reports
+from .balances import loan_payment, months_elapsed
 
-SECTIONS = {"checkbox": "Checkbox items", "business": "Business", "income": "Income", "notes": "Questions for your accountant"}
+SECTIONS = {"checkbox": "Checkbox items", "business": "Business", "income": "Income", "rental": "Rental",
+            "notes": "Questions for your accountant"}
+RENTAL_LABEL = "Rental property"  # the checkbox that marks a rental's costs, in any category
+RENTAL_LOAN_KEY = "tax_rental_loan"  # loan_terms id of the rental's mortgage, to split payments
 CSV_COLUMNS = ["section", "date", "account", "merchant", "category", "amount", "checkbox", "notes"]
 # "cpa" as a word, or anything starting with "tax" (taxes, taxable, tax-deductible) except "taxi".
 ACCOUNTANT_NOTE = re.compile(r"\bcpa\b|\btax(?!i)", re.IGNORECASE)
@@ -84,6 +88,64 @@ def income(conn, year):
     }
 
 
+def _owed_after(loan, n):
+    """Balance after n monthly payments on an amortizing loan."""
+    r = loan["annual_rate"] / 100 / 12
+    if r == 0:
+        return loan["principal"] * (1 - n / loan["term_months"])
+    growth = (1 + r) ** n
+    return loan["principal"] * growth - loan_payment(loan["principal"], loan["annual_rate"], loan["term_months"]) * (growth - 1) / r
+
+
+def split_payment(loan, day):
+    """(interest, principal) of the scheduled payment made on day, from the loan's terms."""
+    n = max(1, min(months_elapsed(loan["start_date"], day), loan["term_months"]))
+    interest = _owed_after(loan, n - 1) * loan["annual_rate"] / 100 / 12
+    return interest, loan_payment(loan["principal"], loan["annual_rate"], loan["term_months"]) - interest
+
+
+def rental_loans(conn):
+    return [dict(r) for r in conn.execute(
+        """SELECT lt.*, a.name AS account FROM loan_terms lt JOIN accounts a ON a.id = lt.account_id ORDER BY a.name""")]
+
+
+def rental(conn, year):
+    """Rental income against its deductible costs, like a business. None without rental income or costs.
+
+    Costs are transactions ticked "Rental property" in any category. Ticked mortgage payments (a category
+    named like "Mortgage") are split with the rental loan's schedule: interest and escrow (property tax and
+    insurance, the part of the payment above principal and interest) count; principal doesn't."""
+    start, end = reports.bounds(year)
+    income_rows = _rows(conn, "c.kind = 'income' AND c.name LIKE 'Rental%' AND t.effective_date >= ? AND t.effective_date < ?",
+                        (start, end))
+    ticked = _rows(conn, "t.flag = 'yes' AND c.flag = ? AND t.effective_date >= ? AND t.effective_date < ?",
+                   (RENTAL_LABEL, start, end))
+    if not income_rows and not ticked:
+        return None
+    loans = rental_loans(conn)
+    loan_id = budgeting.get_setting(conn, RENTAL_LOAN_KEY, cast=int)
+    loan = next((l for l in loans if l["id"] == loan_id), None)
+    payments = [r for r in ticked if "mortgage" in (r["category"] or "").lower() and r["amount"] < 0]
+    others = [r for r in ticked if r not in payments]
+    paid = -sum(r["amount"] for r in payments)
+    interest = principal = escrow = 0.0
+    if loan:
+        for r in payments:
+            i, p = split_payment(loan, r["effective_date"])
+            interest += i
+            principal += p
+            escrow += max(-r["amount"] - i - p, 0.0)
+    other_costs = -sum(r["amount"] for r in others)
+    income_total = sum(r["amount"] for r in income_rows)
+    deductible = (interest + escrow if loan else paid) + other_costs
+    return {
+        "income": round(income_total, 2), "income_rows": income_rows, "payments": payments, "others": others,
+        "paid": round(paid, 2), "interest": round(interest, 2), "principal": round(principal, 2), "escrow": round(escrow, 2),
+        "other_costs": round(other_costs, 2), "deductible": round(deductible, 2), "net": round(income_total - deductible, 2),
+        "loan": loan, "loans": loans,
+    }
+
+
 def notes(conn, year):
     """Transactions in the year whose notes mention a CPA or taxes."""
     start, end = reports.bounds(year)
@@ -114,7 +176,7 @@ def summary(conn, year, today=None, with_business=True):
     boxes, to_check = checkboxes(conn, year)
     biz = businesses(conn, year, today) if with_business else []
     return {"year": year, "boxes": boxes, "to_check": to_check, "businesses": biz, "income": income(conn, year),
-            "notes": notes(conn, year), "questions": questions(conn, year), "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
+            "notes": notes(conn, year), "questions": questions(conn, year), "rental": rental(conn, year), "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
 
 
 def _checkbox_text(r):
@@ -140,6 +202,8 @@ def csv_rows(data, section="all"):
             out += [(s, r) for b in data["businesses"] for r in b["rows"]]
         elif s == "income":
             out += [(s, r) for r in data["income"]["rows"]]
+        elif s == "rental" and data.get("rental"):
+            out += [(s, r) for r in data["rental"]["income_rows"] + data["rental"]["payments"] + data["rental"]["others"]]
         elif s == "notes":
             out += [(s, r) for r in data["notes"]]
     return out

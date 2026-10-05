@@ -1479,6 +1479,14 @@ def tax_page():
                            years=sorted(set(reports.years(conn)) | {year, tax.default_year()}, reverse=True))
 
 
+@bp.post("/tax/rental-loan")
+def tax_rental_loan():
+    conn = get_db()
+    budgeting.set_setting(conn, tax.RENTAL_LOAN_KEY, _int(request.form.get("loan_id")))
+    conn.commit()
+    return redirect(url_for(".tax_page", year=_tax_year()) + "#rental")
+
+
 @bp.post("/tax/questions")
 def tax_questions_save():
     conn = get_db()

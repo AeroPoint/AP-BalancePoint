@@ -53,6 +53,7 @@
     {{ year }}:
     {%- for b in t.boxes %} {{ b.label }} <b>{{ (-b.total if b.total < 0 else b.total)|money(false) }}</b>,{% endfor %}
     {%- if t.businesses %} business profit <b>{{ t.profit|money(false) }}</b>,{% endif %}
+    {%- if t.rental %} rental net <b>{{ t.rental.net|money(false) }}</b>,{% endif %}
     {%- if t.to_check %} <a href="{{ url_for('main.transactions', flag='check', period=year) }}"><b>{{ t.to_check }}</b> item{{ 's' if t.to_check != 1 }} still to check</a>.
     {%- else %} nothing left to check.{% endif %}
   </h1>
@@ -160,6 +161,57 @@
   </details>
   {% endif %}
 </section>
+
+{# ------------------------------------------------------------ rental #}
+{% if t.rental %}
+{% set r = t.rental %}
+<section class="panel" id="rental">
+  <div class="panel-head">
+    <h2>Rental</h2>
+    {{ download('rental') }}
+  </div>
+  <p class="biz-line">Rental income <b>{{ r.income|money }}</b>, deductible costs <b>{{ r.deductible|money }}</b>,
+    net <b>{{ signed(r.net) }}</b>.</p>
+  <div class="table-wrap">
+    <table class="ledger tax-cats">
+      <tbody>
+        <tr><td>Rental income <span class="muted">· {{ r.income_rows|length }}</span></td><td class="num">{{ r.income|money }}</td></tr>
+        {% if r.payments %}
+        {% if r.loan %}
+        <tr><td>Mortgage interest <span class="muted">· from the loan schedule</span></td><td class="num">−{{ r.interest|money }}</td></tr>
+        <tr><td>Escrow: property tax and insurance <span class="muted">· payment above principal and interest</span></td><td class="num">−{{ r.escrow|money }}</td></tr>
+        {% else %}
+        <tr><td>Mortgage payments <span class="muted">· whole payments: pick the loan below to leave principal out</span></td><td class="num">−{{ r.paid|money }}</td></tr>
+        {% endif %}
+        {% endif %}
+        {% if r.others %}<tr><td>Other costs ticked {{ '“Rental property”' }} <span class="muted">· {{ r.others|length }}</span></td><td class="num">−{{ r.other_costs|money }}</td></tr>{% endif %}
+      </tbody>
+      <tfoot><tr><td>Net rental income</td><td class="num">{{ signed(r.net) }}</td></tr></tfoot>
+    </table>
+  </div>
+  {% if r.payments and r.loan %}
+  <p class="muted tax-check">{{ r.payments|length }} mortgage payment{{ 's' if r.payments|length != 1 }} ({{ r.paid|money }}) on {{ r.loan.account }}:
+    {{ r.principal|money }} of it is principal, which isn't a cost (it's paying down the loan). The split is an estimate from the
+    loan's terms; the lender's Form 1098 has the exact interest, and your property tax and insurance bills the exact escrow.</p>
+  {% endif %}
+  {% if not r.payments %}
+  <p class="muted tax-check">To count a mortgage, give its category the {{ '“Rental property”' }} checkbox on
+    <a href="{{ url_for('main.categories_page') }}">Categories</a> and tick the payments.</p>
+  {% endif %}
+  {% if r.loans and r.payments %}
+  <form method="post" action="{{ url_for('main.tax_rental_loan', year=year) }}" class="inline no-print">
+    <label class="field"><span>Rental's loan</span>
+      <select name="loan_id" onchange="this.form.submit()"><option value="">Not split</option>
+        {% for l in r.loans %}<option value="{{ l.id }}"{% if r.loan and r.loan.id == l.id %} selected{% endif %}>{{ l.account }} · {{ l.label or '' }}</option>{% endfor %}
+      </select></label>
+  </form>
+  {% endif %}
+  <details class="tax-more">
+    <summary>Show the {{ (r.income_rows + r.payments + r.others)|length }} transactions</summary>
+    {{ txn_table(r.income_rows + r.payments + r.others) }}
+  </details>
+</section>
+{% endif %}
 
 {# ------------------------------------------------------------ notes #}
 <section class="panel" id="notes">

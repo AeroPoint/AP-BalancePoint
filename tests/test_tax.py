@@ -107,7 +107,7 @@ def test_csv_export_columns_and_tricky_names(conn, client):
     assert paycheck[3] == "'=HYPERLINK(1)" and paycheck[5] == "2000.00"  # never a formula in a spreadsheet
     notes = [row for row in body if row[0] == "Questions for your accountant"]
     assert len(notes) == 2 and "To check: Rental property" in [row[6] for row in notes]
-    assert {row[0] for row in body} == {"Checkbox items", "Income", "Questions for your accountant"}
+    assert {row[0] for row in body} == {"Checkbox items", "Income", "Rental", "Questions for your accountant"}
 
     one = list(csv.reader(io.StringIO(client.get("/tax/export.csv?year=2025&section=checkbox").get_data(as_text=True))))
     assert len(one) == 2 and one[1][0] == "Checkbox items"
@@ -147,3 +147,36 @@ def test_questions_for_the_accountant(client, conn):
     assert conn.execute("SELECT answer FROM tax_questions WHERE id = ?", (qid,)).fetchone()[0] is None
     client.post("/tax/questions?year=2025", data={"id": qid, "delete": "1"})
     assert conn.execute("SELECT COUNT(*) FROM tax_questions WHERE year = 2025").fetchone()[0] == 0
+
+
+def test_rental_nets_income_against_interest_escrow_and_ticked_costs(conn, client):
+    """Ticked mortgage payments are split by the rental loan's schedule: interest and escrow count, principal doesn't."""
+    from budget import balances
+    chk = account(conn, "Checking")
+    loan_acct = account(conn, "Rental Loan", "loan")
+    conn.execute("""INSERT INTO loan_terms (account_id, label, principal, annual_rate, term_months, start_date)
+                    VALUES (?, '$300,000 loan', 300000, 6.0, 360, '2020-01-01')""", (loan_acct,))
+    loan_id = conn.execute("SELECT id FROM loan_terms").fetchone()[0]
+    _flag(conn, "Home & Garden", "Rental property")
+    _flag(conn, "Mortgage & HOA", "Rental property")
+    pi = round(balances.loan_payment(300000, 6.0, 360), 2)
+    for m in (1, 2):
+        txn(conn, chk, f"2025-0{m}-05", -(pi + 400), "Mortgage & HOA", "Lender", flag="yes")
+    txn(conn, chk, "2025-01-20", 2000, "Rental Income", "Rent")
+    txn(conn, chk, "2025-02-20", 2000, "Rental Income", "Rent")
+    txn(conn, chk, "2025-02-10", -150, "Home & Garden", "Hardware", flag="yes")
+    txn(conn, chk, "2025-02-11", -99, "Home & Garden", "Not rental")  # not ticked: not a rental cost
+    conn.commit()
+    r = tax.rental(conn, 2025)
+    assert (r["income"], r["paid"], r["other_costs"], r["loan"]) == (4000, round(2 * (pi + 400), 2), 150, None)
+    assert r["deductible"] == round(2 * (pi + 400) + 150, 2)  # no loan picked: whole payments, and the page says so
+    client.post("/tax/rental-loan?year=2025", data={"loan_id": loan_id})
+    r = tax.rental(conn, 2025)
+    i1, p1 = tax.split_payment(r["loan"], "2025-01-05")
+    assert round(i1 + p1, 2) == pi and i1 > p1 > 0  # early in a 6% loan, mostly interest
+    assert r["escrow"] == 800 and round(r["interest"] + r["principal"], 2) == round(2 * pi, 2)
+    assert r["deductible"] == round(r["interest"] + 800 + 150, 2) and r["net"] == round(4000 - r["deductible"], 2)
+    html = client.get("/tax?year=2025").get_data(as_text=True)
+    assert "Net rental income" in html and "principal, which isn't a cost" in html and "rental net" in html
+    body = list(csv.reader(io.StringIO(client.get("/tax/export.csv?year=2025&section=rental").get_data(as_text=True))))
+    assert len(body) == 1 + 2 + 2 + 1  # header, rent x2, payments x2, hardware
