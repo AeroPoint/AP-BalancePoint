@@ -18,6 +18,8 @@ follows under "What's in 0.1.0".
 - Optional notifications after the bank sync (email or ntfy): when there are warnings, daily, weekly or
   monthly; set up in the browser (Bank sync → set up notifications) or `[notify]`. Off until set up.
 - Tax time: questions for your accountant, written down per tax year and checked off when answered.
+- Merchant dictionary: "Sort by hand" (a merchant's charges always land in Categorize) and "Can be split"
+  (split a charge across categories: type the amounts you know and the rest is shared in proportion).
 - Plan: a "keeping at least" amount for each backup account.
 - The pace check counts this month's still-pending charges.
 - Bank sync: use a new setup token while connected.
