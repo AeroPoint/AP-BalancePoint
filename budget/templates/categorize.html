@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_options %}
+{% from "_macros.html" import category_options, split_controls, split_dialog %}
 {% block title %}Categorize{% endblock %}
 {% block content %}
 <header class="page-head">
@@ -18,6 +18,38 @@
 
 {% if mode == 'guessed' %}
 <p class="tab-help">These were filed using the merchant type the bank sends with each card charge (US Bank's CSV exports include it). They're usually right; confirm the ones you care about.</p>
+{% endif %}
+
+{% if singles %}
+<section class="panel flush">
+  <div class="panel-head pad">
+    <h2 class="h-sm">Sorted by hand ({{ singles_total }})</h2>
+    <p class="muted">Merchants set to “Sort by hand” in the Merchant dictionary: pick a category for each transaction{% if split_forms %}, or split one across several{% endif %}.
+      {% if singles_total > singles|length %}Showing the newest {{ singles|length }}.{% endif %}</p>
+  </div>
+  <div class="table-wrap">
+    <table class="ledger txns">
+      <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th>Account</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+        {% for t in singles %}
+        <tr data-id="{{ t.id }}" data-name="{{ t.name }}" data-source="{{ t.category_source }}" data-handsort="1"{% if t.id in split_parts %} data-split-part="1"{% endif %}>
+          <td class="date">{{ t.effective_date }}</td>
+          <td class="merchant">
+            <a href="{{ url_for('main.transactions', name=t.name) }}">{{ t.name }}</a>
+            {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}
+            {% if t.notes %}<span class="raw">{{ t.notes }}</span>{% endif %}
+            {{ split_controls(t, split_parts, split_forms) }}
+          </td>
+          <td class="cat-cell"><select class="cat-select" aria-label="Category for {{ t.name }} on {{ t.effective_date }}">{{ category_options(categories, t.category_id) }}</select></td>
+          <td class="source-tag">{{ t.account_name }}</td>
+          <td class="num {{ 'in' if t.amount > 0 }}">{{ '+' if t.amount > 0 }}{{ t.amount|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{ split_dialog(categories) }}
 {% endif %}
 
 {% if groups %}
@@ -54,7 +86,7 @@
     </table>
   </div>
 </div>
-{% else %}
+{% elif not singles %}
 <section class="empty">
   <h1>{{ 'Everything has a category' if mode == 'uncategorized' else 'No guesses to review' }}</h1>
   <p>Transactions from new uploads that don't match your merchant dictionary will show up here.</p>

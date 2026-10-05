@@ -7,6 +7,40 @@
 {%- endfor %}
 {%- endmacro %}
 
+{# Splitting a charge across categories (splits.py): the label on each part, and the Split button. #}
+{% macro split_controls(t, split_parts, split_forms) -%}
+{% set part = split_parts.get(t.id) %}
+{% if part %}<span class="guess split-tag">Split {{ part.n }} of {{ part.of }} · from {{ part.total|abs|money }}</span>{% endif %}
+{% if t.id in split_forms %}<button type="button" class="btn small quiet split-open" data-split="{{ split_forms[t.id]|tojson|forceescape }}">{{ 'Edit split' if part else 'Split' }}</button>{% endif %}
+{%- endmacro %}
+
+{# The Split form, shared by every row on the page; app.js fills it in. #}
+{% macro split_dialog(categories) -%}
+<dialog id="split-dialog" class="split-dialog">
+  <form method="dialog" class="split-form">
+    <h2 class="h-sm">Split <span class="split-total"></span></h2>
+    <p class="muted">Type what you know for each category. What's left is spread over those lines in proportion to their
+      amounts, or leave one amount blank to give it everything left.</p>
+    <template id="split-line">
+      <div class="split-line">
+        <select class="split-cat" aria-label="Category">{{ category_options(categories, None, 'Choose a category') }}</select>
+        <input class="split-amt" inputmode="decimal" placeholder="the rest" aria-label="Amount">
+        <span class="split-final num"></span>
+        <button type="button" class="btn small quiet split-remove" aria-label="Remove this line">✕</button>
+      </div>
+    </template>
+    <div class="split-lines"></div>
+    <p><button type="button" class="btn small split-add">Add a line</button></p>
+    <p class="split-preview" role="status"></p>
+    <div class="form-actions">
+      <button type="button" class="btn primary split-save">Save split</button>
+      <button type="button" class="btn quiet danger split-undo" hidden>Unsplit</button>
+      <button type="button" class="btn quiet split-cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+{%- endmacro %}
+
 {% macro empty_upload(title) -%}
 <section class="empty">
   <h1>{{ title }}</h1>

@@ -101,6 +101,16 @@ class Match:
     source: str  # rule | mcc | none
 
 
+# Per-merchant settings on the Merchant dictionary's bank-name entries (rules table columns).
+MERCHANT_FLAGS = ("leave_uncategorized", "allow_split")
+
+
+@dataclass
+class MerchantFlags:
+    leave_uncategorized: bool = False  # sorted by hand: rules never pick its category
+    allow_split: bool = False          # its charges can be split across categories (splits.py)
+
+
 class RuleEngine:
     def __init__(self, conn):
         self.categories = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM categories")}
@@ -115,6 +125,14 @@ class RuleEngine:
             compiled.append((rank, rx, dict(r)))
         compiled.sort(key=lambda c: c[0])
         self.raw_rules = [(rx, r) for _, rx, r in compiled if r["match_on"] == "raw"]
+        # A merchant's settings apply when its entry is the first bank-name entry that matches, or when
+        # the transaction ends up with the name an entry carrying the setting shows, so "Amazon" from
+        # several patterns behaves the same.
+        self.flag_names = {
+            flag: {normalize(r["rename_to"]) for _, r in self.raw_rules if r.get(flag) and r["rename_to"]}
+            for flag in MERCHANT_FLAGS
+        }
+        self.has_flags = any(r.get(flag) for _, r in self.raw_rules for flag in MERCHANT_FLAGS)
         self.name_rules = [(rx, r) for _, rx, r in compiled if r["match_on"] == "name" and r["category_id"]]
         # "Always categorize <merchant> as X" set by you wins over everything else.
         self.pinned = {
@@ -160,15 +178,18 @@ class RuleEngine:
         # like "SAFEWAY FUEL" still matches "SAFEWAY #1234 FUEL SPRINGFIELD IL".
         key = merchant_key(raw)
         name, raw_category = fixed_name, None
+        first = None  # the first entry that matches at all, whose settings apply (looked for only when any has one)
         for rx, r in self.raw_rules:
             wants_name = name is None and r["rename_to"]
             wants_category = raw_category is None and r["category_id"]
-            if (wants_name or wants_category) and self._matches(r, rx, text, key, amount):
+            wants_first = first is None and self.has_flags
+            if (wants_name or wants_category or wants_first) and self._matches(r, rx, text, key, amount):
+                first = first or r
                 if wants_name:
                     name = r["rename_to"]
                 if wants_category:
                     raw_category = r["category_id"]
-            if name is not None and raw_category is not None:
+            if name is not None and raw_category is not None and (first is not None or not self.has_flags):
                 break
         if fixed_name is None and (name is None or name in GENERIC_PAYMENT_NAMES):
             # "Zelle to Pat Smith" beats plain "Zelle", so each person can get a category.
@@ -177,6 +198,8 @@ class RuleEngine:
             name = suggest_name(raw)
 
         upper = normalize(name)
+        if self.has_flags and self._flag("leave_uncategorized", first, upper):
+            return Match(name, None, "none")  # sorted by hand: it waits in Categorize
         category_id = (
             self.pinned.get(upper)
             or raw_category
@@ -192,6 +215,17 @@ class RuleEngine:
         if category_id is not None:
             return Match(name, category_id, "mcc")
         return Match(name, None, "none")
+
+    def _flag(self, flag, first, upper_name):
+        return bool(first is not None and first.get(flag)) or upper_name in self.flag_names[flag]
+
+    def merchant_flags(self, raw, name, amount=None):
+        """The dictionary settings of a stored transaction's merchant, from its bank text and current name."""
+        if not self.has_flags:
+            return MerchantFlags()
+        text, key = normalize(raw), merchant_key(raw)
+        first = next((r for rx, r in self.raw_rules if self._matches(r, rx, text, key, amount)), None)
+        return MerchantFlags(*(self._flag(flag, first, normalize(name)) for flag in MERCHANT_FLAGS))
 
 
 def reapply(conn, where="1=1", params=()):

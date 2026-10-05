@@ -54,6 +54,10 @@
       row.querySelector(".guess")?.remove();
       flashRow(row);
       if (!categoryId) return showToast("Category cleared for this transaction.");
+      if (row.dataset.handsort || row.dataset.splitPart) {
+        // Sorted by hand, or one part of a split charge: this transaction only.
+        return showToast(`Saved this ${name} transaction as ${categoryName}.`);
+      }
       showToast(`Saved this ${name} transaction as ${categoryName}.`, [
         {
           label: `Always put ${name} in ${categoryName}`,
@@ -144,6 +148,7 @@
   async function setDate(row, button, value) {
     try {
       const data = await postJSON(`/api/transactions/${row.dataset.id}`, { date: value });
+      if (row.dataset.splitPart) return window.location.reload(); // every part of the charge moved
       const t = data.transaction;
       button.textContent = t.effective_date;
       const note = row.querySelector(".date-note");
@@ -191,6 +196,124 @@
       input.addEventListener("blur", () => finish(true));
     });
   });
+
+  // ---------------------------------------------------------------- splitting a charge across categories
+  // The same math as splits.split_amounts, in cents: known amounts, the rest spread over them in
+  // proportion (or to the one blank line), the rounding leftover to the largest line.
+  function splitAmounts(totalCents, known) {
+    if (known.length < 2) throw new Error("Split into at least two parts.");
+    const blanks = known.map((k, i) => (k === null ? i : -1)).filter((i) => i >= 0);
+    if (blanks.length > 1) throw new Error("Only one line can leave its amount blank (it takes what's left).");
+    if (known.some((k) => k !== null && !(k > 0))) throw new Error("Each amount must be more than zero. Leave one blank to give it what's left.");
+    const parts = known.map((k) => (k === null ? null : Math.round(k * 100)));
+    const claimed = parts.reduce((s, p) => s + (p || 0), 0);
+    if (claimed > totalCents) throw new Error(`The amounts add up to ${(claimed / 100).toFixed(2)}, more than the charge (${(totalCents / 100).toFixed(2)}).`);
+    const rest = totalCents - claimed;
+    if (blanks.length) {
+      if (!rest) throw new Error("Nothing is left for the line without an amount.");
+      parts[blanks[0]] = rest;
+      return parts;
+    }
+    if (!rest) return parts;
+    const spread = parts.map((p) => (p * totalCents) / claimed);
+    const out = spread.map((s) => Math.round(s));
+    let biggest = 0;
+    spread.forEach((s, i) => { if (s > spread[biggest]) biggest = i; });
+    out[biggest] += totalCents - out.reduce((s, p) => s + p, 0);
+    return out;
+  }
+
+  const splitDialog = document.getElementById("split-dialog");
+  if (splitDialog) {
+    const lines = splitDialog.querySelector(".split-lines");
+    const preview = splitDialog.querySelector(".split-preview");
+    const lineTemplate = document.getElementById("split-line");
+    const money = (cents) => `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    let current = null;
+
+    const parse = (value) => {
+      const s = value.replace(/[$,\s]/g, "");
+      return s === "" ? null : Number(s);
+    };
+    const read = () => [...lines.querySelectorAll(".split-line")].map((line) => ({
+      line, category_id: line.querySelector(".split-cat").value, amount: line.querySelector(".split-amt").value.trim(),
+    }));
+
+    function update() {
+      const rows = read();
+      rows.forEach((r) => (r.line.querySelector(".split-final").textContent = ""));
+      const totalCents = Math.round(Math.abs(current.total) * 100);
+      const sign = current.total < 0 ? "−" : "+";
+      try {
+        if (rows.some((r) => r.amount && Number.isNaN(parse(r.amount)))) throw new Error("Type amounts like 12.50.");
+        const known = rows.map((r) => parse(r.amount));
+        const parts = splitAmounts(totalCents, known);
+        rows.forEach((r, i) => (r.line.querySelector(".split-final").textContent = `→ ${sign}${money(parts[i])}`));
+        const claimed = known.reduce((s, k) => s + (k ? Math.round(k * 100) : 0), 0);
+        preview.textContent = claimed < totalCents && !known.includes(null)
+          ? `${money(totalCents - claimed)} not typed in is spread over the lines in proportion.`
+          : "The parts add up to the charge.";
+        preview.classList.remove("error");
+        return true;
+      } catch (err) {
+        preview.textContent = err.message;
+        preview.classList.add("error");
+        return false;
+      }
+    }
+
+    function addLine(categoryId = "", amount = "") {
+      const line = lineTemplate.content.firstElementChild.cloneNode(true);
+      line.querySelector(".split-cat").value = categoryId ? String(categoryId) : "";
+      line.querySelector(".split-amt").value = amount;
+      line.querySelector(".split-remove").addEventListener("click", () => { line.remove(); update(); });
+      line.querySelectorAll("select, input").forEach((el) => el.addEventListener("input", update));
+      lines.appendChild(line);
+      return line;
+    }
+
+    document.querySelectorAll(".split-open").forEach((button) => {
+      button.addEventListener("click", () => {
+        current = JSON.parse(button.dataset.split);
+        splitDialog.querySelector(".split-total").textContent = `${current.total < 0 ? "−" : "+"}${money(Math.round(Math.abs(current.total) * 100))}`;
+        lines.innerHTML = "";
+        if (current.lines.length) current.lines.forEach((l) => addLine(l.category_id, l.amount.toFixed(2)));
+        else { addLine(); addLine(); }
+        splitDialog.querySelector(".split-undo").hidden = !current.split;
+        update();
+        splitDialog.showModal();
+        lines.querySelector(".split-cat")?.focus();
+      });
+    });
+    splitDialog.querySelector(".split-add").addEventListener("click", () => { addLine().querySelector(".split-cat").focus(); update(); });
+    splitDialog.querySelector(".split-cancel").addEventListener("click", () => splitDialog.close());
+    splitDialog.querySelector(".split-save").addEventListener("click", async () => {
+      if (!update()) return;
+      const rows = read();
+      if (rows.some((r) => !r.category_id)) {
+        preview.textContent = "Pick a category for each line.";
+        preview.classList.add("error");
+        return;
+      }
+      try {
+        await postJSON(`/api/transactions/${current.id}/split`, { lines: rows.map((r) => ({ category_id: r.category_id, amount: r.amount })) });
+        window.location.reload();
+      } catch (err) {
+        preview.textContent = err.message;
+        preview.classList.add("error");
+      }
+    });
+    splitDialog.querySelector(".split-undo").addEventListener("click", async () => {
+      if (!window.confirm("Put this charge back together as one transaction?")) return;
+      try {
+        await postJSON(`/api/transactions/${current.id}/unsplit`, {});
+        window.location.reload();
+      } catch (err) {
+        preview.textContent = err.message;
+        preview.classList.add("error");
+      }
+    });
+  }
 
   // ---------------------------------------------------------------- categorize page
   document.querySelectorAll("tr[data-merchant]").forEach((row) => {
@@ -285,6 +408,11 @@
         showToast(err.message);
       }
     });
+  });
+
+  // Merchant dictionary: "Sort by hand" / "Can be split" save their entry as soon as they're ticked.
+  document.querySelectorAll("input[data-autosave]").forEach((box) => {
+    box.addEventListener("change", () => box.form?.requestSubmit());
   });
 
   // ---------------------------------------------------------------- confirmations

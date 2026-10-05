@@ -245,18 +245,20 @@ def replace_spreadsheet_rows(conn, account_id, parsed, filename="bank export"):
     conn.execute(
         "DELETE FROM balances WHERE account_id = ? AND source = 'excel' AND as_of >= ?", (account_id, start)
     )
+    # A split charge pairs as the whole charge (its bank row, at the bank's amount); its other parts never pair.
     select = (
         "SELECT t.* FROM transactions t JOIN imports i ON i.id = t.import_id "
-        "WHERE t.account_id = ? AND t.date >= ? AND t.date <= ? AND i.kind = ? ORDER BY t.date"
+        "WHERE t.account_id = ? AND t.date >= ? AND t.date <= ? AND i.kind = ? AND t.split_of IS NULL ORDER BY t.date"
     )
-    sheet = conn.execute(select, (account_id, edge, last, "excel")).fetchall()
-    bank = [dict(r) for r in conn.execute(select, (account_id, start, last, "csv"))]
+    whole = lambda r: {**dict(r), "amount": r["amount"] if r["split_total"] is None else r["split_total"]}  # noqa: E731
+    sheet = [whole(r) for r in conn.execute(select, (account_id, edge, last, "excel"))]
+    bank = [whole(r) for r in conn.execute(select, (account_id, start, last, "csv"))]
     # Bank rows from just before the start aren't stored (that month's record is the spreadsheet),
     # unless an earlier upload brought one in for a straddling pair.
     for t in parsed:
         if edge <= t["date"] < start:
             stored = _stored(conn, account_id, t)
-            bank.append(dict(stored) if stored else {"id": None, "date": t["date"], "amount": t["amount"], "parsed": t})
+            bank.append(whole(stored) if stored else {"id": None, "date": t["date"], "amount": t["amount"], "parsed": t})
 
     paired = {r[0] for r in conn.execute("SELECT replaced_by FROM replaced_rows")}
     bank = [b for b in bank if b.get("dedupe_key") not in paired]
@@ -267,7 +269,7 @@ def replace_spreadsheet_rows(conn, account_id, parsed, filename="bank export"):
             continue  # both from before the switch: the spreadsheet stays the record
         if b["id"] is None:
             store_transactions(conn, account_id, f"{filename} (month edge)", [b["parsed"]], respect_bank_from=False)
-            b = dict(_stored(conn, account_id, b["parsed"]))
+            b = whole(_stored(conn, account_id, b["parsed"]))
         if s["date"] < start:
             dropped.append(s["id"])
         conn.execute(
@@ -294,7 +296,8 @@ def _shift(day, days):
 
 def _stored(conn, account_id, t):
     return conn.execute(
-        "SELECT * FROM transactions WHERE account_id = ? AND date = ? AND ROUND(amount, 2) = ? AND raw_description = ?",
+        "SELECT * FROM transactions WHERE account_id = ? AND date = ? AND ROUND(COALESCE(split_total, amount), 2) = ? "
+        "AND raw_description = ? AND split_of IS NULL",
         (account_id, t["date"], round(t["amount"], 2), t["raw"]),
     ).fetchone()
 
@@ -349,4 +352,6 @@ def _carry(conn, s, b, categories):
     conn.execute(
         f"UPDATE transactions SET {', '.join(f'{k} = ?' for k in updates)} WHERE id = ?", (*updates.values(), b["id"])
     )
+    if "date_override" in updates:  # a split charge's parts count on the same day
+        conn.execute("UPDATE transactions SET date_override = ? WHERE split_of = ?", (updates["date_override"], b["id"]))
     return 1

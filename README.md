@@ -557,6 +557,24 @@ Categories you pick by hand on a single transaction, and ones hand-sorted in an 
 spreadsheet, are never overwritten by rules. Transfer categories (card payments, moving
 money, investing) are excluded from income and spending.
 
+**Sort by hand** (a checkbox on the Merchant dictionary's bank names) is for a store that sells
+everything, like Amazon: its transactions stay uncategorized whatever the entry's category, an “Always”
+rule, a keyword or the card type says, and wait in Categorize, listed one at a time. It applies when
+the entry is the first bank name that matches, or when a transaction ends up with the name the entry
+shows. Ticking it on one entry ticks it on every entry shown as the same name, so “Amazon Prime” or
+“Amazon Kids+” entries are unaffected. Categories you pick by hand stay, and a business account's own
+categories still win.
+
+**Can be split** (the checkbox next to it) adds a Split button to that merchant's transactions, on
+Transactions and Categorize. Pick a category for each line and type the amounts you know. The rest of
+the charge is spread over the lines in proportion to their amounts (a $50 charge with $30 Groceries and
+$10 Home becomes $37.50 and $12.50), or you can leave one amount blank to give it whatever is left.
+The parts add up to the charge to the cent. The bank's row keeps the first part and remembers the
+bank's total, so re-uploading an export or syncing again never adds the charge twice, and each other
+part is its own transaction on the same account and date, so balances and every report add up as
+before. Edit split changes the parts, and Unsplit puts the charge back together. Pending charges can be
+split once they post.
+
 A category can give its transactions a **checkbox** (Categories page), like "Rental property" on Home &
 Garden or "Should be FSA/HSA" on Health & Fitness, for tax time: filter Transactions by it and a year for
 the total. Transactions marked "to check" have the box and a ✕ to dismiss; the filter lists them too.
