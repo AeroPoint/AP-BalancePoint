@@ -4,7 +4,6 @@ import json
 import os
 import stat
 import threading
-import time
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -17,7 +16,9 @@ from budget.balances import load_ledgers
 from conftest import account
 
 TODAY = date.today()
-REFRESHED = int(time.time()) - 3600  # the Bridge dates balances by when it last refreshed
+# The Bridge dates balances by when it last refreshed: midday today, so the test means the same at any hour
+# (an hour ago is yesterday just after midnight). A later-than-now time is still dated today (sync clamps).
+REFRESHED = int(datetime.combine(TODAY, datetime.min.time()).timestamp()) + 12 * 3600
 
 
 def posted(days_ago, amount, desc, pending=False):
