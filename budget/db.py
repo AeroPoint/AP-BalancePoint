@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS rules (
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     source      TEXT NOT NULL DEFAULT 'user',  -- user | config | excel | builtin
     created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    amount      REAL                           -- only match this exact amount; NULL matches any
+    amount      REAL,                          -- only match this exact amount; NULL matches any
+    leave_uncategorized INTEGER NOT NULL DEFAULT 0, -- 1 = this merchant is sorted by hand (rules.RuleEngine)
+    allow_split         INTEGER NOT NULL DEFAULT 0  -- 1 = its charges can be split across categories (splits.py)
 );
 -- migrate() adds the unique index: one rule per text, plus one per text-and-amount.
 
@@ -78,7 +80,11 @@ CREATE TABLE IF NOT EXISTS transactions (
     one_off         INTEGER NOT NULL DEFAULT 0, -- 1 = a big one-time purchase, kept out of its category's group
     flag            TEXT,                       -- its category's checkbox: 'yes', or 'check' = to look at
     pending         INTEGER NOT NULL DEFAULT 0, -- 1 = not posted yet (a bank sync keeps it until it posts)
-    dedupe_key      TEXT NOT NULL UNIQUE
+    dedupe_key      TEXT NOT NULL UNIQUE,
+    -- A charge split across categories (splits.py): the bank's row keeps the first part and the bank's
+    -- total in split_total; each other part is a row whose split_of is the bank row.
+    split_total     REAL,
+    split_of        INTEGER REFERENCES transactions(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS ix_transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS ix_transactions_category ON transactions(category_id);
@@ -313,6 +319,16 @@ def migrate(conn):
         conn.execute("ALTER TABLE transactions ADD COLUMN pending INTEGER NOT NULL DEFAULT 0")
     if "flag" not in _columns(conn, "categories"):
         conn.execute("ALTER TABLE categories ADD COLUMN flag TEXT")
+    existing = _columns(conn, "transactions")
+    if "split_total" not in existing:
+        conn.execute("ALTER TABLE transactions ADD COLUMN split_total REAL")
+    if "split_of" not in existing:
+        conn.execute("ALTER TABLE transactions ADD COLUMN split_of INTEGER REFERENCES transactions(id) ON DELETE CASCADE")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_transactions_split_of ON transactions(split_of)")
+    existing = _columns(conn, "rules")
+    for column in ("leave_uncategorized", "allow_split"):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE rules ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
 
     # Merchants marked "Not recurring" on the Recurring page (recurring.py): its merchant key, kept apart.
     conn.execute("""CREATE TABLE IF NOT EXISTS recurring_ignored (

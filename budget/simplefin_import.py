@@ -263,9 +263,11 @@ def settle_pending(conn, account_id, today):
     used = set()
     for p in conn.execute("SELECT * FROM transactions WHERE account_id = ? AND pending = 1 ORDER BY date, id", (account_id,)).fetchall():
         until = (date.fromisoformat(p["date"]) + timedelta(days=PENDING_MATCH_DAYS)).isoformat()
-        candidates = [c for c in conn.execute(
+        # A split charge counts as the whole charge (its bank row at the bank's amount), never part by part.
+        candidates = [{**dict(c), "amount": c["amount"] if c["split_total"] is None else c["split_total"]} for c in conn.execute(
             """SELECT * FROM transactions WHERE account_id = ? AND pending = 0 AND date >= ? AND date <= ?
-               AND date_override IS NULL ORDER BY date, id""", (account_id, p["date"], until)) if c["id"] not in used]
+               AND date_override IS NULL AND split_of IS NULL ORDER BY date, id""", (account_id, p["date"], until))
+            if c["id"] not in used]
         key = normalize(p["raw_description"])[:10]
         match = next((c for c in candidates if round(c["amount"], 2) == round(p["amount"], 2)), None) or next(
             (c for c in candidates if normalize(c["raw_description"])[:10] == key
@@ -283,9 +285,14 @@ def settle_pending(conn, account_id, today):
                     updates[col] = p[col]
             if p["notes"] and not match["notes"]:
                 updates["notes"] = p["notes"]
+            where = "id = ?"
+            if match["split_total"] is not None:
+                # Already split by hand: its parts keep their categories and move to the month together.
+                updates = {k: v for k, v in updates.items() if k in ("date_override", "notes")}
+                where = "id = ? OR split_of = ?"
             if updates:
-                conn.execute(f"UPDATE transactions SET {', '.join(f'{k} = ?' for k in updates)} WHERE id = ?",
-                             (*updates.values(), match["id"]))
+                conn.execute(f"UPDATE transactions SET {', '.join(f'{k} = ?' for k in updates)} WHERE {where}",
+                             (*updates.values(), *[match["id"]] * where.count("?")))
             conn.execute("DELETE FROM transactions WHERE id = ?", (p["id"],))
             settled += 1
         elif (today - date.fromisoformat(p["date"])).days > PENDING_KEEP_DAYS:
@@ -309,14 +316,24 @@ def count_in_month_happened(conn, account_id, transactions, sync_from):
             continue
         if sync_from and posted.isoformat() < sync_from:
             continue
-        moved += conn.execute(
-            """UPDATE transactions SET date_override = ?, notes = COALESCE(notes, ?)
-               WHERE account_id = ? AND date = ? AND ROUND(amount, 2) = ? AND raw_description = ?
-                 AND pending = 0 AND date_override IS NULL
+        # A split charge is found by its bank row (the bank's amount is in split_total), and its parts move with it.
+        ids = [r[0] for r in conn.execute(
+            """SELECT id FROM transactions
+               WHERE account_id = ? AND date = ? AND ROUND(COALESCE(split_total, amount), 2) = ? AND raw_description = ?
+                 AND pending = 0 AND date_override IS NULL AND split_of IS NULL
                  AND (category_id IS NULL OR category_id NOT IN (SELECT id FROM categories WHERE snap_to_month = 1))""",
+            (account_id, posted.isoformat(), round(float(t["amount"]), 2), clean_description(t.get("description"))),
+        )]
+        if not ids:
+            continue
+        marks = ", ".join("?" * len(ids))
+        conn.execute(
+            f"""UPDATE transactions SET date_override = ?, notes = COALESCE(notes, ?)
+                WHERE (id IN ({marks}) OR split_of IN ({marks})) AND date_override IS NULL""",
             (happened.isoformat(), f"Happened {happened.isoformat()}, posted {posted.isoformat()}: counts in {happened.strftime('%Y-%m')}",
-             account_id, posted.isoformat(), round(float(t["amount"]), 2), clean_description(t.get("description"))),
-        ).rowcount
+             *ids, *ids),
+        )
+        moved += len(ids)
     if moved:
         sync_dates(conn, "account_id = ?", (account_id,))
     return moved

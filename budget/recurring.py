@@ -156,9 +156,10 @@ def find(conn, today=None):
     since = (today - timedelta(days=YEARLY_WINDOW_DAYS)).isoformat()
     by_merchant = {}
     for r in conn.execute(
-        f"""SELECT t.date, -t.amount AS amount, t.name, t.raw_description, c.name AS category
+        # A charge split across categories counts once, whole: its bank row at the bank's amount.
+        f"""SELECT t.date, -COALESCE(t.split_total, t.amount) AS amount, t.name, t.raw_description, c.name AS category
             FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-            WHERE t.amount < 0 AND {IS_SPEND} AND t.date >= ? AND t.date <= ?
+            WHERE COALESCE(t.split_total, t.amount) < 0 AND t.split_of IS NULL AND {IS_SPEND} AND t.date >= ? AND t.date <= ?
             ORDER BY t.date, t.id""",
         (since, today.isoformat()),
     ):

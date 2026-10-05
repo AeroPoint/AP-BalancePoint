@@ -39,6 +39,9 @@
   {% if tab == 'raw' %}
     The match text is looked for inside the bank's description; capitals don't matter. Leave “Show as” blank to only set a category.
     Set an amount to match only transactions for exactly that much, like a rent deposit that's always the same; leave it blank for any amount.
+    <br><b>Sort by hand</b> keeps a merchant's transactions uncategorized, whatever any rule or card type says, so each one waits
+    in Categorize for you (for a store that sells everything). <b>Can be split</b> adds a Split button to its transactions, to spread
+    one charge over several categories. Both belong to the merchant: ticking one changes every entry shown as the same name.
   {% else %}
     Keywords are looked for inside the cleaned-up merchant name, so “Gas” files “Costco Gas” and “Shell Gas” under Auto &amp; Gas.
     A keyword only applies when no bank-name entry already chose a category, except merchants you set with “Always”, which win outright.
@@ -59,6 +62,11 @@
     <label class="field"><span>Only this amount</span><input name="amount" inputmode="decimal" placeholder="any"></label>
     {% endif %}
     <label class="field"><span>Category</span><select name="category_id">{{ category_options(categories, None, 'No category') }}</select></label>
+    {% if tab == 'raw' %}
+    <input type="hidden" name="flags_shown" value="1">
+    <label class="check"><input type="checkbox" name="leave_uncategorized" value="1"> Sort by hand</label>
+    <label class="check"><input type="checkbox" name="allow_split" value="1"> Can be split</label>
+    {% endif %}
     <button class="btn primary">Add entry</button>
   </form>
 </section>
@@ -84,6 +92,7 @@
           <th>{{ 'Bank text contains' if tab == 'raw' else 'Name contains' }}</th>
           {% if tab == 'raw' %}<th>Show as</th><th>Only this amount</th>{% endif %}
           <th>Category</th>
+          {% if tab == 'raw' %}<th><span title="Rules never pick a category: each transaction waits in Categorize">Sort by hand</span></th><th><span title="Its transactions get a Split button">Can be split</span></th>{% endif %}
           <th>Source</th>
           <th><span class="visually-hidden">Actions</span></th>
         </tr>
@@ -98,11 +107,16 @@
                      value="{{ '%.2f'|format(r.amount) if r.amount is not none else '' }}" aria-label="Only this amount"></td>
           {% endif %}
           <td class="c-full" data-label="Category"><select form="rule-{{ r.id }}" name="category_id" aria-label="Category">{{ category_options(categories, r.category_id, 'No category') }}</select></td>
+          {% if tab == 'raw' %}
+          <td class="c-half" data-label="Sort by hand"><label class="check"><input type="checkbox" form="rule-{{ r.id }}" name="leave_uncategorized" value="1" data-autosave{% if r.leave_uncategorized %} checked{% endif %} aria-label="Sort {{ r.rename_to or r.pattern }} by hand"><span class="phone-only">Sort by hand</span></label></td>
+          <td class="c-half" data-label="Can be split"><label class="check"><input type="checkbox" form="rule-{{ r.id }}" name="allow_split" value="1" data-autosave{% if r.allow_split %} checked{% endif %} aria-label="{{ r.rename_to or r.pattern }} can be split"><span class="phone-only">Can be split</span></label></td>
+          {% endif %}
           <td class="source-tag c-meta">{{ {'user': 'You', 'config': 'personal.toml', 'excel': 'Spreadsheet', 'builtin': 'Built in'}.get(r.source, r.source) }}</td>
           <td class="actions c-side">
             <form id="rule-{{ r.id }}" method="post" action="{{ url_for('main.save_rule') }}">
               <input type="hidden" name="id" value="{{ r.id }}">
               <input type="hidden" name="match_on" value="{{ r.match_on }}">
+              {% if tab == 'raw' %}<input type="hidden" name="flags_shown" value="1">{% endif %}
               <input type="hidden" name="next" value="{{ request.full_path }}">
               <button class="btn small">Save</button>
             </form>
@@ -113,7 +127,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="muted">No entries match.</td></tr>
+        <tr><td colspan="8" class="muted">No entries match.</td></tr>
         {% endfor %}
       </tbody>
     </table>

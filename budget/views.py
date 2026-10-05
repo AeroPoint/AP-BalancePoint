@@ -10,12 +10,12 @@ from uuid import uuid4
 from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import blackjack, budgeting, business, personal, recurring, reports, seed, simplefin_import, tax
+from . import blackjack, budgeting, business, personal, recurring, reports, seed, simplefin_import, splits, tax
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import BAD_DATES_NOTE, CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
 from .excel_import import ensure_account, import_workbook
-from .rules import RuleEngine, compile_pattern, merchant_key, normalize, reapply, sync_dates
+from .rules import MERCHANT_FLAGS, RuleEngine, compile_pattern, merchant_key, normalize, reapply, sync_dates
 
 bp = Blueprint("main", __name__)
 MONTHS = reports.MONTH_NAMES
@@ -333,6 +333,58 @@ def delete_plan_item(iid):
 
 # ---------------------------------------------------------------- transactions
 
+def _split_context(conn, rows):
+    """What the Split control needs for these rows: which can be split (or already are), each part's
+    label, the parts to start the form from, and which are sorted by hand (no "Always" offer)."""
+    engine = RuleEngine(conn)
+    flags = {t["id"]: engine.merchant_flags(t["raw_description"], t["name"], t["amount"]) for t in rows} if engine.has_flags else {}
+    parts = splits.labels(conn, [t["id"] for t in rows])
+    splittable = {t["id"] for t in rows if not t["pending"] and (t["id"] in parts or (t["id"] in flags and flags[t["id"]].allow_split))
+                  and not str(t["dedupe_key"]).startswith("bjsession|")}
+    forms = {}
+    for t in rows:
+        if t["id"] not in splittable:
+            continue
+        parent = parts[t["id"]]["parent"] if t["id"] in parts else t["id"]
+        if parent not in forms:
+            members = conn.execute(
+                "SELECT amount, category_id, split_total FROM transactions WHERE id = ? OR split_of = ? ORDER BY split_of IS NOT NULL, id",
+                (parent, parent)).fetchall()
+            total = members[0]["split_total"] if members[0]["split_total"] is not None else members[0]["amount"]
+            forms[parent] = {"id": parent, "total": total, "split": len(members) > 1,
+                             "lines": [{"category_id": m["category_id"], "amount": abs(m["amount"])} for m in members] if len(members) > 1 else []}
+        forms[t["id"]] = forms[parent]
+    return {"split_parts": parts, "split_forms": forms,
+            "hand_sorted": {tid for tid, f in flags.items() if f.leave_uncategorized}}
+
+
+@bp.post("/api/transactions/<int:tid>/split")
+def split_transaction(tid):
+    conn = get_db()
+    data = request.get_json(silent=True) or {}
+    lines = []
+    for line in data.get("lines") or []:
+        blank = str(line.get("amount") or "").strip() == ""
+        amount = None if blank else _money_input(line.get("amount"))
+        if not blank and amount is None:
+            return jsonify(error="Type amounts like 12.50."), 400
+        lines.append((_int(line.get("category_id")), amount))
+    try:
+        amounts = splits.split(conn, tid, lines)
+    except splits.SplitError as exc:
+        return jsonify(error=str(exc)), 400
+    conn.commit()
+    return jsonify(ok=True, amounts=amounts)
+
+
+@bp.post("/api/transactions/<int:tid>/unsplit")
+def unsplit_transaction(tid):
+    conn = get_db()
+    done = splits.unsplit(conn, tid)
+    conn.commit()
+    return (jsonify(ok=True), 200) if done else (jsonify(error="That charge isn't split."), 400)
+
+
 @bp.route("/transactions")
 def transactions():
     conn = get_db()
@@ -381,12 +433,14 @@ def transactions():
         f"""SELECT t.*, a.name AS account_name, c.name AS category_name, c.flag AS category_flag
             FROM transactions t JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
-            WHERE {clause} ORDER BY t.effective_date DESC, t.date DESC, t.id DESC LIMIT ? OFFSET ?""",
+            WHERE {clause}
+            ORDER BY t.effective_date DESC, t.date DESC, COALESCE(t.split_of, t.id) DESC, t.split_of IS NOT NULL, t.id
+            LIMIT ? OFFSET ?""",
         (*params, PER_PAGE, (page - 1) * PER_PAGE),
     ).fetchall()
     periods = [r[0] for r in conn.execute("SELECT DISTINCT substr(effective_date, 1, 7) FROM transactions ORDER BY 1 DESC")]
     return render_template(
-        "transactions.html",
+        "transactions.html", **_split_context(conn, rows),
         rows=rows, summary=summary, page=page, pages=max(1, -(-summary["n"] // PER_PAGE)),
         categories=_categories(conn), accounts=_accounts(conn),
         periods=periods, years=sorted({p[:4] for p in periods}, reverse=True),
@@ -428,7 +482,8 @@ def add_transaction():
 def delete_transaction(tid):
     conn = get_db()
     # Only hand-entered rows: bank rows come back on the next upload, so remove their import instead.
-    removed = conn.execute("DELETE FROM transactions WHERE id = ? AND import_id IS NULL", (tid,)).rowcount
+    # A split part goes only with its whole charge (its other parts follow it: ON DELETE CASCADE).
+    removed = conn.execute("DELETE FROM transactions WHERE id = ? AND import_id IS NULL AND split_of IS NULL", (tid,)).rowcount
     conn.commit()
     flash("Deleted the transaction." if removed else "Only transactions you added by hand can be deleted here.",
           "ok" if removed else "error")
@@ -457,6 +512,8 @@ def update_transaction(tid):
 
     if "category_id" in data:
         category_id = _int(data["category_id"])
+        if remember and RuleEngine(conn).merchant_flags(txn["raw_description"], txn["name"], txn["amount"]).leave_uncategorized:
+            remember = False  # a merchant sorted by hand: this transaction only
         if remember and category_id:
             conn.execute("UPDATE transactions SET category_source = 'rule' WHERE id = ?", (tid,))
             changed += remember_category(conn, txn["name"], category_id)
@@ -473,7 +530,9 @@ def update_transaction(tid):
                 date.fromisoformat(new_date)
             except ValueError:
                 return jsonify(error="Use a date like 2026-09-01."), 400
-        conn.execute("UPDATE transactions SET date_override = ? WHERE id = ?", (new_date or None, tid))
+        # A split charge's parts all count on the same day.
+        family = txn["split_of"] or tid
+        conn.execute("UPDATE transactions SET date_override = ? WHERE id = ? OR split_of = ?", (new_date or None, family, family))
 
     if "notes" in data:
         conn.execute("UPDATE transactions SET notes = ? WHERE id = ?", (str(data["notes"]).strip() or None, tid))
@@ -484,7 +543,8 @@ def update_transaction(tid):
     if "flag" in data:  # the category's checkbox: 'yes', 'check' (to look at) or cleared
         conn.execute("UPDATE transactions SET flag = ? WHERE id = ?", (data["flag"] if data["flag"] in ("yes", "check") else None, tid))
 
-    sync_dates(conn, "id = ?", (tid,))
+    family = txn["split_of"] or tid
+    sync_dates(conn, "id = ? OR split_of = ?", (family, family))
     conn.commit()
     return jsonify(ok=True, changed=changed, transaction=_txn_json(conn, tid))
 
@@ -496,14 +556,29 @@ def categorize():
     conn = get_db()
     mode = "guessed" if request.args.get("mode") == "guessed" else "uncategorized"
     cond = "t.category_id IS NULL" if mode == "uncategorized" else "t.category_source = 'mcc'"
+    # Merchants sorted by hand (Merchant dictionary) are listed one transaction at a time instead.
+    singles, single_ids = [], []
+    engine = RuleEngine(conn)
+    if mode == "uncategorized" and engine.has_flags:
+        for t in conn.execute(
+            """SELECT t.*, a.name AS account_name FROM transactions t JOIN accounts a ON a.id = t.account_id
+               WHERE t.category_id IS NULL ORDER BY t.effective_date DESC, t.id DESC"""
+        ).fetchall():
+            if engine.merchant_flags(t["raw_description"], t["name"], t["amount"]).leave_uncategorized:
+                single_ids.append(t["id"])
+                if len(singles) < 200:
+                    singles.append(t)
+    skip = f"AND t.id NOT IN ({', '.join('?' * len(single_ids))})" if single_ids else ""
     groups = conn.execute(
         f"""SELECT t.name, COUNT(*) AS n, SUM(t.amount) AS total, MAX(t.date) AS last_date,
                    MIN(t.raw_description) AS sample, MAX(c.id) AS category_id, MAX(c.name) AS category_name
             FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
-            WHERE {cond} GROUP BY t.name ORDER BY n DESC, ABS(SUM(t.amount)) DESC LIMIT 400"""
+            WHERE {cond} {skip} GROUP BY t.name ORDER BY n DESC, ABS(SUM(t.amount)) DESC LIMIT 400""",
+        single_ids,
     ).fetchall()
     guessed = conn.execute("SELECT COUNT(*) FROM transactions WHERE category_source = 'mcc'").fetchone()[0]
-    return render_template("categorize.html", groups=groups, mode=mode, categories=_categories(conn), guessed=guessed)
+    return render_template("categorize.html", groups=groups, mode=mode, categories=_categories(conn), guessed=guessed,
+                           singles=singles, singles_total=len(single_ids), **_split_context(conn, singles))
 
 
 @bp.post("/api/merchants/category")
@@ -513,7 +588,7 @@ def categorize_merchant():
     name, category_id = str(data.get("name") or ""), _int(data.get("category_id"))
     if not name or not category_id:
         return jsonify(error="Pick a category"), 400
-    if data.get("remember", True):
+    if data.get("remember", True) and normalize(name) not in RuleEngine(conn).flag_names["leave_uncategorized"]:
         changed = remember_category(conn, name, category_id)
     else:
         changed = conn.execute(
@@ -592,18 +667,46 @@ def save_rule():
                 (pattern, rename_to, category_id, amount, rid),
             )
         else:
-            conn.execute(
+            rid = conn.execute(
                 """INSERT INTO rules (match_on, pattern, rename_to, category_id, amount, source)
                    VALUES (?, ?, ?, ?, ?, 'user')""",
                 (match_on, pattern, rename_to, category_id, amount),
-            )
+            ).lastrowid
     except sqlite3.IntegrityError:
         flash(f"A rule for “{pattern}” already exists — edit that one instead.", "error")
         return _back(".rules_page", tab=match_on)
+    note = _save_merchant_flags(conn, rid, form) if match_on == "raw" else ""
     changed = reapply(conn)
     conn.commit()
-    flash(f"Saved “{pattern}”. {changed} transaction{'s' if changed != 1 else ''} updated.", "ok")
+    flash(f"Saved “{pattern}”. {changed} transaction{'s' if changed != 1 else ''} updated.{note}", "ok")
     return _back(".rules_page", tab=match_on)
+
+
+def _save_merchant_flags(conn, rid, form):
+    """"Sort by hand" and "Can be split" belong to a merchant, so they're kept the same on every bank-name
+    entry shown as the same name: ticking or clearing one on any of them changes all of them, and a new
+    entry for a merchant that has them takes them on."""
+    row = conn.execute("SELECT * FROM rules WHERE id = ?", (rid,)).fetchone()
+    sent = {flag: 1 if form.get(flag) else 0 for flag in MERCHANT_FLAGS}
+    if "flags_shown" not in form:  # a form without the checkboxes leaves them as they were
+        sent = {flag: row[flag] for flag in MERCHANT_FLAGS}
+    if not row["rename_to"]:
+        conn.execute(f"UPDATE rules SET {', '.join(f'{f} = ?' for f in sent)} WHERE id = ?", (*sent.values(), rid))
+        return ""
+    group = conn.execute(
+        "SELECT * FROM rules WHERE match_on = 'raw' AND id != ? AND UPPER(TRIM(rename_to)) = UPPER(TRIM(?))",
+        (rid, row["rename_to"]),
+    ).fetchall()
+    changed_here = any(sent[f] != row[f] for f in MERCHANT_FLAGS)
+    flags = sent if changed_here or not group else {f: int(sent[f] or any(g[f] for g in group)) for f in MERCHANT_FLAGS}
+    conn.execute(
+        f"UPDATE rules SET {', '.join(f'{f} = ?' for f in flags)} "
+        "WHERE match_on = 'raw' AND (id = ? OR UPPER(TRIM(rename_to)) = UPPER(TRIM(?)))",
+        (*flags.values(), rid, row["rename_to"]),
+    )
+    if group and any(flags[f] != g[f] for g in group for f in MERCHANT_FLAGS):
+        return f" The settings apply to all {len(group) + 1} entries shown as “{row['rename_to']}”."
+    return ""
 
 
 @bp.post("/rules/<int:rid>/delete")

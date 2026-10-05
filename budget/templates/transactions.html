@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_options %}
+{% from "_macros.html" import category_options, split_controls, split_dialog %}
 {% block title %}Transactions{% endblock %}
 {% block content %}
 <header class="page-head">
@@ -95,7 +95,7 @@
       </thead>
       <tbody>
         {% for t in rows %}
-        <tr data-id="{{ t.id }}" data-name="{{ t.name }}" data-source="{{ t.category_source }}">
+        <tr data-id="{{ t.id }}" data-name="{{ t.name }}" data-source="{{ t.category_source }}"{% if t.id in hand_sorted %} data-handsort="1"{% endif %}{% if t.id in split_parts %} data-split-part="1"{% endif %}>
           <td class="date">
             <button type="button" class="date-edit" data-bank="{{ t.date }}" title="Change which date this counts on">{{ t.effective_date }}</button>
             <span class="raw date-note"{% if t.effective_date == t.date %} hidden{% endif %}>{{ 'set by you' if t.date_override else 'nearest 1st' }}; bank date {{ t.date }}</span>
@@ -104,8 +104,9 @@
             <button type="button" class="name-edit" title="Rename">{{ t.name }}</button>
             {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}
             {% if t.pending %}<span class="guess" data-tip="Still pending at the bank. It counts in the month it happened; the posted charge will replace it.">pending</span>{% endif %}
-            {% if t.import_id is none and not t.pending %}
-            <form class="manual-tag" method="post" action="{{ url_for('main.delete_transaction', tid=t.id) }}" data-confirm="Delete “{{ t.name }}”?">
+            {{ split_controls(t, split_parts, split_forms) }}
+            {% if t.import_id is none and not t.pending and t.split_of is none %}
+            <form class="manual-tag" method="post" action="{{ url_for('main.delete_transaction', tid=t.id) }}" data-confirm="Delete “{{ t.name }}”{{ ' and all its split parts' if t.split_total is not none }}?">
               <input type="hidden" name="next" value="{{ request.full_path }}">
               <span class="raw">added by hand{% if t.notes %} · {{ t.notes }}{% endif %}</span>
               <button class="btn small quiet danger">Delete</button>
@@ -129,6 +130,7 @@
     </table>
   </div>
 </div>
+{{ split_dialog(categories) }}
 {% if pages > 1 %}
 {% set args = a.to_dict() %}
 <nav class="pager" aria-label="Pages">
