@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Appearance{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Appearance</h1>
+    <p class="sub">Saved on this device only: each phone and computer keeps its own choice, and nobody else's changes.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="panel-head"><h2>Theme</h2></div>
+  <div class="appearance-choices" role="radiogroup" aria-label="Theme">
+    {% for value, label, hint in [('auto', 'Automatic', 'follows this device’s light or dark setting'), ('light', 'Light', ''), ('dark', 'Dark', '')] %}
+    <label class="appearance-choice"><input type="radio" name="theme" value="{{ value }}"> <b>{{ label }}</b>{% if hint %} <small class="muted">{{ hint }}</small>{% endif %}</label>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Accent color</h2></div>
+  <div class="appearance-choices" role="radiogroup" aria-label="Accent color">
+    {% for value, label in [('', 'Green'), ('blue', 'Blue'), ('purple', 'Purple'), ('rust', 'Rust'), ('slate', 'Slate')] %}
+    <label class="appearance-choice"><input type="radio" name="accent" value="{{ value }}">
+      <span class="appearance-swatch" data-swatch="{{ value or 'green' }}"></span> {{ label }}</label>
+    {% endfor %}
+  </div>
+  <p class="muted">Buttons, links and highlights use it. Chart colors stay the same so they're easy to tell apart.</p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const d = document.documentElement;
+    const get = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+    const set = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} };
+    const theme = get("bp.theme") || "auto", accent = get("bp.accent") || "";
+    document.querySelector(`input[name=theme][value="${theme}"]`).checked = true;
+    (document.querySelector(`input[name=accent][value="${accent}"]`) || document.querySelector("input[name=accent][value='']")).checked = true;
+    document.querySelectorAll("input[name=theme]").forEach((r) => r.addEventListener("change", () => {
+      set("bp.theme", r.value === "auto" ? "" : r.value);
+      if (r.value === "auto") delete d.dataset.theme; else d.dataset.theme = r.value;
+      document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => m.setAttribute("content",
+        r.value === "auto" ? (i === 0 ? "#eef2ef" : "#121b19") : r.value === "dark" ? "#121b19" : "#eef2ef"));
+    }));
+    document.querySelectorAll("input[name=accent]").forEach((r) => r.addEventListener("change", () => {
+      set("bp.accent", r.value);
+      if (r.value) d.dataset.accent = r.value; else delete d.dataset.accent;
+    }));
+  })();
+</script>
+{% endblock %}

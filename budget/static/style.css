@@ -38,8 +38,9 @@
   --font: "Libre Franklin", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
+/* Dark follows the device unless Appearance picks Light or Dark (data-theme on <html>, per device). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
     --ground: #121b19;
     --panel: #18231f;
@@ -68,6 +69,51 @@
     --s-other: #6b7571;
   }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #121b19;
+  --panel: #18231f;
+  --ink: #e8efeb;
+  --ink-2: #b4c2bc;
+  --muted: #8a9993;
+  --rule: #27352f;
+  --rule-strong: #3b4c45;
+  --accent: #7cc4ae;
+  --accent-ink: #0f1c18;
+  --accent-wash: #22342e;
+  --in: #62d18d;
+  --error: #f08a80;
+  --error-wash: #3a2320;
+  --ok-wash: #1f3328;
+  --grid: #24302b;
+  --axis: #3b4943;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #008300;
+  --s7: #9085e9;
+  --s8: #e66767;
+  --s-other: #6b7571;
+}
+
+/* Accent colors from Appearance (data-accent on <html>); green is the default above. */
+:root[data-accent] { --selected: var(--accent); --selected-ink: var(--accent-ink); }  /* selected menu item and toggles follow a picked accent */
+:root[data-accent="blue"] { --accent: #1f4f8a; --accent-wash: #dfe7f2; }
+:root[data-accent="purple"] { --accent: #5a3f8f; --accent-wash: #e8e2f2; }
+:root[data-accent="rust"] { --accent: #9a4a1f; --accent-wash: #f3e4da; }
+:root[data-accent="slate"] { --accent: #3d4a57; --accent-wash: #e1e5ea; }
+@media (prefers-color-scheme: dark) {
+  :root[data-accent="blue"]:not([data-theme="light"]) { --accent: #8ab4e8; --accent-wash: #1f2a3a; }
+  :root[data-accent="purple"]:not([data-theme="light"]) { --accent: #b9a3e6; --accent-wash: #2a2438; }
+  :root[data-accent="rust"]:not([data-theme="light"]) { --accent: #e7a07a; --accent-wash: #3a2a21; }
+  :root[data-accent="slate"]:not([data-theme="light"]) { --accent: #a9b6c4; --accent-wash: #262d34; }
+}
+:root[data-accent="blue"][data-theme="dark"] { --accent: #8ab4e8; --accent-wash: #1f2a3a; }
+:root[data-accent="purple"][data-theme="dark"] { --accent: #b9a3e6; --accent-wash: #2a2438; }
+:root[data-accent="rust"][data-theme="dark"] { --accent: #e7a07a; --accent-wash: #3a2a21; }
+:root[data-accent="slate"][data-theme="dark"] { --accent: #a9b6c4; --accent-wash: #262d34; }
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
@@ -105,7 +151,7 @@ code { font-size: 0.9em; background: var(--accent-wash); padding: 1px 5px; borde
   color: var(--ink-2); font-weight: 500; text-decoration: none;
 }
 .side nav a:hover { background: var(--accent-wash); color: var(--ink); }
-.side nav a.on { background: var(--ink); color: var(--ground); }
+.side nav a.on { background: var(--selected, var(--ink)); color: var(--selected-ink, var(--ground)); }
 .count { min-width: 1.6rem; padding: 0 7px; border-radius: 99px; background: var(--accent-wash); color: var(--ink); font-size: 0.75rem; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 .side nav a.on .count { background: var(--ground); }
 .main { width: 100%; max-width: 1280px; min-width: 0; padding: 28px clamp(16px, 4vw, 48px) 72px; }
@@ -215,7 +261,7 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent);
 .period form, .period-pick { display: contents; }
 .seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--panel); }
 .seg a { padding: 4px 12px; border-radius: 6px; color: var(--ink-2); font-size: 0.9rem; font-weight: 500; text-decoration: none; }
-.seg a.on { background: var(--ink); color: var(--panel); }
+.seg a.on { background: var(--selected, var(--ink)); color: var(--selected-ink, var(--panel)); }
 .step {
   display: inline-grid; place-items: center; width: 34px; height: 34px;
   border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--panel);
@@ -765,3 +811,15 @@ details.panel.tucked[open] > summary { margin-bottom: 12px; }
 @media (max-width: 520px) { .split-dialog .split-line { grid-template-columns: minmax(0, 1fr) 6rem auto; } .split-dialog .split-final { grid-column: 1 / -1; } }
 .split-tag { display: inline-block; margin: 2px 6px 0 0; }
 .panel-head.pad { padding: 12px 16px 0; margin-bottom: 8px; }
+
+/* appearance */
+.appearance-choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.appearance-choice { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--rule);
+  border-radius: 10px; background: var(--panel); cursor: pointer; }
+.appearance-choice:has(input:checked) { border-color: var(--accent); background: var(--accent-wash); }
+.appearance-swatch { width: 18px; height: 18px; border-radius: 50%; display: inline-block; }
+.appearance-swatch[data-swatch="green"] { background: #1d5a4c; }
+.appearance-swatch[data-swatch="blue"] { background: #1f4f8a; }
+.appearance-swatch[data-swatch="purple"] { background: #5a3f8f; }
+.appearance-swatch[data-swatch="rust"] { background: #9a4a1f; }
+.appearance-swatch[data-swatch="slate"] { background: #3d4a57; }

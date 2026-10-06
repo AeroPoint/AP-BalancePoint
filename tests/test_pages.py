@@ -5,7 +5,7 @@ import pytest
 
 PAGES = ["/", "/plan", "/trends", "/business", "/recurring", "/transactions", "/categorize", "/net-worth", "/bankroll",
          "/accounts", "/bank-sync", "/upload", "/rules", "/categories", "/transactions?flag=check", "/categorize?mode=guessed",
-         "/?view=year", "/transactions?source=mcc", "/tax"]
+         "/?view=year", "/transactions?source=mcc", "/tax", "/appearance"]
 
 
 def test_demo_builds_a_household(demo_conn):
@@ -177,3 +177,16 @@ def test_business_setting_wins(tmp_path, monkeypatch, setting, business_accounts
         _add_business_account(app)
     assert (_business_links(app) > 0) == shown
     assert "Business accounts" in app.test_client().get("/accounts").get_data(as_text=True)  # always there to set one up
+
+
+def test_appearance_is_per_device(client):
+    """Theme and accent live in the browser (localStorage), applied in <head> before the page draws."""
+    html = client.get("/").get_data(as_text=True)
+    head = html.split("</head>")[0]
+    assert 'localStorage.getItem("bp.theme")' in head and "d.dataset.accent" in head
+    assert head.index("bp.theme") < head.index("style.css")  # set before the stylesheet: no flash
+    page = client.get("/appearance").get_data(as_text=True)
+    assert 'name="theme" value="dark"' in page and 'name="accent" value="blue"' in page
+    css = client.get("/static/style.css").get_data(as_text=True)
+    assert ':root[data-theme="dark"]' in css and ':root:not([data-theme="light"])' in css
+    assert ':root[data-accent="blue"][data-theme="dark"]' in css

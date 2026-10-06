@@ -5,6 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#eef2ef" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#121b19" media="(prefers-color-scheme: dark)">
+  <script>
+    // Appearance (theme and accent) is remembered per device, so each phone or computer keeps its own.
+    (function () {
+      try {
+        var d = document.documentElement, t = localStorage.getItem("bp.theme"), a = localStorage.getItem("bp.accent");
+        if (t === "light" || t === "dark") {
+          d.dataset.theme = t;
+          document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+            m.setAttribute("content", t === "dark" ? "#121b19" : "#eef2ef");
+          });
+        }
+        if (a) d.dataset.accent = a;
+      } catch (e) {}
+    })();
+  </script>
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -38,6 +53,7 @@
         ('main.upload', 'Upload data'),
         ('main.rules_page', 'Merchant dictionary'),
         ('main.categories_page', 'Categories'),
+        ('main.appearance', 'Appearance'),
       ] if item %}{% set ep, text = item %}
       <a href="{{ url_for(ep) }}" class="{{ 'on' if endpoint == ep }}" {% if endpoint == ep %}aria-current="page"{% endif %}>
         {{ text }}{% if ep == 'main.categorize' and uncategorized_count %}<span class="count" title="Uncategorized transactions">{{ uncategorized_count }}</span>{% endif %}
@@ -71,7 +87,7 @@
         {% for ep, text in [('main.plan', 'Plan'), ('main.trends', 'Year trends'), ('main.business_page', 'Business'), ('main.recurring_page', 'Recurring'), ('main.tax_page', 'Tax time'),
                             ('main.net_worth', 'Net worth'), ('main.accounts_page', 'Accounts'), ('main.bank_sync', 'Bank sync'),
                             ('main.upload', 'Upload data'),
-                            ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories')]
+                            ('main.rules_page', 'Merchant dictionary'), ('main.categories_page', 'Categories'), ('main.appearance', 'Appearance')]
                             if ep not in tab_eps and (features.business or ep != 'main.business_page') %}
         <a href="{{ url_for(ep) }}" class="{{ 'on' if endpoint == ep }}">{{ text }}</a>
         {% endfor %}{% if config.LOGIN_REQUIRED %}<a href="{{ url_for('auth.logout') }}">Log out</a>{% endif %}

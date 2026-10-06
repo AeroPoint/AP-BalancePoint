@@ -723,6 +723,12 @@ def delete_rule(rid):
 
 # ---------------------------------------------------------------- categories
 
+@bp.route("/appearance")
+def appearance():
+    """Theme and accent color: saved in this browser only (each device keeps its own), nothing on the server."""
+    return render_template("appearance.html")
+
+
 @bp.route("/categories")
 def categories_page():
     conn = get_db()

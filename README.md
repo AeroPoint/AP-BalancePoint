@@ -511,6 +511,9 @@ Transactions added by hand can be deleted from the Transactions page; bank rows 
 upload instead). The hand-entry form starts on your first cash account, so keep "Cash on hand"
 ahead of other cash accounts.
 
+**Appearance** (in the menu): light, dark or automatic (follows the device), and an accent color. It's saved
+in each browser, so every phone and computer keeps its own choice.
+
 ## Optional features
 
 Optional parts switch on in `data/personal.toml` under `[features]`: `blackjack` (a Bankroll page
