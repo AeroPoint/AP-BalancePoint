@@ -17,6 +17,12 @@
           });
         }
         if (a) d.dataset.accent = a;
+        if (a) {  // the phone's status bar takes the tinted background once the styles are in
+          document.addEventListener("DOMContentLoaded", function () {
+            var g = getComputedStyle(d).getPropertyValue("--ground").trim();
+            if (g) document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.setAttribute("content", g); });
+          });
+        }
       } catch (e) {}
     })();
   </script>

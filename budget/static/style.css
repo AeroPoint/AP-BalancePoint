@@ -99,7 +99,35 @@
 }
 
 /* Accent colors from Appearance (data-accent on <html>); green is the default above. */
-:root[data-accent] { --selected: var(--accent); --selected-ink: var(--accent-ink); }  /* selected menu item and toggles follow a picked accent */
+:root[data-accent] {  /* a picked accent also tints the selected item, toggles and the background */
+  --selected: var(--accent); --selected-ink: var(--accent-ink);
+  --ground: color-mix(in oklab, var(--accent) 9%, #f4f5f5);
+  --panel: color-mix(in oklab, var(--accent) 2%, #fdfdfd);
+  --rule: color-mix(in oklab, var(--accent) 14%, #dde0e0);
+  --rule-strong: color-mix(in oklab, var(--accent) 20%, #bfc4c4);
+  --grid: color-mix(in oklab, var(--accent) 8%, #e6e8e8);
+  --ink: color-mix(in oklab, var(--accent) 12%, #1b1f22);
+  --ink-2: color-mix(in oklab, var(--accent) 10%, #4a5157);
+  --muted: color-mix(in oklab, var(--accent) 8%, #5f666b);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-accent]:not([data-theme="light"]) {
+    --ground: color-mix(in oklab, var(--accent) 8%, #111315);
+    --panel: color-mix(in oklab, var(--accent) 8%, #181b1d);
+    --rule: color-mix(in oklab, var(--accent) 16%, #262a2d);
+    --rule-strong: color-mix(in oklab, var(--accent) 22%, #383d40);
+    --grid: color-mix(in oklab, var(--accent) 10%, #22262a);
+    --ink: #e9ecee; --ink-2: #b8bfc4; --muted: #8d959a;
+  }
+}
+:root[data-accent][data-theme="dark"] {
+  --ground: color-mix(in oklab, var(--accent) 8%, #111315);
+  --panel: color-mix(in oklab, var(--accent) 8%, #181b1d);
+  --rule: color-mix(in oklab, var(--accent) 16%, #262a2d);
+  --rule-strong: color-mix(in oklab, var(--accent) 22%, #383d40);
+  --grid: color-mix(in oklab, var(--accent) 10%, #22262a);
+  --ink: #e9ecee; --ink-2: #b8bfc4; --muted: #8d959a;
+}
 :root[data-accent="blue"] { --accent: #1f4f8a; --accent-wash: #dfe7f2; }
 :root[data-accent="purple"] { --accent: #5a3f8f; --accent-wash: #e8e2f2; }
 :root[data-accent="rust"] { --accent: #9a4a1f; --accent-wash: #f3e4da; }
