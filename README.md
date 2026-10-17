@@ -295,13 +295,18 @@ To have it happen on its own every day, schedule `run.py simplefin-sync`, run fr
 Around 6:00 works well: after the banks' overnight posting, before anyone opens the app. Send its
 output to `simplefin-sync.log` in the data folder and the Bank sync page shows the latest run.
 
+The Bridge is sometimes down for a while. To retry, also schedule it hourly through the day, guarded by
+`run.py simplefin-synced-today` (exits 0 once today's sync has worked), so a retry runs only after a
+failure and the Bridge's daily request limit is never at risk. The Overview says when the bank data is
+behind, so a stale pace check never looks like good news.
+
 - **macOS:** `install-mac.sh` (see *Optional: keep it running on an always-on Mac*) runs `sync-mac.sh`
-  **every day at 6:00** and again whenever the Mac starts up. If `data/` is a git repository, it
+  **every day at 6:00**, again every hour until 21:00 if that failed, and whenever the Mac starts up. If `data/` is a git repository, it
   commits `data/` before and after, so a bad sync is one `git revert` away. Log: `data/simplefin-sync.log`.
 - **Linux, cron** (`crontab -e`; use your own path):
 
   ```
-  0 6 * * * cd /home/you/BalancePoint && .venv/bin/python run.py simplefin-sync >> data/simplefin-sync.log 2>&1
+  0 6-21 * * * cd /home/you/BalancePoint && (.venv/bin/python run.py simplefin-synced-today || .venv/bin/python run.py simplefin-sync >> data/simplefin-sync.log 2>&1)
   ```
 
 - **Linux, systemd timer** (catches up after the computer was off). In `~/.config/systemd/user/`:

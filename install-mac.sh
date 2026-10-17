@@ -44,8 +44,9 @@ cat > "$PLIST" <<EOF
 </dict>
 </plist>
 EOF
-# 6:00 is after the banks' overnight posting and before anyone opens the app. If the Mac was asleep
-# then, launchd runs it on wake; RunAtLoad also runs it after a restart or power cut.
+# 6:00 is after the banks' overnight posting and before anyone opens the app; it's tried again every hour
+# until 21:00 if the Bridge was down (sync-mac.sh stops at once when today's sync already worked). If the Mac
+# was asleep, launchd runs it on wake; RunAtLoad also runs it after a restart or power cut.
 cat > "$SYNC_PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -55,7 +56,7 @@ cat > "$SYNC_PLIST" <<EOF
   <key>ProgramArguments</key><array><string>$DIR/sync-mac.sh</string></array>
   <key>WorkingDirectory</key><string>$DIR</string>
   <key>EnvironmentVariables</key><dict><key>PYTHONUNBUFFERED</key><string>1</string></dict>
-  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StartCalendarInterval</key><array>$(for h in $(seq 6 21); do printf '<dict><key>Hour</key><integer>%d</integer><key>Minute</key><integer>0</integer></dict>' "$h"; done)</array>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>$DIR/data/simplefin-sync.log</string>
   <key>StandardErrorPath</key><string>$DIR/data/simplefin-sync.log</string>
@@ -71,4 +72,4 @@ for pair in "$LABEL:$PLIST" "$SYNC_LABEL:$SYNC_PLIST"; do
 done
 sleep 3
 grep -m1 "On your phones" "$DIR/data/server.log" || echo "Started. Log: $DIR/data/server.log"
-echo "Bank sync: daily at 6:00 and at startup. Log: $DIR/data/simplefin-sync.log"
+echo "Bank sync: daily at 6:00 (retried hourly until it works) and at startup. Log: $DIR/data/simplefin-sync.log"

@@ -255,3 +255,17 @@ def test_date_in_the_description_is_left_out(bridge, conn):
     assert conn.execute("SELECT COUNT(*) FROM transactions WHERE amount = 950").fetchone()[0] == 1
     name = conn.execute("SELECT name FROM transactions WHERE amount = -1500.00").fetchone()[0]
     assert name == "Zelle to Pat Smith"
+
+
+def test_behind_and_synced_today(conn):
+    """The Overview's "bank data is behind" notice and the retry schedule's synced-today check."""
+    assert sf.behind(conn) is None  # bank sync not used: never a notice
+    sf.map_account(conn, "ACT-CHK", account(conn, "Checking"), sync_from="2026-01-01")
+    assert sf.behind(conn, datetime(2026, 10, 17, 9)) == "never" and sf.last_good_sync(conn) is None
+    conn.execute("UPDATE simplefin_accounts SET last_synced = '2026-10-16'")
+    assert sf.behind(conn, datetime(2026, 10, 17, 6, 30)) is None  # before 7: the morning sync hasn't had its turn
+    assert sf.behind(conn, datetime(2026, 10, 17, 9)) == date(2026, 10, 16)
+    conn.execute("UPDATE simplefin_accounts SET last_synced = '2026-10-14'")
+    assert sf.behind(conn, datetime(2026, 10, 17, 5)) == date(2026, 10, 14)  # two days: behind at any hour
+    conn.execute("UPDATE simplefin_accounts SET last_synced = '2026-10-17'")
+    assert sf.behind(conn, datetime(2026, 10, 17, 9)) is None and sf.last_good_sync(conn) == date(2026, 10, 17)

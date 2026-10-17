@@ -13,6 +13,12 @@ backup() {
   fi
 }
 
+# install-mac.sh runs this at 6:00 and then hourly until 21:00, so a Bridge outage is retried. Once today's
+# sync has worked, later runs stop here: no Bridge request, no backup, nothing in the log. --force syncs anyway.
+if [ "${1:-}" != "--force" ] && .venv/bin/python run.py simplefin-synced-today; then
+  exit 0
+fi
+
 backup "App edits before SimpleFIN sync $(date +%F)"
 .venv/bin/python run.py simplefin-sync
 status=$?

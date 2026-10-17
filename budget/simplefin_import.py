@@ -393,6 +393,25 @@ def status(conn, today=None):
     return out
 
 
+def last_good_sync(conn):
+    """The newest day any mapped account was pulled successfully (a whole-sync failure moves none), or None."""
+    row = conn.execute("SELECT MAX(last_synced) FROM simplefin_accounts").fetchone()
+    return date.fromisoformat(row[0]) if row and row[0] else None
+
+
+def behind(conn, now=None):
+    """None when the bank data is current; else the last good sync day (or "never"). Before 7:00 a pull
+    from yesterday still counts as current, since the morning sync hasn't had its chance yet."""
+    if not conn.execute("SELECT 1 FROM simplefin_accounts LIMIT 1").fetchone():
+        return None  # bank sync isn't used
+    now = now or datetime.now()
+    last = last_good_sync(conn)
+    if last is None:
+        return "never"
+    days = (now.date() - last).days
+    return last if days >= 2 or (days == 1 and now.hour >= 7) else None
+
+
 def sync(conn, access_url, today=None, since=None):
     """Pull every mapped account from its last good sync (or since, if given) through today.
 

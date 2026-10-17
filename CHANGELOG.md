@@ -18,6 +18,9 @@ follows under "What's in 0.1.0".
 - Optional notifications after the bank sync (email or ntfy): when there are warnings, daily, weekly or
   monthly; set up in the browser (Bank sync → set up notifications) or `[notify]`. Off until set up.
 - Tax time: questions for your accountant, written down per tax year and checked off when answered.
+- Bank sync retries: the Mac's schedule tries again hourly until 21:00 when the 6:00 sync fails
+  (`run.py simplefin-synced-today` for other schedulers), a failure is reported once a day, and the
+  Overview says when the bank data is behind.
 - Appearance page: light, dark or automatic, and an accent color that also tints the background, remembered
   per device.
 - Tax time: a Rental section, rental income against ticked costs, with mortgage payments split into

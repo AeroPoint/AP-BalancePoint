@@ -10,6 +10,7 @@
     python run.py simplefin-map <id> --account "..."     # map each account simplefin-setup listed
     python run.py simplefin-sync                         # pull since each account's last sync (daily)
     python run.py simplefin-status                       # when each account was last pulled
+    python run.py simplefin-synced-today                 # exit 0 if today's sync already worked (retries)
     python run.py demo [--dir demo-data]                 # a made-up household to try the app on
     python run.py simplefin-unmap <id>                   # stop syncing one (an old id after reconnecting)
     python run.py notify-test                            # send a test message (Notifications page or [notify])
@@ -160,6 +161,7 @@ def main():
     sf_sync = sub.add_parser("simplefin-sync", help="pull balances/transactions for every mapped SimpleFIN account")
     sf_sync.add_argument("--since", help="pull from this date instead of each account's last sync (YYYY-MM-DD)")
     sub.add_parser("simplefin-status", help="when each SimpleFIN account was last pulled")
+    sub.add_parser("simplefin-synced-today", help="exit 0 if today's sync already succeeded, else 1 (for retry schedules)")
     sub.add_parser("notify-test", help="send a test notification with today's numbers (Notifications page or [notify] in personal.toml)")
     sub.add_parser("notify-setup-password", help="save the SMTP password for email notifications (only you can read it)")
     demo = sub.add_parser("demo", help="build a made-up household in its own folder (never your real data) to try the app")
@@ -336,6 +338,11 @@ def main():
         if not password or password != getpass("Again: "):
             raise SystemExit("The two didn't match (or were empty); nothing saved.")
         print(f"Saved to {notify.save_password(data_dir, password)} (only your user can read it).")
+    elif args.command == "simplefin-synced-today":
+        conn = connect(app.config["DATABASE"])
+        last = simplefin_import.last_good_sync(conn)
+        conn.close()
+        raise SystemExit(0 if last == date.today() else 1)
     elif args.command == "simplefin-status":
         conn = connect(app.config["DATABASE"])
         rows = simplefin_import.status(conn)

@@ -591,3 +591,16 @@ def test_turned_off_sends_nothing_and_sync_output_is_unchanged(app, conn, client
     strip = lambda s: [line for line in s.splitlines() if not line[:4].isdigit()]  # noqa: E731
     assert "Notification" not in off.out + off.err and strip(never.out) == strip(off.out)
     assert "Notifications after" not in client.get("/bank-sync").get_data(as_text=True)
+
+
+def test_failure_reported_once_a_day_and_the_weekly_recap_still_goes(app, conn, fake_smtp):
+    """Hourly retries: a failure is reported once a day, and a failure on the weekday doesn't use up the recap."""
+    write_toml(app, EMAIL.format(when="weekly"))
+    week_of_spending(conn)
+    notify.save_password(data_dir(app), SECRET)
+    s, dd, monday = settings(app), data_dir(app), date(2026, 3, 9)
+    assert notify.after_sync(s, conn, dd, failure="Couldn't reach SimpleFIN Bridge", today=monday, out=print)
+    assert not notify.after_sync(s, conn, dd, failure="Couldn't reach SimpleFIN Bridge", today=monday, out=print)
+    assert len(fake_smtp) == 1
+    assert notify.after_sync(s, conn, dd, report(), budgeting.pace(conn, monday), today=monday, out=print)
+    assert len(fake_smtp) == 2 and "week of" in fake_smtp[1].msg["Subject"]

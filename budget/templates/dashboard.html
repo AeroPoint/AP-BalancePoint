@@ -26,6 +26,11 @@
   </div>
 </header>
 
+{% if sync_behind %}
+<p class="flash error sync-behind" role="status">Bank data was last synced
+  {% if sync_behind == 'never' %}never{% else %}<b>{{ sync_behind.isoformat()|day_label }}</b>{% endif %}: the latest spending
+  may not be in yet, so the pace below can look better than it is. <a href="{{ url_for('main.bank_sync') }}">Bank sync</a></p>
+{% endif %}
 {% if pace %}
 {# How this month is going so far, and anything to act on. #}
 <section class="panel pace{{ ' warn' if pace.warnings }}" aria-label="Pace check">

@@ -37,6 +37,7 @@ WEEKDAYS = tuple(calendar.day_name[i].lower() for i in range(7))  # monday .. su
 METHODS = ("email", "ntfy")
 KEYS = {"when", "weekday", "method", "app_url", "smtp_host", "smtp_port", "smtp_user", "to", "from", "ntfy_url"}
 MONTHLY_SENT_KEY = "notify_monthly_sent"  # settings: the month whose monthly message went out
+FAILURE_SENT_KEY = "notify_failure_sent"  # the day a sync failure was last reported
 WEEKLY_SENT_KEY = "notify_weekly_sent"    # settings: the ISO week ("2026-W40") whose weekly message went out
 WEB_KEY = "notify_config"                 # settings: what the Notifications page saved, as JSON (never a password)
 WEB_WHERE = "Notification settings"
@@ -419,6 +420,8 @@ def after_sync(settings, conn, data_dir, report=None, check=None, failure=None, 
         cfg = config(settings, conn)
         if cfg is None:
             return False
+        if failure and budgeting.get_setting(conn, FAILURE_SENT_KEY, cast=str) == today.isoformat():
+            return False  # hourly retries: one failure message a day is enough
         if cfg["when"] == "monthly" and budgeting.get_setting(conn, MONTHLY_SENT_KEY, cast=str) == today.isoformat()[:7]:
             return False  # already sent this month (the Mac restarted on the 1st, say)
         if cfg["when"] == "weekly" and budgeting.get_setting(conn, WEEKLY_SENT_KEY, cast=str) == week_key(today):
@@ -433,7 +436,10 @@ def after_sync(settings, conn, data_dir, report=None, check=None, failure=None, 
     except Exception as exc:  # noqa: BLE001  a notification must never fail the sync
         out(f"  Notification not sent: {type(exc).__name__}")
         return False
-    if cfg["when"] in ("monthly", "weekly"):
+    if failure:
+        budgeting.set_setting(conn, FAILURE_SENT_KEY, today.isoformat())
+        conn.commit()
+    elif cfg["when"] in ("monthly", "weekly"):  # a failure message isn't the recap: a later retry still sends it
         sent = (MONTHLY_SENT_KEY, today.isoformat()[:7]) if cfg["when"] == "monthly" else (WEEKLY_SENT_KEY, week_key(today))
         budgeting.set_setting(conn, *sent)
         conn.commit()

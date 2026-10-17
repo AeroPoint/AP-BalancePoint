@@ -216,7 +216,7 @@ def dashboard():
     today = date.today()
     pace = budgeting.pace(conn, today) if view == "month" and (year, month) == (today.year, today.month) and not acct else None
     return render_template(
-        "dashboard.html", card=card, pace=pace, saving=budgeting.savings_rate(conn, start, end, acct),
+        "dashboard.html", card=card, pace=pace, sync_behind=simplefin_import.behind(conn) if pace else None, saving=budgeting.savings_rate(conn, start, end, acct),
         year_groups=budgeting.by_group(conn, start, end, acct)[0] if view == "year" else None,
         view=view, year=year, month=month, months=MONTHS, acct=acct, accounts=_accounts(conn),
         years=sorted(set(reports.years(conn)) | {year}, reverse=True),
