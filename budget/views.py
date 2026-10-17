@@ -385,6 +385,41 @@ def unsplit_transaction(tid):
     return (jsonify(ok=True), 200) if done else (jsonify(error="That charge isn't split."), 400)
 
 
+def _pending_rows(conn, args, page):
+    """This month's still-pending charges for the top of Transactions, following its filters ([] when the
+    setting is off, on later pages, or when a filter can't apply to a charge that hasn't posted)."""
+    if page != 1 or not budgeting.setting_on(conn, budgeting.SHOW_PENDING):
+        return []
+    if any(args.get(k) for k in ("source", "name", "one_off", "flag")):
+        return []
+    today = date.today()
+    period = args.get("period", "")
+    if period and not today.isoformat().startswith(period):
+        return []
+    items = budgeting.pending_now(conn, today)
+    if not items:
+        return []
+    accounts = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM accounts")}
+    categories = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM categories")}
+    engine = RuleEngine(conn)
+    wanted_accounts = {i for i in (_int(v) for v in args.getlist("account")) if i}
+    category, q = args.get("category", ""), args.get("q", "").strip().lower()
+    out = []
+    for it in items:
+        name = it.get("name") or engine.resolve(it["raw"], None, None, it["amount"], it["account_id"]).name
+        if wanted_accounts and it["account_id"] not in wanted_accounts:
+            continue
+        if category == "none" and it.get("category_id") is not None:
+            continue
+        if _int(category) and it.get("category_id") != int(category):
+            continue
+        if q and q not in name.lower() and q not in (it["raw"] or "").lower():
+            continue
+        out.append({**it, "name": name, "account_name": accounts.get(it["account_id"], ""),
+                    "category_name": categories.get(it.get("category_id"))})
+    return out
+
+
 @bp.route("/transactions")
 def transactions():
     conn = get_db()
@@ -440,7 +475,7 @@ def transactions():
     ).fetchall()
     periods = [r[0] for r in conn.execute("SELECT DISTINCT substr(effective_date, 1, 7) FROM transactions ORDER BY 1 DESC")]
     return render_template(
-        "transactions.html", **_split_context(conn, rows),
+        "transactions.html", **_split_context(conn, rows), pending=_pending_rows(conn, args, page),
         rows=rows, summary=summary, page=page, pages=max(1, -(-summary["n"] // PER_PAGE)),
         categories=_categories(conn), accounts=_accounts(conn),
         periods=periods, years=sorted({p[:4] for p in periods}, reverse=True),
@@ -1646,6 +1681,8 @@ def bank_sync():
         accounts=[a for a in _accounts(conn) if not a["closed"]], last_sync=_sf_json(conn, SF_LAST_SYNC_KEY),
         log_tail=log_tail, log_updated=log_updated, stale_days=simplefin_import.STALE_DAYS,
         notify_line=_notify_line(),
+        pace_counts_pending=budgeting.setting_on(conn, budgeting.PACE_COUNTS_PENDING),
+        show_pending=budgeting.setting_on(conn, budgeting.SHOW_PENDING),
     )
 
 
@@ -1778,6 +1815,16 @@ def bank_sync_now():
     added = sum(a["added"] for a in report["accounts"])
     flash(f"Synced: {added} new transaction{'s' if added != 1 else ''}. Details below.", "ok")
     return redirect(url_for(".bank_sync") + "#last-sync")
+
+
+@bp.post("/bank-sync/pending")
+def bank_sync_pending():
+    conn = get_db()
+    for key in (budgeting.PACE_COUNTS_PENDING, budgeting.SHOW_PENDING):
+        budgeting.set_setting(conn, key, "1" if request.form.get(key) else "0")
+    conn.commit()
+    flash("Saved how pending charges are used.", "ok")
+    return redirect(url_for(".bank_sync") + "#pending")
 
 
 @bp.post("/bank-sync/disconnect")

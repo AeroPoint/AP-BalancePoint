@@ -249,8 +249,9 @@ def pending_this_month(conn, account_id, transactions, sync_from, today):
         if day < month_start or (sync_from and day < sync_from):
             continue
         amount, raw = round(float(t["amount"]), 2), clean_description(t.get("description"))
-        out.append({"account_id": account_id, "amount": amount, "raw": raw,
-                    "category_id": engine.resolve(raw, None, None, amount, account_id).category_id})
+        m = engine.resolve(raw, None, None, amount, account_id)
+        out.append({"account_id": account_id, "amount": amount, "raw": raw, "date": day, "name": m.name,
+                    "category_id": m.category_id})
     return out
 
 

@@ -156,6 +156,19 @@
 {% endif %}
 
 {% if connected %}
+<section class="panel" id="pending">
+  <div class="panel-head"><h2>Pending charges</h2></div>
+  <p class="muted">Charges the bank hasn't posted yet. They come with every sync and are replaced by the posted
+    charge when it clears.</p>
+  <form method="post" action="{{ url_for('main.bank_sync_pending') }}">
+    <label class="check"><input type="checkbox" name="pace_counts_pending" value="1"{% if pace_counts_pending %} checked{% endif %}>
+      The Overview's pace check counts this month's pending charges</label>
+    <label class="check"><input type="checkbox" name="show_pending" value="1"{% if show_pending %} checked{% endif %}>
+      Show them at the top of Transactions, marked Pending (not in its totals)</label>
+    <div class="form-actions"><button class="btn small">Save</button></div>
+  </form>
+</section>
+
 <section class="panel">
   <div class="panel-head">
     <h2>Disconnect</h2>

@@ -179,9 +179,33 @@ def scorecard(conn, year, month, accounts=None):
     }
 
 
+PACE_COUNTS_PENDING = "pace_counts_pending"  # "0" turns it off; unset means on
+SHOW_PENDING = "show_pending"  # "0" hides this month's pending charges on Transactions; unset means shown
+
+
+def setting_on(conn, key):
+    """A yes/no household setting that's on unless it was turned off."""
+    return get_setting(conn, key, cast=str) != "0"
+
+
+def pending_now(conn, today):
+    """This month's still-pending charges from the last bank sync, newest first ([] if none or another month)."""
+    import json
+    raw = conn.execute("SELECT value FROM settings WHERE key = 'pending_this_month'").fetchone()
+    try:
+        snap = json.loads(raw[0]) if raw else None
+    except (TypeError, ValueError):
+        return []
+    if not snap or snap.get("month") != today.isoformat()[:7]:
+        return []
+    return sorted(snap.get("items", []), key=lambda i: i.get("date") or "", reverse=True)
+
+
 def pending_flexible(conn, today):
     """Flexible spending in this month's still-pending charges, from the last bank sync's snapshot."""
     import json
+    if not setting_on(conn, PACE_COUNTS_PENDING):
+        return 0.0
     raw = conn.execute("SELECT value FROM settings WHERE key = 'pending_this_month'").fetchone()
     try:
         snap = json.loads(raw[0]) if raw else None

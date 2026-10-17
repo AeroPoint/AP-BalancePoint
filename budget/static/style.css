@@ -851,3 +851,8 @@ details.panel.tucked[open] > summary { margin-bottom: 12px; }
 .appearance-swatch[data-swatch="purple"] { background: #5a3f8f; }
 .appearance-swatch[data-swatch="rust"] { background: #9a4a1f; }
 .appearance-swatch[data-swatch="slate"] { background: #3d4a57; }
+
+/* this month's pending charges on Transactions */
+.pending-block .panel-head { padding: 14px 16px 0; flex-wrap: wrap; }
+.pending-block tr.is-pending td { color: var(--ink-2); font-style: italic; }
+.pending-block tr.is-pending .guess { font-style: normal; }

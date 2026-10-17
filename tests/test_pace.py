@@ -55,3 +55,43 @@ def test_this_months_pending_charges_count(conn):
     p = budgeting.pace(conn, date(2026, 3, 10))
     assert (p["pending"], p["spent"]) == (100, 700)
     assert budgeting.pace(conn, date(2026, 4, 2))["pending"] == 0  # a snapshot from last month is ignored
+
+
+def _snapshot(conn, items, month="2026-03"):
+    import json
+    budgeting.set_setting(conn, "pending_this_month", json.dumps({"month": month, "items": items}))
+    conn.commit()
+
+
+def test_pace_can_leave_pending_out(conn):
+    setup(conn, 600, 5000)
+    groceries = conn.execute("SELECT id FROM categories WHERE name = 'Groceries'").fetchone()[0]
+    _snapshot(conn, [{"account_id": 1, "amount": -80.0, "raw": "SAFEWAY", "category_id": groceries}])
+    assert budgeting.pace(conn, date(2026, 3, 10))["pending"] == 80
+    budgeting.set_setting(conn, budgeting.PACE_COUNTS_PENDING, "0")
+    p = budgeting.pace(conn, date(2026, 3, 10))
+    assert (p["pending"], p["spent"]) == (0, 600)
+
+
+def test_transactions_show_pending_marked_and_filtered(conn, client, monkeypatch):
+    """This month's pending charges sit above the list, marked Pending, out of its totals; the setting hides them."""
+    from datetime import date as real_date
+    from budget import views
+    today = real_date.today()
+    chk, card = account(conn, "Checking"), account(conn, "Card", "credit")
+    groceries = conn.execute("SELECT id FROM categories WHERE name = 'Groceries'").fetchone()[0]
+    _snapshot(conn, [
+        {"account_id": chk, "amount": -42.5, "raw": "CORNER MARKET 12", "name": "Corner Market", "date": today.isoformat(), "category_id": groceries},
+        {"account_id": card, "amount": -9.99, "raw": "STREAMFLIX", "date": today.isoformat(), "category_id": None},
+    ], month=today.isoformat()[:7])
+    html = client.get("/transactions").get_data(as_text=True)
+    assert "Corner Market" in html and "streamflix" in html.lower()
+    assert html.count('class="is-pending"') == 2 and "not in the totals" in html
+    assert client.get(f"/transactions?account={card}").get_data(as_text=True).count('class="is-pending"') == 1
+    assert client.get("/transactions?category=none").get_data(as_text=True).count('class="is-pending"') == 1
+    assert client.get("/transactions?q=corner").get_data(as_text=True).count('class="is-pending"') == 1
+    assert 'class="is-pending"' not in client.get("/transactions?period=2020-01").get_data(as_text=True)
+    assert 'class="is-pending"' not in client.get("/transactions?flag=check").get_data(as_text=True)
+    client.post("/bank-sync/pending", data={"pace_counts_pending": "1"})  # show_pending left unticked
+    assert 'class="is-pending"' not in client.get("/transactions").get_data(as_text=True)
+    assert budgeting.setting_on(conn, budgeting.PACE_COUNTS_PENDING)
