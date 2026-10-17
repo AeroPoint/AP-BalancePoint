@@ -18,6 +18,8 @@ follows under "What's in 0.1.0".
 - Optional notifications after the bank sync (email or ntfy): when there are warnings, daily, weekly or
   monthly; set up in the browser (Bank sync → set up notifications) or `[notify]`. Off until set up.
 - Tax time: questions for your accountant, written down per tax year and checked off when answered.
+- Pending charges: show this month's on Transactions (marked Pending, out of its totals) and choose whether
+  the pace check counts them, both on the Bank sync page.
 - Bank sync retries: the Mac's schedule tries again hourly until 21:00 when the 6:00 sync fails
   (`run.py simplefin-synced-today` for other schedulers), a failure is reported once a day, and the
   Overview says when the bank data is behind.
