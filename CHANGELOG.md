@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Phones: the Accounts and Upload pages no longer come out wider than the screen (the phone zoomed the whole
+  page out), and no page can get wider than the screen.
+- Phones: the bottom tab bar steps aside while typing and is re-pinned afterwards, instead of scrolling with
+  the page or staying stuck partway up the screen (iOS).
+
 ## [0.1.0] - 2026-10-04
 
 The first public release. The last changes before it are listed first; everything the app does

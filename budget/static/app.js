@@ -448,3 +448,25 @@ document.querySelectorAll(".page-head .sub").forEach((el) => {
   });
   el.title = "Tap to read more";
 });
+
+// Phone tab bar: while the keyboard is up iOS lets fixed bars scroll with the page, and it can leave the bar
+// stuck partway up the screen afterwards. Hide it while typing, and re-pin it when the keyboard or the
+// browser's toolbar changes the visible area.
+(() => {
+  const bar = document.querySelector(".tabbar");
+  if (!bar || !matchMedia("(pointer: coarse)").matches) return;
+  const root = document.documentElement;
+  const typesText = (el) => el && (el.tagName === "TEXTAREA" ||
+    (el.tagName === "INPUT" && /^(text|search|number|email|password|tel|url)$/.test(el.type)));
+  const repin = () => requestAnimationFrame(() => { bar.style.display = "none"; void bar.offsetHeight; bar.style.display = ""; });
+  document.addEventListener("focusin", (e) => { if (typesText(e.target)) root.classList.add("typing"); });
+  document.addEventListener("focusout", () => setTimeout(() => {
+    if (!typesText(document.activeElement) && root.classList.contains("typing")) { root.classList.remove("typing"); repin(); }
+  }, 50));
+  let last = window.visualViewport?.height;
+  window.visualViewport?.addEventListener("resize", () => {
+    if (Math.abs(visualViewport.height - last) > 1 && visualViewport.scale === 1) repin();
+    last = visualViewport.height;
+  });
+  window.addEventListener("pageshow", (e) => { if (e.persisted) { root.classList.remove("typing"); repin(); } });
+})();

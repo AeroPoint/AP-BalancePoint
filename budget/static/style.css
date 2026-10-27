@@ -227,6 +227,15 @@ code { font-size: 0.9em; background: var(--accent-wash); padding: 1px 5px; borde
   .step { width: 44px; height: 44px; }
   .seg a { padding: 10px 14px; }
   input[type="checkbox"] { width: 22px; height: 22px; }
+  /* A long account name in a dropdown mustn't push the page wider than the phone. */
+  .field { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+  .field > select, .field > input[type="file"] { max-width: 100%; }
+  /* Anything too wide scrolls in its own box; the page itself never gets wider than the phone (a wider page
+     lets the phone zoom out, and the tab bar then drifts with the page). */
+  html { overflow-x: clip; }
+  /* Typing (app.js): the keyboard takes the bottom of the screen, so the tab bar steps aside. */
+  .typing .tabbar { display: none; }
+  .typing .bj-form > .form-actions { bottom: 0; }
 }
 
 /* Phones: 16px inputs (so iOS doesn't zoom), bigger tap targets, transactions as cards. */
@@ -330,7 +339,7 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent);
 
 /* ------------------------------------------------------------ tables */
 .table-wrap {
-  overflow-x: auto;
+  position: relative; overflow-x: auto;  /* relative: hidden labels inside stay in the scroll box, not widening the page */
   background:
     linear-gradient(to right, var(--panel) 30%, transparent) left / 24px 100% no-repeat local,
     linear-gradient(to left, var(--panel) 30%, transparent) right / 24px 100% no-repeat local,
