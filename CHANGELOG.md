@@ -5,7 +5,32 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-31
+## [0.1.1] - 2026-10-31
+
+### Added
+- Notifications: a weekly recap (pick the day), daily or monthly as well as only-on-warnings, and set up in
+  the browser (Bank sync → set up notifications); `[notify]` in `personal.toml` still wins.
+- Tax time: questions for your accountant, written down per tax year and checked off when answered.
+- Tax time: a Rental section, rental income against ticked costs, with mortgage payments split into
+  interest, principal and escrow from the loan's terms (principal isn't a cost).
+- Merchant dictionary: "Sort by hand" (a merchant's charges always land in Categorize) and "Can be split"
+  (split a charge across categories: type the amounts you know and the rest is shared in proportion).
+- Appearance page: light, dark or automatic, and an accent color that also tints the background, remembered
+  per device.
+- Bank sync retries: the Mac's schedule tries again hourly until 21:00 when the 6:00 sync fails
+  (`run.py simplefin-synced-today` for other schedulers), a failure is reported once a day, and the
+  Overview says when the bank data is behind.
+- Pending charges: show this month's on Transactions (marked Pending, out of its totals) and choose whether
+  the pace check counts them, both on the Bank sync page.
+
+### Fixed
+- Phones: the Accounts and Upload pages no longer come out wider than the screen (the phone zoomed the whole
+  page out), and no page can get wider than the screen.
+- Phones: the bottom tab bar steps aside while typing and is re-pinned afterwards, instead of scrolling with
+  the page or staying stuck partway up the screen (iOS).
+- CI: the Docker build retries when Docker Hub has a hiccup, and the bank sync test passes at any hour.
+
+## [0.1.0] - 2026-10-04
 
 The first public release. The last changes before it are listed first; everything the app does
 follows under "What's in 0.1.0".
@@ -15,20 +40,7 @@ follows under "What's in 0.1.0".
   next expected date, and flags for new ones, price increases, missed and ended charges.
 - **Tax time** page: tax-checkbox items, business profit, income and "ask your accountant" notes for a
   year, with CSV downloads and a print layout.
-- Optional notifications after the bank sync (email or ntfy): when there are warnings, daily, weekly or
-  monthly; set up in the browser (Bank sync → set up notifications) or `[notify]`. Off until set up.
-- Tax time: questions for your accountant, written down per tax year and checked off when answered.
-- Pending charges: show this month's on Transactions (marked Pending, out of its totals) and choose whether
-  the pace check counts them, both on the Bank sync page.
-- Bank sync retries: the Mac's schedule tries again hourly until 21:00 when the 6:00 sync fails
-  (`run.py simplefin-synced-today` for other schedulers), a failure is reported once a day, and the
-  Overview says when the bank data is behind.
-- Appearance page: light, dark or automatic, and an accent color that also tints the background, remembered
-  per device.
-- Tax time: a Rental section, rental income against ticked costs, with mortgage payments split into
-  interest, principal and escrow from the loan's terms (principal isn't a cost).
-- Merchant dictionary: "Sort by hand" (a merchant's charges always land in Categorize) and "Can be split"
-  (split a charge across categories: type the amounts you know and the rest is shared in proportion).
+- Optional notifications after the bank sync (email or ntfy), off unless set up in `[notify]`.
 - Plan: a "keeping at least" amount for each backup account.
 - The pace check counts this month's still-pending charges.
 - Bank sync: use a new setup token while connected.
@@ -58,10 +70,6 @@ follows under "What's in 0.1.0".
 ### Fixed
 - The Mac scripts keep their executable bit in git (a merge had dropped it, so launchd couldn't
   start the app).
-- Phones: the Accounts and Upload pages no longer come out wider than the screen (the phone zoomed the whole
-  page out), and no page can get wider than the screen.
-- Phones: the bottom tab bar steps aside while typing and is re-pinned afterwards, instead of scrolling with
-  the page or staying stuck partway up the screen (iOS).
 
 ## What's in 0.1.0
 
@@ -102,5 +110,6 @@ Everything up to the first public release.
 - `python run.py demo`: a made-up demo household (Pat and Sam Smith) in its own `demo-data/` folder.
 - Test suite on made-up data, run by GitHub Actions on macOS, Windows and Linux.
 
-[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/AeroPoint/AP-BalancePoint/releases/tag/v0.1.0
