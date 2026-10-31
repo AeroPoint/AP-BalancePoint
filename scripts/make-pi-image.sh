@@ -4,11 +4,11 @@
 #
 #   scripts/make-pi-image.sh <raspios-lite-arm64.img.xz> [output.img]
 #
-# Asks for the Wi-Fi, a Tailscale auth key and (optional) an SSH public key; or set them beforehand as
-# PI_WIFI_NAME, PI_WIFI_PASSWORD, PI_TAILSCALE_KEY, PI_SSH_KEY_FILE, PI_HOSTNAME, PI_TIMEZONE, PI_COUNTRY.
+# Asks for the Wi-Fi, a Tailscale auth key, a SimpleFIN setup token and an SSH public key (all but the Wi-Fi
+# optional); or set them beforehand as PI_WIFI_NAME, PI_WIFI_PASSWORD, PI_TAILSCALE_KEY, PI_SIMPLEFIN_TOKEN, PI_SSH_KEY_FILE, PI_HOSTNAME, PI_TIMEZONE, PI_COUNTRY.
 # Flash the result with Raspberry Pi Imager (Operating System -> Use custom; say No to "OS customisation",
-# which would replace these settings) or any image writer. The image holds the Wi-Fi password and the
-# Tailscale key: delete it once the card is made.
+# which would replace these settings) or any image writer. The image holds the Wi-Fi password, the
+# Tailscale key and the SimpleFIN token: delete it once the card is made.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -36,6 +36,7 @@ fi
 ask PI_COUNTRY "Wi-Fi country code" US
 ask PI_TIMEZONE "Time zone" "$mac_tz"
 ask PI_TAILSCALE_KEY "Tailscale auth key (admin console -> Settings -> Keys; empty to skip)" "" secret
+ask PI_SIMPLEFIN_TOKEN "SimpleFIN setup token (bridge.simplefin.org; empty: paste it on Bank sync later)" "" secret
 ask PI_SSH_KEY_FILE "SSH public key for maintenance (empty: no SSH)" "$(ls ~/.ssh/id_ed25519.pub 2>/dev/null || true)"
 [[ "$PI_HOSTNAME" =~ ^[a-z][a-z0-9-]{0,30}$ ]] || { echo "The name: lower-case letters, digits and hyphens." >&2; exit 1; }
 [ -z "$PI_SSH_KEY_FILE" ] || [ -s "$PI_SSH_KEY_FILE" ] || { echo "No SSH key at $PI_SSH_KEY_FILE." >&2; exit 1; }
@@ -55,6 +56,7 @@ mkdir -p "$boot/balancepoint"
 cp pi/setup.sh pi/update.sh "$boot/balancepoint/"
 printf 'APP_USER=budget\nREPO=%s\nPORT=80\n' "${PI_REPO:-https://github.com/AeroPoint/AP-BalancePoint.git}" > "$boot/balancepoint/settings.env"
 [ -z "$PI_TAILSCALE_KEY" ] || printf '%s' "$PI_TAILSCALE_KEY" > "$boot/balancepoint/tailscale-authkey"
+[ -z "$PI_SIMPLEFIN_TOKEN" ] || printf '%s' "$PI_SIMPLEFIN_TOKEN" > "$boot/balancepoint/simplefin-token"
 if [ -n "$PI_SSH_KEY_FILE" ]; then cp "$PI_SSH_KEY_FILE" "$boot/balancepoint/authorized_keys"; : > "$boot/ssh"; fi
 # The image's placeholder user becomes "budget", with no password at all ("*" can't be typed): SSH is key-only.
 echo 'budget:*' > "$boot/userconf.txt"
@@ -106,5 +108,5 @@ diskutil unmount "$boot" >/dev/null
 hdiutil detach "$dev" >/dev/null; trap - EXIT
 echo
 echo "Made $out. Flash it to a microSD card (or USB drive) with Raspberry Pi Imager: Choose OS -> Use custom,"
-echo "and answer No to OS customisation. Then delete $out: it holds the Wi-Fi password and the Tailscale key."
+echo "and answer No to OS customisation. Then delete $out: it holds the Wi-Fi password and the keys."
 echo "First boot takes about 15 minutes; then http://$PI_HOSTNAME opens on a phone with Tailscale on."

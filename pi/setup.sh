@@ -64,6 +64,26 @@ if [ ! -d "$APP/data/.git" ]; then   # data/ is its own git repo: snapshots befo
 fi
 install -m 755 "$CARD/update.sh" /usr/local/sbin/balancepoint-update
 
+# A SimpleFIN setup token on the card: claim it (it works once) and keep only the access, as Bank sync would.
+# Exit 2 = never reached SimpleFIN, so the token is still good: keep it and let the service try again.
+if [ -s "$CARD/simplefin-token" ]; then
+  echo "Connecting the bank sync..."
+  rc=0
+  (cd "$APP" && as_app .venv/bin/python -c '
+import sys
+from budget import simplefin_import as sf
+try:
+    sf.save_access_url(sys.argv[1], sf.claim_setup_token(sys.stdin.read()))
+except sf.SimpleFinError as exc:
+    print(exc)
+    sys.exit(2 if str(exc).startswith(("Couldn'"'"'t reach", "Cloudflare blocked")) else 1)
+print("Bank sync connected; pick which account is which on the Bank sync page.")
+' "$APP/data" < "$CARD/simplefin-token") || rc=$?
+  [ "$rc" = 2 ] && { echo "Trying the bank sync again soon."; exit 1; }
+  [ "$rc" = 0 ] || echo "Make a new setup token at bridge.simplefin.org and paste it on the Bank sync page."
+  shred -u "$CARD/simplefin-token"
+fi
+
 echo "Starting services..."
 cat > /etc/systemd/system/balancepoint.service <<EOF
 [Unit]
