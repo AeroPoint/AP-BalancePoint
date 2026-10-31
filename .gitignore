@@ -19,3 +19,7 @@ __pycache__/
 # Claude Code agent worktrees
 .claude/
 *.log
+
+# Raspberry Pi images made by scripts/make-pi-image.sh hold a Wi-Fi password
+*.img
+*.img.xz

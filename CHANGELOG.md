@@ -5,6 +5,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- A Raspberry Pi for someone else: `scripts/make-pi-image.sh` makes a Raspberry Pi OS image that sets
+  itself up on first boot (Tailscale, the app on port 80, the daily sync, security updates) and moves to
+  each new release weekly, going back if the new one doesn't start (`pi/`).
+
 ## [0.1.1] - 2026-10-31
 
 ### Added

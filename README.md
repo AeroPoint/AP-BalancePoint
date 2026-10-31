@@ -163,6 +163,39 @@ For the app to come back after a power cut, the Mac needs to log in to that acco
 On Linux, a systemd user service running `.venv/bin/python run.py serve --phones --no-browser` from
 the app folder does the same job.
 
+### A Raspberry Pi for someone else
+
+To give another household (parents, say) their own copy that needs nothing from them but plugging it in:
+a Raspberry Pi (a Pi 4 with 1 GB is plenty; a Pi 3 A+ or B+, Zero 2 W or Pi 5 work too), its official
+power supply, and a microSD card (8 GB or more) or USB drive. Their data stays theirs: it lives on
+their Pi and only their phones can reach it.
+
+**With them, before they go** (about 20 minutes):
+1. They make a free [Tailscale](https://tailscale.com) account, and install the Tailscale app on their
+   phones, signed in to it.
+2. In Tailscale's admin page, Settings, Keys, they make an **auth key** (not reusable, pre-approved). It lets
+   one device join their network once, within its expiry (90 days at most).
+3. Note their Wi-Fi name and password exactly (or plan on an Ethernet cable).
+
+**Make the card** (on a Mac): download Raspberry Pi OS Lite (64-bit) from raspberrypi.com, then
+`scripts/make-pi-image.sh <the .img.xz>`. It asks for the Wi-Fi, the auth key and, optionally, an SSH
+public key of yours, and makes `balancepoint-pi.img` in Downloads. Write it to the card with
+[Raspberry Pi Imager](https://www.raspberrypi.com/software/) (Choose OS, Use custom; answer No to OS
+customisation, which would replace these settings), then delete the image: it holds the Wi-Fi password
+and the key.
+
+**At their home:** card in, power (and Ethernet) plugged in. In about 15 minutes `http://budget` opens
+on their phones (add it to the home screen). They connect their banks on **Bank sync** with a
+[SimpleFIN Bridge](https://beta-bridge.simplefin.org) setup token, so nobody else sees it.
+
+What the card sets up (`pi/setup.sh`, on the first boot, retrying until it has worked): Tailscale, the app
+from the newest release on port 80, the 6:00 bank sync with hourly retries and `data/` committed before
+and after, operating-system security updates, and a weekly move to the newest release (`pi/update.sh`:
+release tags only, and back to the old version if the new one doesn't start). If it doesn't come up,
+`balancepoint/setup.log` on the card's boot partition says how far it got (read it in any computer).
+SSH, if you added a key, takes only that key, and reaches the Pi only when they share it with you
+from Tailscale's admin page (Machines, the Pi, Share), which they can undo.
+
 ### Run it with Docker
 
 ```
@@ -644,7 +677,8 @@ budget/
   views.py              pages and JSON endpoints
   auth.py               optional password and extra trusted networks (README: Security)
   templates/, static/
-scripts/                personal-data check, opt-in git hook, public-copy builder
+scripts/                personal-data check, opt-in git hook, public-copy builder, Pi image maker
+pi/                     first-boot setup and weekly updates for a Raspberry Pi (README: A Raspberry Pi for someone else)
 tests/                  pytest suite on made-up data
 data/                   (git-ignored) budget.db, personal.toml, uploads/, source/
 Dockerfile, docker-compose.yml   run it in a container (README: Run it with Docker)
