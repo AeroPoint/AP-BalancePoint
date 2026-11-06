@@ -83,6 +83,16 @@
     });
   });
 
+  // Categorize: an Amazon charge's suggested category (from items like its own) is one tap.
+  document.querySelectorAll(".use-suggestion").forEach((button) => {
+    button.addEventListener("click", () => {
+      const select = button.closest("td").querySelector(".cat-select");
+      select.value = button.dataset.category;
+      select.dispatchEvent(new Event("change"));
+      button.remove();
+    });
+  });
+
   // ---------------------------------------------------------------- transactions: rename
   document.querySelectorAll("tr[data-id] .name-edit").forEach((button) => {
     button.addEventListener("click", () => {
@@ -277,7 +287,7 @@
         current = JSON.parse(button.dataset.split);
         splitDialog.querySelector(".split-total").textContent = `${current.total < 0 ? "−" : "+"}${money(Math.round(Math.abs(current.total) * 100))}`;
         lines.innerHTML = "";
-        if (current.lines.length) current.lines.forEach((l) => addLine(l.category_id, l.amount.toFixed(2)));
+        if (current.lines.length) current.lines.forEach((l) => addLine(l.category_id, l.amount == null ? "" : l.amount.toFixed(2)));
         else { addLine(); addLine(); }
         splitDialog.querySelector(".split-undo").hidden = !current.split;
         update();

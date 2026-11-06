@@ -73,6 +73,41 @@
   </section>
 </div>
 
+<div class="split">
+  <section class="panel">
+    <div class="panel-head"><h2>Amazon orders</h2></div>
+    <form method="post" action="{{ url_for('main.upload_amazon') }}" enctype="multipart/form-data" class="stack">
+      <p class="muted">Shows what each Amazon charge paid for, suggests categories from items you sorted before, and
+        starts the Split form for mixed orders. Charges are matched by amount and date; ones that don't match stay as they are.</p>
+      <label class="field">
+        <span>Amazon's order history</span>
+        <input type="file" name="orders" accept=".zip,.csv,application/zip,text/csv" required>
+        <small>The ZIP itself, or the Order History CSV inside it. Upload a newer one any time: matches already made stay.
+          The file isn't kept; only each item's order, dates, name and amount are.</small>
+      </label>
+      <div><button class="btn primary">Upload Amazon orders</button></div>
+    </form>
+    {% if amazon_status.items %}
+    <p class="muted">{{ '{:,}'.format(amazon_status.items) }} items in {{ '{:,}'.format(amazon_status.orders) }} orders
+      ({{ amazon_status.first }} to {{ amazon_status.last }}), matched to {{ '{:,}'.format(amazon_status.charges) }} charges.</p>
+    <form method="post" action="{{ url_for('main.forget_amazon') }}" data-confirm="Remove all Amazon order items? Transactions and their categories stay.">
+      <button class="btn small quiet danger">Remove Amazon order data</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="panel steps">
+    <div class="panel-head"><h2>Getting your Amazon orders</h2></div>
+    <ol>
+      <li>On amazon.com, open Account, then <strong>Request Your Data</strong> (under Data and Privacy).</li>
+      <li>Choose <strong>Your Orders</strong> and submit, then confirm with the link Amazon emails you.</li>
+      <li>In a few hours to a few days Amazon emails a download link. Download the ZIP.</li>
+      <li>Upload it here. A household with two Amazon accounts uploads both.</li>
+    </ol>
+    <p class="muted">Turn on “Sort by hand” and “Can be split” for Amazon in the Merchant dictionary, so its charges wait in Categorize with their items.</p>
+  </section>
+</div>
+
 {% if sheet_configured %}
 <section class="panel">
   <div class="panel-head">

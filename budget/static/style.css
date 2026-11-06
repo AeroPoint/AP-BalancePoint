@@ -363,6 +363,8 @@ table.ledger { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 .date { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .merchant { min-width: 12rem; }
 .raw { display: block; max-width: 18rem; overflow: hidden; color: var(--muted); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
+/* What an Amazon charge paid for: the whole list, wrapped. */
+.raw.amazon-items { max-width: 26rem; overflow-wrap: anywhere; white-space: normal; }
 .name-edit { padding: 0; border: 0; border-bottom: 1px dashed transparent; background: none; font-weight: 500; text-align: left; cursor: text; }
 .name-edit:hover { border-bottom-color: var(--ink-2); }
 .date-edit { padding: 0; border: 0; border-bottom: 1px dashed transparent; background: none; color: inherit; font-variant-numeric: tabular-nums; cursor: text; }

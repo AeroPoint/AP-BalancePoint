@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_options, split_controls, split_dialog %}
+{% from "_macros.html" import amazon_list, category_options, split_controls, split_dialog %}
 {% block title %}Transactions{% endblock %}
 {% block content %}
 <header class="page-head">
@@ -40,7 +40,7 @@
 
 {% set a = request.args %}
 <form class="filters" method="get">
-  <input type="search" name="q" value="{{ a.get('q', '') }}" placeholder="Search merchant, bank text or notes" aria-label="Search">
+  <input type="search" name="q" value="{{ a.get('q', '') }}" placeholder="Search merchant, bank text, notes or Amazon items" aria-label="Search">
   <select name="period" aria-label="Dates">
     <option value="">All dates</option>
     {% for y in years %}
@@ -125,6 +125,7 @@
           <td class="merchant">
             <button type="button" class="name-edit" title="Rename">{{ t.name }}</button>
             {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}
+            {{ amazon_list(amazon_items.get(t.id)) }}
             {% if t.pending %}<span class="guess" data-tip="Still pending at the bank. It counts in the month it happened; the posted charge will replace it.">pending</span>{% endif %}
             {{ split_controls(t, split_parts, split_forms) }}
             {% if t.import_id is none and not t.pending and t.split_of is none %}

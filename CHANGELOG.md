@@ -9,6 +9,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - A Raspberry Pi for someone else: `scripts/make-pi-image.sh` makes a Raspberry Pi OS image that sets
   itself up on first boot (Tailscale, the app on port 80, the daily sync, security updates) and moves to
   each new release weekly, going back if the new one doesn't start (`pi/`).
+- Amazon orders (Upload data): upload the ZIP from Amazon's Request Your Data and each Amazon charge shows
+  what it paid for, on Categorize and Transactions (and Transactions search finds item names). Charges are
+  matched by amount and date, allowing for a state delivery fee. Categorize suggests a category from items
+  you sorted before, and starts the Split form with each category's share for mixed orders.
+  `run.py import-amazon <file>` does the same from the command line.
 
 ## [0.1.1] - 2026-10-31
 

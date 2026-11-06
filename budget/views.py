@@ -10,7 +10,7 @@ from uuid import uuid4
 from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import blackjack, budgeting, business, personal, recurring, reports, seed, simplefin_import, splits, tax
+from . import amazon, blackjack, budgeting, business, personal, recurring, reports, seed, simplefin_import, splits, tax
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import BAD_DATES_NOTE, CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -135,6 +135,11 @@ def money_filter(value, cents=True):
         return "—"
     body = f"{abs(value):,.2f}" if cents else f"{abs(value):,.0f}"
     return ("−$" if round(value, 2) < 0 else "$") + body
+
+
+@bp.app_template_filter("amazon_item")
+def amazon_item_filter(item):
+    return amazon.item_label(item)
 
 
 @bp.app_template_filter("month_label")
@@ -427,8 +432,9 @@ def transactions():
     where, params = ["1 = 1"], []
     q = args.get("q", "").strip()
     if q:
-        where.append("(t.name LIKE ? OR t.raw_description LIKE ? OR t.notes LIKE ?)")
-        params += [f"%{q}%"] * 3
+        where.append("(t.name LIKE ? OR t.raw_description LIKE ? OR t.notes LIKE ? OR COALESCE(t.split_of, t.id) IN "
+                     "(SELECT transaction_id FROM amazon_items WHERE product LIKE ?))")
+        params += [f"%{q}%"] * 4
     category = args.get("category", "")
     if category == "none":
         where.append("t.category_id IS NULL")
@@ -476,6 +482,7 @@ def transactions():
     periods = [r[0] for r in conn.execute("SELECT DISTINCT substr(effective_date, 1, 7) FROM transactions ORDER BY 1 DESC")]
     return render_template(
         "transactions.html", **_split_context(conn, rows), pending=_pending_rows(conn, args, page),
+        amazon_items=amazon.items_for(conn, [t["id"] for t in rows]),
         rows=rows, summary=summary, page=page, pages=max(1, -(-summary["n"] // PER_PAGE)),
         categories=_categories(conn), accounts=_accounts(conn),
         periods=periods, years=sorted({p[:4] for p in periods}, reverse=True),
@@ -612,8 +619,22 @@ def categorize():
         single_ids,
     ).fetchall()
     guessed = conn.execute("SELECT COUNT(*) FROM transactions WHERE category_source = 'mcc'").fetchone()[0]
+    context = _split_context(conn, singles)
+    items = amazon.items_for(conn, [t["id"] for t in singles])
+    suggested = {}
+    if items:
+        suggester = amazon.Suggester(conn)
+        for t in singles:
+            if t["id"] not in items or t["split_total"] is not None or t["split_of"] is not None:
+                continue
+            category_id, lines = suggester.for_charge(items[t["id"]], -t["amount"])
+            if category_id:
+                suggested[t["id"]] = category_id
+            elif lines and t["id"] in context["split_forms"]:
+                context["split_forms"][t["id"]] = {**context["split_forms"][t["id"]], "lines": lines}
     return render_template("categorize.html", groups=groups, mode=mode, categories=_categories(conn), guessed=guessed,
-                           singles=singles, singles_total=len(single_ids), **_split_context(conn, singles))
+                           singles=singles, singles_total=len(single_ids), amazon_items=items,
+                           amazon_suggested=suggested, **context)
 
 
 @bp.post("/api/merchants/category")
@@ -1301,6 +1322,9 @@ def upload():
         last_account_id=last_account["account_id"] if last_account else None,
         workbooks=sorted(p.name for p in Path(current_app.config["SOURCE_DIR"]).glob("*.xlsx")),
         sheet_configured=bool(personal.load(current_app.config["PERSONAL_CONFIG"]).spreadsheet),
+        amazon_status=conn.execute(
+            """SELECT COUNT(*) AS items, COUNT(DISTINCT order_id) AS orders, COUNT(DISTINCT transaction_id) AS charges,
+                      MIN(order_date) AS first, MAX(COALESCE(ship_date, order_date)) AS last FROM amazon_items""").fetchone(),
     )
 
 
@@ -1340,6 +1364,38 @@ def upload_excel():
            if result["loans_added"] else ""),
         "ok",
     )
+    return redirect(url_for(".upload"))
+
+
+@bp.post("/upload/amazon")
+def upload_amazon():
+    conn = get_db()
+    f = request.files.get("orders")
+    if not f or not f.filename:
+        flash("Choose the ZIP from Amazon's Request Your Data (or the Order History CSV in it).", "error")
+        return redirect(url_for(".upload"))
+    # Not kept in uploads/: the export also holds addresses and payment details.
+    try:
+        got = amazon.import_upload(conn, f.filename, f.read())
+    except amazon.AmazonFormatError as exc:
+        conn.rollback()
+        flash(f"{f.filename}: {exc}", "error")
+        return redirect(url_for(".upload"))
+    conn.commit()
+    flash(f"{f.filename}: {got['items']:,} items in {got['orders']:,} orders ({got['first']} to {got['last']}). "
+          f"Matched {got['matched']:,} more Amazon charges to their items"
+          + (f"; {got['unmatched']:,} Amazon charges have no order to match (older or newer than the export, "
+             "paid partly by gift card, or a digital purchase)." if got["unmatched"] else ".")
+          + " Categorize shows each charge's items.", "ok")
+    return redirect(url_for(".upload"))
+
+
+@bp.post("/upload/amazon/forget")
+def forget_amazon():
+    conn = get_db()
+    removed = conn.execute("DELETE FROM amazon_items").rowcount
+    conn.commit()
+    flash(f"Removed {removed:,} Amazon items. Your transactions and their categories are unchanged.", "ok")
     return redirect(url_for(".upload"))
 
 

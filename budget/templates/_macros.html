@@ -14,6 +14,11 @@
 {% if t.id in split_forms %}<button type="button" class="btn small quiet split-open" data-split="{{ split_forms[t.id]|tojson|forceescape }}">{{ 'Edit split' if part else 'Split' }}</button>{% endif %}
 {%- endmacro %}
 
+{# What an Amazon charge paid for, from the uploaded order history (amazon.py). #}
+{% macro amazon_list(items) -%}
+{% if items %}<span class="raw amazon-items" title="From your Amazon order history">{% for i in items %}{{ i|amazon_item }} ({{ i.total|money }}){{ ' · ' if not loop.last }}{% endfor %}</span>{% endif %}
+{%- endmacro %}
+
 {# The Split form, shared by every row on the page; app.js fills it in. #}
 {% macro split_dialog(categories) -%}
 <dialog id="split-dialog" class="split-dialog">

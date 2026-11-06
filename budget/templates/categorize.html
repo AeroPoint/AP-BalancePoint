@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import category_options, split_controls, split_dialog %}
+{% from "_macros.html" import amazon_list, category_options, split_controls, split_dialog %}
 {% block title %}Categorize{% endblock %}
 {% block content %}
 <header class="page-head">
@@ -37,10 +37,14 @@
           <td class="merchant">
             <a href="{{ url_for('main.transactions', name=t.name) }}">{{ t.name }}</a>
             {% if t.raw_description != t.name %}<span class="raw" title="{{ t.raw_description }}">{{ t.raw_description }}</span>{% endif %}
+            {{ amazon_list(amazon_items.get(t.id)) }}
             {% if t.notes %}<span class="raw">{{ t.notes }}</span>{% endif %}
             {{ split_controls(t, split_parts, split_forms) }}
           </td>
-          <td class="cat-cell"><select class="cat-select" aria-label="Category for {{ t.name }} on {{ t.effective_date }}">{{ category_options(categories, t.category_id) }}</select></td>
+          <td class="cat-cell"><select class="cat-select" aria-label="Category for {{ t.name }} on {{ t.effective_date }}">{{ category_options(categories, t.category_id) }}</select>
+            {% set guess = amazon_suggested.get(t.id) %}
+            {% if guess %}<button type="button" class="btn small quiet use-suggestion" data-category="{{ guess }}" title="From items like these you sorted before">Use {{ (categories|selectattr('id', 'equalto', guess)|first).name }}</button>{% endif %}
+          </td>
           <td class="source-tag">{{ t.account_name }}</td>
           <td class="num {{ 'in' if t.amount > 0 }}">{{ '+' if t.amount > 0 }}{{ t.amount|money }}</td>
         </tr>

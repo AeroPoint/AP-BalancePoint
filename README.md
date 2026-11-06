@@ -616,6 +616,23 @@ part is its own transaction on the same account and date, so balances and every 
 before. Edit split changes the parts, and Unsplit puts the charge back together. Pending charges can be
 split once they post.
 
+**Amazon orders.** A store that sells everything is easiest to sort when you can see what each charge
+bought. On amazon.com, open Account, then *Request Your Data*, choose *Your Orders* and confirm the email;
+a few hours to a few days later Amazon sends a ZIP. Upload it under **Amazon orders** on *Upload data*
+(or `run.py import-amazon <the ZIP>`), and every Amazon charge it can match lists its items on
+Categorize and Transactions, and Transactions search finds them by item name. Matching goes by amount
+and date: Amazon charges when a shipment leaves, so a charge is matched to the items of one shipment, a
+few shipments of one order, or the whole order that add up to it to the cent, posted within a few days
+of shipping. A charge may also be up to 50 cents more than its items, for state delivery fees the export
+leaves out. Charges that don't match (paid partly by gift card, digital purchases, refunds, or outside
+the export's dates) stay as they were. For Amazon charges waiting in Categorize, the app suggests a
+category ("Use Groceries") from items you sorted before: the same product, or one with a similar name.
+A charge whose items go to different categories gets its Split form filled in with each category's
+share, and the last line takes what's left, such as a delivery fee. Upload a newer export any time:
+matches already made stay, and new shipments are added. The export itself isn't kept. For each item
+the app stores only its order, dates, name, quantity and amount, and *Remove Amazon order data* deletes
+all of those.
+
 A category can give its transactions a **checkbox** (Categories page), like "Rental property" on Home &
 Garden or "Should be FSA/HSA" on Health & Fitness, for tax time: filter Transactions by it and a year for
 the total. Transactions marked "to check" have the box and a ✕ to dismiss; the filter lists them too.

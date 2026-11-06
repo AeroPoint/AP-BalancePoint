@@ -6,6 +6,7 @@
     python run.py hash-password            # a BUDGET_PASSWORD_HASH for the optional login
     python run.py import-excel data/source/budget.xlsx [--through 2024-12-31]
     python run.py import-csv path/to/export.csv --account "Rewards Card" [--kind credit]
+    python run.py import-amazon path/to/Your Orders.zip  # what each Amazon charge paid for
     python run.py simplefin-setup <setup token>          # one-time, from bridge.simplefin.org
     python run.py simplefin-map <id> --account "..."     # map each account simplefin-setup listed
     python run.py simplefin-sync                         # pull since each account's last sync (daily)
@@ -140,6 +141,8 @@ def main():
     csv_cmd.add_argument("--kind", default="checking", choices=["checking", "credit", "savings"])
     csv_cmd.add_argument("--purchases-positive", action="store_true",
                          help="this bank lists purchases as positive amounts (Amex, Discover); remembered on the account")
+    amzn = sub.add_parser("import-amazon", help="import Amazon's order history (Request Your Data ZIP or its CSV) and match it to Amazon charges")
+    amzn.add_argument("path")
     bj = sub.add_parser("import-blackjack", help="import the blackjack tracker workbook (sessions, research, training); keeps sessions logged in the app")
     bj.add_argument("path")
     bj.add_argument("--account", default="Blackjack Bankroll")
@@ -215,6 +218,18 @@ def main():
         print(f"{args.account}: {got['sessions']} sessions ({got['tables']} tables), net {got['net']:+,.2f}; "
               f"{got['research']} research rows, {got['notes']} notes, {got['training']} practice sessions. "
               "Sessions logged in the app were kept.")
+    elif args.command == "import-amazon":
+        from budget import amazon
+
+        conn = connect(app.config["DATABASE"])
+        try:
+            got = amazon.import_upload(conn, Path(args.path).name, Path(args.path).read_bytes())
+        except amazon.AmazonFormatError as exc:
+            sys.exit(f"{args.path}: {exc}")
+        conn.commit()
+        conn.close()
+        print(f"{got['items']:,} items in {got['orders']:,} orders ({got['first']} to {got['last']}); matched "
+              f"{got['matched']:,} more Amazon charges; {got['unmatched']:,} Amazon charges have no order to match.")
     elif args.command == "import-csv":
         conn = connect(app.config["DATABASE"])
         account_id = ensure_account(conn, args.account, args.kind)

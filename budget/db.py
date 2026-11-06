@@ -202,6 +202,21 @@ CREATE TABLE IF NOT EXISTS bj_notes (
     body   TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'app'  -- 'app', or the workbook sheet it came from
 );
+-- Items from Amazon's order history (amazon.py), each linked to the charge that paid for it once matched.
+CREATE TABLE IF NOT EXISTS amazon_items (
+    id             INTEGER PRIMARY KEY,
+    order_id       TEXT NOT NULL,
+    order_date     TEXT,                  -- YYYY-MM-DD
+    ship_date      TEXT,                  -- YYYY-MM-DD (the order date until it ships)
+    shipment       TEXT NOT NULL DEFAULT '',  -- tracking number(s): items that shipped together
+    product        TEXT NOT NULL,
+    asin           TEXT NOT NULL DEFAULT '',
+    quantity       INTEGER NOT NULL DEFAULT 1,
+    total          REAL NOT NULL,         -- what was owed for the line (price, tax, shipping, discounts)
+    transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_amazon_items_order ON amazon_items(order_id);
+CREATE INDEX IF NOT EXISTS ix_amazon_items_transaction ON amazon_items(transaction_id);
 CREATE TABLE IF NOT EXISTS bj_training (
     id      INTEGER PRIMARY KEY,
     date    TEXT NOT NULL,
