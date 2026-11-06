@@ -622,11 +622,12 @@ a few hours to a few days later Amazon sends a ZIP. Upload it under **Amazon ord
 (or `run.py import-amazon <the ZIP>`), and every Amazon charge it can match lists its items on
 Categorize and Transactions, and Transactions search finds them by item name. Matching goes by amount
 and date: Amazon charges when a shipment leaves, so a charge is matched to the items of one shipment, a
-few shipments of one order, or the whole order that add up to it to the cent, posted within a few days
-of shipping. A charge may also be up to 50 cents more than its items, for state delivery fees the export
-leaves out. Charges that don't match (paid partly by gift card, digital purchases, refunds, or outside
-the export's dates) stay as they were. For Amazon charges waiting in Categorize, the app suggests a
-category ("Use Groceries") from items you sorted before: the same product, or one with a similar name.
+few shipments of one order, or the whole order that add up to it to the cent. A charge may also be up to 50 cents more than its items, for state delivery fees the export
+leaves out, when that same difference turns up on several charges (a real fee repeats; a coincidence
+doesn't). Charges that don't match (paid partly by gift card, digital purchases, refunds, or outside
+the export's dates) stay as they were. Charges are matched from the order date (some are charged when ordered) to 10 days after
+shipping. For Amazon charges waiting in Categorize, the app suggests a category ("Use Groceries") for a
+product you've bought before, when every earlier purchase of it went to the same category.
 A charge whose items go to different categories gets its Split form filled in with each category's
 share, and the last line takes what's left, such as a delivery fee. Upload a newer export any time:
 matches already made stay, and new shipments are added. The export itself isn't kept. For each item

@@ -4,16 +4,16 @@ Amazon's "Request Your Data" (Your Account, Request Your Data, Your Orders) send
 row per item: order id, order and ship dates, product name, quantity and what was owed for it. Upload
 the ZIP (or the CSV in it) and each item is stored in amazon_items; then every Amazon charge is
 matched to the items it paid for, so Categorize can show "Kids' socks, USB-C cable" instead of
-"Amazon $45.60", suggest a category from items like them that were sorted before, and start the
-Split form with each category's share.
+"Amazon $45.60", suggest a category for products bought before, and start the Split form with each
+category's share.
 
 Amazon charges the card when a shipment leaves, so one charge is usually one shipment (the items of an
 order that shipped together), sometimes a whole order or a few of its shipments at once. The charge
 code in the bank text (AMAZON MKTPL*AB12CD34E) doesn't appear anywhere in Amazon's data, so matching
-goes by amount and date: the items' total to the cent, the charge posted within a few days of the
-ship date, the closest date winning. Some states add a delivery fee to the charge that the export
+goes by amount and date: the items' total to the cent, the charge posted between the order date (a
+few days before, at most) and 10 days after shipping, the one nearest the ship date winning. Some states add a delivery fee to the charge that the export
 leaves out (Colorado's is under 50 cents), so a last pass allows a charge up to FEE_ALLOWANCE more than
-its items. Charges that don't match stay exactly as they were.
+its items when that same difference keeps turning up. Charges that don't match stay exactly as they were.
 
 Only what matching and the pages need is kept: no addresses, payment details or gift messages.
 """
@@ -28,17 +28,13 @@ from datetime import date, datetime, timedelta
 # Bank text of a charge Amazon could have itemized (not Prime, Kindle or other digital subscriptions,
 # whose amounts wouldn't match anyway).
 AMAZON_TEXT = re.compile(r"AMAZON|AMZN", re.IGNORECASE)
-DAYS_BEFORE, DAYS_AFTER = 3, 10      # how far the bank's date may be from the ship date
-FEE_ALLOWANCE = 0.50                 # a charge may be this much over its items (state delivery fees)
+DAYS_BEFORE, DAYS_AFTER = 3, 10      # the bank's date: from a few days before the order to 10 after shipping
+FEE_ALLOWANCE = 0.50                 # a charge may be this much over its items (state delivery fees),
+FEE_REPEATS = 3                      # when that same amount over turns up on at least this many charges
 MAX_SHIPMENTS = 8                    # orders with more shipments only match one shipment, or all of them
 MAX_CSV_BYTES = 100 * 1024 * 1024    # per file read out of the ZIP
 ORDER_FILE = re.compile(r"order[ _.]?history.*\.csv$", re.IGNORECASE)
 MISSING = {"", "not available", "not applicable", "n/a"}
-STOPWORDS = {
-    "the", "and", "for", "with", "pack", "count", "inch", "inches", "set", "pcs", "piece", "pieces", "size",
-    "black", "white", "new", "of", "in", "to", "by", "oz", "ounce", "ounces", "lb", "lbs", "per", "from",
-    "x", "pk", "ct", "large", "small", "medium", "compatible", "premium", "free", "color", "multi",
-}
 
 
 class AmazonFormatError(ValueError):
@@ -116,7 +112,7 @@ def parse_orders(text):
         "order_date": _column(header, "Order Date"),
         "ship_date": _column(header, "Ship Date"),
         "product": _column(header, "Product Name"),
-        "total": _column(header, "Total Owed"),
+        "total": _column(header, "Total Owed", "Total Amount"),  # "Total Amount" in exports from 2026 on
         "quantity": _column(header, "Quantity", "Original Quantity"),
         "asin": _column(header, "ASIN"),
         "status": _column(header, "Order Status"),
@@ -124,7 +120,8 @@ def parse_orders(text):
     }
     if None in (col["order_id"], col["product"], col["total"]) or (col["order_date"] is None and col["ship_date"] is None):
         raise AmazonFormatError(
-            "This doesn't look like Amazon's order history (it needs Order ID, Product Name, Total Owed and a date). "
+            "This doesn't look like Amazon's order history (it needs Order ID, Product Name, Total Owed or "
+            "Total Amount, and a date). "
             "Upload the ZIP from Request Your Data, or the Order History CSV inside it.")
     get = lambda row, key: row[col[key]].strip() if col[key] is not None and col[key] < len(row) else ""
     items = []
@@ -209,21 +206,23 @@ def _charges(conn):
 
 def _candidates(conn):
     """Every way unmatched items could have been charged: one shipment, a few of an order's shipments,
-    or the whole order. [(items' total, latest ship day, [item ids], number of shipments)]"""
+    or the whole order. [(items' total, latest ship day, [item ids], number of shipments, order day)]"""
     shipments = {}
     for r in conn.execute("SELECT * FROM amazon_items WHERE transaction_id IS NULL AND ship_date IS NOT NULL"):
         key = (r["order_id"], r["ship_date"], r["shipment"])
         shipments.setdefault(key, Shipment(r["order_id"], date.fromisoformat(r["ship_date"]))).items.append(r)
+    ordered = {r[0]: date.fromisoformat(r[1]) for r in conn.execute(
+        "SELECT order_id, MIN(COALESCE(order_date, ship_date)) FROM amazon_items GROUP BY order_id")}
     orders = {}
     for s in shipments.values():
         orders.setdefault(s.order_id, []).append(s)
     out = []
-    for group in orders.values():
+    for order_id, group in orders.items():
         sizes = range(1, len(group) + 1) if len(group) <= MAX_SHIPMENTS else (1, len(group))
         for n in sizes:
             for combo in itertools.combinations(group, n):
                 out.append((round(sum(s.total for s in combo), 2), max(s.day for s in combo),
-                            [i["id"] for s in combo for i in s.items], n))
+                            [i["id"] for s in combo for i in s.items], n, ordered.get(order_id, combo[0].day)))
     return out
 
 
@@ -231,19 +230,21 @@ def match(conn):
     """Link unmatched Amazon charges to the items they paid for. Returns how many charges matched.
 
     Passes, each claiming items before the next: exact amount on one shipment, exact amount on several
-    shipments of one order, then (for delivery fees) a charge a little over one shipment or order.
-    Within a pass, the charge whose date is nearest a candidate's ship date goes first.
+    shipments of one order, then a charge a few cents over a shipment or order, for a delivery fee.
+    A real fee is the same few amounts over and over (Colorado's has been 27 to 31 cents), while
+    chance near-misses are scattered, so the last pass takes only amounts over that turn up again and
+    again (FEE_REPEATS). Within a pass, the charge whose date is nearest a candidate's ship date goes
+    first, then the commoner fee.
     """
     charges = _charges(conn)
     candidates = _candidates(conn)
     by_cents = {}
     for n, cand in enumerate(candidates):
         by_cents.setdefault(round(cand[0] * 100), []).append(n)
-    fee_cents = range(1, round(FEE_ALLOWANCE * 100) + 1)
     passes = [  # (cents the charge may be over its items, which candidates)
         ((0,), lambda cand: cand[3] == 1),
         ((0,), lambda cand: cand[3] > 1),
-        (fee_cents, lambda cand: True),
+        (range(1, round(FEE_ALLOWANCE * 100) + 1), lambda cand: True),
     ]
     used, matched = set(), set()
     for overs, fits in passes:
@@ -255,10 +256,18 @@ def match(conn):
                 for n in by_cents.get(round(amount * 100) - over, ()):
                     cand = candidates[n]
                     gap = (day - cand[1]).days
-                    if -DAYS_BEFORE <= gap <= DAYS_AFTER and fits(cand):
-                        # Nearest first; a charge after the ship date beats one the same distance before it.
+                    # Usually charged when it ships, sometimes when it's ordered (preorders, some sellers).
+                    if (cand[4] - day).days <= DAYS_BEFORE and gap <= DAYS_AFTER and fits(cand) and not used.intersection(cand[2]):
+                        # Nearest the ship date first; after shipping beats the same distance before it.
                         pairs.append((abs(gap) + (0.5 if gap < 0 else 0), over, tid, n))
-        for _, _, tid, n in sorted(pairs):
+        seen = {}
+        for _, over, tid, _ in pairs:
+            seen.setdefault(over, set()).add(tid)
+        common = {over: len(tids) for over, tids in seen.items()}
+        if overs != (0,):
+            top = max(common.values(), default=0)
+            common = {over: k for over, k in common.items() if k >= max(FEE_REPEATS, top * 0.1)}
+        for _, _, tid, n in sorted((p for p in pairs if p[1] in common), key=lambda p: (p[0], -common[p[1]])):
             ids = candidates[n][2]
             if tid in matched or used.intersection(ids):
                 continue
@@ -307,64 +316,36 @@ def item_label(item):
     return f"{item['quantity']}× {name}" if item["quantity"] > 1 else name
 
 
-def _words(text):
-    return {w for w in re.findall(r"[a-z][a-z0-9']+", str(text).lower()) if len(w) >= 3 and w not in STOPWORDS}
-
-
 class Suggester:
-    """Guesses an item's category from items on charges you already categorized.
+    """Suggests an item's category from earlier purchases of the same product (its ASIN).
 
     A charge with one category tells us every item on it belongs there; a split charge, which of its
-    items were in each part when an item's amount is exactly one part. The same product (ASIN) wins;
-    otherwise the item sharing the most telling words with it, where words that turn up on many
-    products count for less.
+    items were in each part when an item's amount is exactly one part. A product counts only when
+    every earlier purchase of it went to the same category: tried on one household's years of
+    Amazon history, guessing from similar product names, or from where a product usually went, was
+    wrong about as often as right, while a product always sorted the same way was a fair bet.
     """
 
     def __init__(self, conn):
-        self.known = []  # (asin, words, category id)
         rows = conn.execute(
-            """SELECT a.asin, a.product, a.total, t.id AS tid, t.category_id, t.split_total FROM amazon_items a
+            """SELECT a.asin, a.total, t.id AS tid, t.category_id, t.split_total FROM amazon_items a
                JOIN transactions t ON t.id = a.transaction_id
-               WHERE t.category_id IS NOT NULL AND t.category_source != 'none'""").fetchall()
+               WHERE a.asin != '' AND t.category_id IS NOT NULL AND t.category_source != 'none'""").fetchall()
         parts = {}
         for r in conn.execute(
                 """SELECT COALESCE(split_of, id) AS parent, amount, category_id FROM transactions
                    WHERE split_of IS NOT NULL OR split_total IS NOT NULL"""):
             parts.setdefault(r["parent"], []).append((round(-r["amount"], 2), r["category_id"]))
+        seen = {}
         for r in rows:
             category_id = r["category_id"]
             if r["split_total"] is not None:
                 category_id = next((c for amt, c in parts.get(r["tid"], []) if abs(amt - r["total"]) < 0.005), None)
-            if category_id:
-                self.known.append((r["asin"], _words(r["product"]), category_id))
-        votes = {}
-        for asin, _, c in self.known:
-            if asin:
-                votes.setdefault(asin, {}).setdefault(c, 0)
-                votes[asin][c] += 1
-        self.by_asin = {asin: max(cats, key=cats.get) for asin, cats in votes.items()}  # where it usually went
-        counts = {}
-        for _, words, _ in self.known:
-            for w in words:
-                counts[w] = counts.get(w, 0) + 1
-        total = max(len(self.known), 1)
-        self.weight = {w: 1.0 / (1 + n / total * 20) for w, n in counts.items()}
+            seen.setdefault(r["asin"], set()).add(category_id)
+        self.by_asin = {asin: next(iter(cats)) for asin, cats in seen.items() if len(cats) == 1 and None not in cats}
 
     def category(self, item):
-        if item["asin"] and item["asin"] in self.by_asin:
-            return self.by_asin[item["asin"]]
-        words = _words(item["product"])
-        if not words or not self.known:
-            return None
-        best, best_score = None, 0.0
-        for _, known_words, category_id in self.known:
-            shared = words & known_words
-            if len(shared) < 2:
-                continue
-            score = sum(self.weight.get(w, 1.0) for w in shared) / sum(self.weight.get(w, 1.0) for w in words | known_words)
-            if score > best_score:
-                best, best_score = category_id, score
-        return best if best_score >= 0.25 else None
+        return self.by_asin.get(item["asin"])
 
     def for_charge(self, items, total):
         """(one category for the whole charge or None, split lines or []) for an uncategorized charge.
@@ -375,9 +356,9 @@ class Suggester:
         if not items:
             return None, []
         guesses = [(self.category(i), i["total"]) for i in items]
-        cats = {c for c, _ in guesses}
-        if len(cats) == 1:
-            return next(iter(cats)), []
+        cats = {c for c, _ in guesses if c}
+        if len(cats) <= 1:
+            return next(iter(cats), None), []  # items it doesn't know don't stand in the way
         shares = {}
         for c, amount in guesses:
             shares[c] = round(shares.get(c, 0) + amount, 2)

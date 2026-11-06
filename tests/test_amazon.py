@@ -73,6 +73,16 @@ def test_reads_the_export_skipping_cancelled_and_free_lines():
     ]
 
 
+def test_reads_the_newer_layout():
+    """Exports from 2026 sort the columns by name, say Total Amount and Original Quantity."""
+    text = ("ASIN,Carrier Name & Tracking Number,Order Date,Order ID,Order Status,Original Quantity,Product Name,"
+            "Ship Date,Shipping Address,Total Amount,Unit Price\n"
+            "B000000009,USPS(9400000000000000000001),2026-03-01T12:00:00Z,111-0000009,Closed,3,Crayons,"
+            "2026-03-02T12:00:00Z,Pat Smith 1 Example St,10.74,3.33\n")
+    item, = amazon.parse_orders(text)
+    assert (item.product, item.quantity, item.total, item.ship_date) == ("Crayons", 3, 10.74, "2026-03-02")
+
+
 def test_a_file_that_isnt_an_order_history_is_refused():
     with pytest.raises(amazon.AmazonFormatError):
         amazon.parse_orders("Date,Description,Amount\n2026-03-01,Coffee,-4.00\n")
@@ -83,8 +93,10 @@ def test_a_file_that_isnt_an_order_history_is_refused():
 def test_matches_one_shipment_several_shipments_and_a_delivery_fee(conn, card):
     one = charge(conn, card, "2026-03-03", -20.00)
     both = charge(conn, card, "2026-03-12", -30.00)
-    fee = charge(conn, card, "2026-03-20", -15.29)
-    far = charge(conn, card, "2026-05-01", -7.50)  # weeks after its order shipped: not that order
+    fees = [charge(conn, card, f"2026-03-{d}", -(amount + 0.29)) for d, amount in (("20", 15.00), ("22", 4.00), ("24", 6.00))]
+    early = charge(conn, card, "2026-01-24", -259.38)  # charged at order time, with the same fee
+    stray = charge(conn, card, "2026-03-26", -9.07)    # 7 cents over an order: a coincidence, not a fee
+    far = charge(conn, card, "2026-05-01", -7.50)      # weeks after its order shipped: not that order
     coffee = txn(conn, card, "2026-03-03", -20.00, name="Pat's Coffee", raw_description="PATS COFFEE")
     got = amazon.import_upload(conn, "Order History.csv", export(
         line("111-0000001", "2026-03-01", "2026-03-02", "Board book", "12.00"),
@@ -92,13 +104,18 @@ def test_matches_one_shipment_several_shipments_and_a_delivery_fee(conn, card):
         line("111-0000002", "2026-03-08", "2026-03-09", "Dish soap", "10.00", tracking="AMZN_US(TBA2)"),
         line("111-0000002", "2026-03-08", "2026-03-10", "Sponges", "20.00", tracking="AMZN_US(TBA3)"),
         line("111-0000003", "2026-03-18", "2026-03-19", "Garden gloves", "15.00"),
-        line("111-0000004", "2026-03-18", "2026-03-19", "Tape", "7.50"),
+        line("111-0000005", "2026-03-20", "2026-03-21", "Glue sticks", "4.00"),
+        line("111-0000006", "2026-03-22", "2026-03-23", "Tape", "6.00"),
+        line("111-0000007", "2026-03-24", "2026-03-25", "Stickers", "9.00"),
+        line("111-0000004", "2026-03-18", "2026-03-19", "Twine", "7.50"),
+        line("111-0000020", "2026-01-23", "2026-01-30", "Textbook", "259.09"),
     ).encode())
-    assert got["matched"] == 3 and got["unmatched"] == 1
+    assert got["matched"] == 6 and got["unmatched"] == 2
     assert linked(conn, one) == ["Board book", "Crayons"]
     assert linked(conn, both) == ["Dish soap", "Sponges"]
-    assert linked(conn, fee) == ["Garden gloves"]
-    assert linked(conn, far) == [] and linked(conn, coffee) == []
+    assert [linked(conn, f) for f in fees] == [["Garden gloves"], ["Glue sticks"], ["Tape"]]
+    assert linked(conn, early) == ["Textbook"]
+    assert linked(conn, stray) == [] and linked(conn, far) == [] and linked(conn, coffee) == []
 
 
 def test_the_charge_nearest_the_ship_date_gets_the_items(conn, card):
@@ -135,17 +152,17 @@ def test_a_split_charge_still_matches_by_its_whole_amount(conn, card):
     assert linked(conn, tid) == ["Snacks"]
 
 
-def test_categorize_shows_items_and_suggests_from_ones_sorted_before(conn, card, client):
+def test_categorize_shows_items_and_suggests_for_products_bought_before(conn, card, client):
     groceries, home = category(conn, "Groceries"), category(conn, "Shopping & Personal")
     old = charge(conn, card, "2026-02-03", -9.00)
     old_mixed = charge(conn, card, "2026-02-10", -30.00)
     new = charge(conn, card, "2026-03-03", -11.00)
-    mixed = charge(conn, card, "2026-03-12", -40.29)
+    mixed = charge(conn, card, "2026-03-12", -40.00)
     amazon.import_upload(conn, "o.csv", export(
         line("111-0000001", "2026-02-01", "2026-02-02", "Organic Peanut Butter Crunchy Jar", "9.00", asin="B0PB"),
         line("111-0000002", "2026-02-08", "2026-02-09", "Lavender Dish Soap Refill Bottle", "20.00", asin="B0DS"),
         line("111-0000002", "2026-02-08", "2026-02-09", "Whole Bean Dark Roast Coffee", "10.00", asin="B0CF"),
-        line("111-0000003", "2026-03-01", "2026-03-02", "Organic Peanut Butter Smooth Jar", "11.00", asin="B0PB2"),
+        line("111-0000003", "2026-03-01", "2026-03-02", "Organic Peanut Butter Smooth Jar", "11.00", asin="B0PB"),
         line("111-0000004", "2026-03-10", "2026-03-11", "Lavender Dish Soap Refill Bottle", "25.00", asin="B0DS"),
         line("111-0000004", "2026-03-10", "2026-03-11", "Whole Bean Dark Roast Coffee", "15.00", asin="B0CF"),
     ).encode())
@@ -156,7 +173,7 @@ def test_categorize_shows_items_and_suggests_from_ones_sorted_before(conn, card,
     page = client.get("/categorize").get_data(as_text=True)
     assert "Organic Peanut Butter Smooth Jar ($11.00)" in page
     assert f'data-category="{groceries}"' in page  # one tap: Use Groceries
-    # The mixed one starts its Split form with each category's share, the last line taking what's left (the fee).
+    # The mixed one starts its Split form with each category's share, the last line taking what's left (a fee, rounding).
     form = next(f for f in splits_forms(page) if f["id"] == mixed)
     assert form["lines"] == [{"category_id": home, "amount": 25.0}, {"category_id": groceries, "amount": None}]
 
@@ -182,3 +199,15 @@ def test_upload_page_and_forgetting(conn, card, client):
     client.post("/upload/amazon/forget")
     assert conn.execute("SELECT COUNT(*) FROM amazon_items").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
+
+
+def test_no_suggestion_for_a_product_sorted_two_ways(conn, card):
+    groceries, shopping = category(conn, "Groceries"), category(conn, "Shopping & Personal")
+    a, b, new = (charge(conn, card, d, -5.00) for d in ("2026-01-03", "2026-02-03", "2026-03-03"))
+    amazon.import_upload(conn, "o.csv", export(
+        *(line(f"111-000003{n}", d, d, "Protein bars", "5.00", asin="B0BAR")
+          for n, d in enumerate(("2026-01-02", "2026-02-02", "2026-03-02")))).encode())
+    conn.execute("UPDATE transactions SET category_id = ?, category_source = 'manual' WHERE id = ?", (groceries, a))
+    conn.execute("UPDATE transactions SET category_id = ?, category_source = 'manual' WHERE id = ?", (shopping, b))
+    items = amazon.items_for(conn, [new])
+    assert amazon.Suggester(conn).for_charge(items[new], 5.00) == (None, [])
