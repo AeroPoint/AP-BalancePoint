@@ -800,6 +800,14 @@ tr.subtotal td { font-weight: 600; border-top: 1px solid var(--rule-strong); }
 .pace .good { color: var(--in); font-weight: 600; }
 .pace-meter { margin-bottom: 4px; }
 .pace-cushion { margin-top: 8px; font-size: 0.9rem; }
+.pace-head { margin-bottom: 10px; }
+.pace-line + .pace-line { margin-top: 10px; }
+.meter-fill.coming { opacity: 0.4; border-radius: 0 4px 4px 0; }
+.pace-coming { margin-top: 10px; font-size: 0.9rem; }
+.pace-coming summary { cursor: pointer; color: var(--muted, inherit); }
+.pace-coming ul { margin: 6px 0; padding-left: 1.1rem; }
+.pace-coming li { margin: 2px 0; }
+.pace-coming .date { color: var(--muted, inherit); margin-right: 4px; }
 .pace-warning { margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: var(--error-wash); color: var(--error); font-weight: 500; }
 /* tax time */
 .tax-questions { list-style: none; padding: 0; margin: 0 0 12px; }

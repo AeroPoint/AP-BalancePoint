@@ -331,7 +331,7 @@ output to `simplefin-sync.log` in the data folder and the Bank sync page shows t
 The Bridge is sometimes down for a while. To retry, also schedule it hourly through the day, guarded by
 `run.py simplefin-synced-today` (exits 0 once today's sync has worked), so a retry runs only after a
 failure and the Bridge's daily request limit is never at risk. The Overview says when the bank data is
-behind, so a stale pace check never looks like good news.
+behind, so a stale month forecast never looks like good news.
 
 - **macOS:** `install-mac.sh` (see *Optional: keep it running on an always-on Mac*) runs `sync-mac.sh`
   **every day at 6:00**, again every hour until 21:00 if that failed, and whenever the Mac starts up. If `data/` is a git repository, it
@@ -408,8 +408,8 @@ catching up past 90 days).
 #### Notifications (optional)
 
 After each `run.py simplefin-sync` (so after the scheduled one too), the app can send a short message:
-how flexible spending is going against the pace ("Day 4 of 31: flexible $200 of $5,500, $510 under
-pace"), any warnings, how the sync went (new transactions, stale accounts, errors), how many
+where the month is headed ("Day 4 of 31: flexible on track for $200 of $5,500 ($189 a day left); fixed
+on track for $3,900 of $4,000"), any warnings, how the sync went (new transactions, stale accounts, errors), how many
 transactions wait on the Categorize page, and a link to the app if you give one. It's **off** until you
 set it up; until then nothing is sent and the sync log looks exactly as before.
 
@@ -428,10 +428,10 @@ if set).
 one, it wins: the Notifications page then only shows it ("set in personal.toml") and lets you save the
 email password.
 
-- `when = "warnings"` (the default) sends only when there's a pace or cushion warning, a stale account
+- `when = "warnings"` (the default) sends only when there's a forecast or cushion warning, a stale account
   or a sync error; `"daily"` after every sync; `"weekly"` once a week on `weekday` (default
   `"monday"`; any day name): the last 7 days' spending by group (fixed, flexible, non-monthly) with
-  the top 3 flexible categories, the month's pace, warnings, new regular charges and price increases
+  the top 3 flexible categories, the month forecast, warnings, new regular charges and price increases
   from the Recurring page, what waits on Categorize and any sync problems; `"monthly"` on the 1st: last
   month's flexible spending against the target and whether cash grew or shrank, plus how the new month
   starts. Weekly and monthly messages go out once, even if the sync runs twice that day.
@@ -518,6 +518,28 @@ overtime, a planned purchase). When the account would drop below the cushion you
 shortfall comes from backup accounts in the order you pick (say savings, then a brokerage account),
 each down to its own "keeping at least" amount (blank means it can be emptied), and the page shows when
 that starts and how much each one gives. The Overview warns when a backup is below its amount.
+
+### The month forecast
+
+For the current month the Overview shows where **flexible** and **fixed** spending are headed against
+their targets (the flexible target and the plan's fixed spending): what's been spent so far, this month's
+pending charges from the last bank sync, and what's known to still be coming:
+
+- **Regular charges** from the Recurring page whose next cycle lands in this month and hasn't been
+  charged yet (a charge this month, posted or pending, near the item's price counts as that cycle).
+  Overdue ones count too, since a bill can post days late; ended and "Not recurring" ones don't.
+- **Changes you expect** on the Plan page that are spending with a fixed or flexible category ("Comes
+  out of"): a birthday party in Dining & Drinks, a camp deposit in Kids & Education. Each counts as
+  still coming until a charge within 15% of it shows up in that category (or sharing a word with its
+  name). These are inside the month's target, so they don't change the Plan's projection. Changes with
+  no category, or a non-monthly one, are on top of the plan: the projection takes them, and the
+  forecast lists them apart.
+
+Nothing else is guessed, so the flexible money left is shared over the days left: **$ a day left**,
+next to the plan's day (the target less regular flexible charges, over the month) and a usual day
+lately. It warns when a forecast passes its target, or when the day's allowance is well under the
+plan's (by more than $50 or 10% of the target over the rest of the month). The forecast's line goes in
+the sync log and the notifications.
 
 ## Recurring charges
 

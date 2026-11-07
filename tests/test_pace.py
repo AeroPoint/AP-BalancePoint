@@ -1,9 +1,9 @@
-"""The Overview's pace check: flexible spending against the month's pace, and the cushion."""
+"""The Overview's month forecast: spending so far plus what's known to be coming, against the targets."""
 from datetime import date
 
 from budget import budgeting
 
-from conftest import account, txn
+from conftest import account, category, txn
 
 
 def setup(conn, spent_by_day10, balance):
@@ -17,29 +17,78 @@ def setup(conn, spent_by_day10, balance):
     conn.commit()
 
 
-def test_under_pace(conn):
+def test_on_track(conn):
     setup(conn, 600, 5000)
-    p = budgeting.pace(conn, date(2026, 3, 10))
-    assert (p["day"], p["days"], p["spent"], p["expected"]) == (10, 31, 600, 1000)
-    assert p["ahead"] == -400 and p["warnings"] == []
+    p = budgeting.forecast(conn, date(2026, 3, 10))
+    assert (p["day"], p["days"], p["days_left"], p["spent"], p["forecast"]) == (10, 31, 22, 600, 600)
+    assert p["warnings"] == []
     assert round(p["per_day_left"], 2) == round(2500 / 22, 2)
 
 
-def test_ahead_of_pace_and_below_cushion_warn(conn, client):
+def test_short_of_the_plans_day_and_below_cushion_warn(conn):
     setup(conn, 1600, 2500)
-    p = budgeting.pace(conn, date(2026, 3, 10))
-    assert p["ahead"] == 600
-    assert any("ahead of pace" in w for w in p["warnings"])
+    chk = account(conn, "Joint Checking")
+    for month in ("2026-01", "2026-02"):
+        txn(conn, chk, f"{month}-10", -3720, "Groceries")
+    conn.commit()
+    p = budgeting.forecast(conn, date(2026, 3, 10))
+    assert (round(p["planned_per_day"]), round(p["per_day_left"]), round(p["usual_per_day"])) == (100, 68, 120)
+    assert any("$68 a day is left for flexible spending through Mar 31, under the plan's $100 a day." == w for w in p["warnings"])
     assert any("below" in w and "cushion" in w for w in p["warnings"])  # 2500 - 1600 = 900 < 2000
 
 
 def test_over_target(conn):
     setup(conn, 3300, 9000)
-    assert any("over the month" in w for w in budgeting.pace(conn, date(2026, 3, 10))["warnings"])
+    assert any("over the $3,100 target" in w for w in budgeting.forecast(conn, date(2026, 3, 10))["warnings"])
 
 
 def test_no_target_no_plan(conn):
-    assert budgeting.pace(conn, date(2026, 3, 10)) is None
+    assert budgeting.forecast(conn, date(2026, 3, 10)) is None
+
+
+def test_regular_bills_still_to_come_count(conn):
+    """A monthly bill not charged yet this month is still coming; one already charged, or pending, isn't."""
+    chk = account(conn, "Joint Checking")
+    budgeting.set_setting(conn, "plan_fixed", 1000)
+    budgeting.set_setting(conn, "flex_target", 3000)
+    for month in ("2025-11", "2025-12", "2026-01", "2026-02"):
+        txn(conn, chk, f"{month}-20", -100, "Bills & Utilities", name="Power Co")
+        txn(conn, chk, f"{month}-05", -60, "Bills & Utilities", name="Phone Co")
+        txn(conn, chk, f"{month}-07", -40, "Bills & Utilities", name="Insure Co")
+        txn(conn, chk, f"{month}-12", -25, "Giving", name="Charity")
+    txn(conn, chk, "2026-03-05", -60, "Bills & Utilities", name="Phone Co")  # already paid this month
+    conn.commit()
+    _snapshot(conn, [{"account_id": chk, "amount": -41.0, "raw": "INSURE CO", "name": "Insure Co",
+                      "date": "2026-03-08", "category_id": category(conn, "Bills & Utilities")}])
+    p = budgeting.forecast(conn, date(2026, 3, 10))
+    coming = {(c["name"], c["grp"]) for c in p["coming"]}
+    assert coming == {("Power Co", "fixed"), ("Charity", "flexible")}
+    fixed = p["groups"]["fixed"]
+    assert (fixed["spent"], fixed["pending"], fixed["upcoming"], fixed["forecast"]) == (101, 41, 100, 201)
+    assert p["groups"]["flexible"]["upcoming"] == 25
+    assert round(p["per_day_left"], 2) == round((3000 - 25) / 22, 2)
+
+
+def test_expected_changes_count_until_charged(conn):
+    """A plan change with a flexible or fixed category is still coming until a charge like it shows up; one
+    on top of the targets is listed apart and moves the plan, while one inside a target doesn't."""
+    setup(conn, 600, 5000)
+    conn.executemany("INSERT INTO plan_items (label, amount, start_month, end_month, category_id) VALUES (?, ?, ?, ?, ?)", [
+        ("Birthday party", -300, "2026-03", "2026-03", category(conn, "Dining & Drinks")),
+        ("Camp deposit", -200, "2026-03", "2026-03", category(conn, "Kids & Education")),
+        ("Property tax", -2000, "2026-03", "2026-03", None),
+        ("Property tax", -2000, "2026-04", "2026-04", None),
+        ("Gym fee", -50, "2026-04", "2026-04", category(conn, "Health & Fitness")),
+    ])
+    txn(conn, account(conn, "Joint Checking"), "2026-03-08", -190, "Kids & Education", name="Camp Co")  # the camp deposit
+    conn.commit()
+    p = budgeting.forecast(conn, date(2026, 3, 10))
+    assert [(c["name"], c["amount"], c["grp"]) for c in p["coming"]] == [("Birthday party", 300, "flexible")]
+    assert p["forecast"] == 600 + 190 + 300
+    assert [(e["label"], e["made"]) for e in p["outside"]] == [("Property tax", False)]
+    budgeting.set_setting(conn, "plan_income", 1000)
+    rows = budgeting.project(conn, months=2, today=date(2026, 3, 10))["rows"]
+    assert rows[0]["key"] == "2026-04" and rows[0]["adjust"] == -2000  # the gym fee is inside April's target
 
 
 def test_this_months_pending_charges_count(conn):
@@ -52,9 +101,9 @@ def test_this_months_pending_charges_count(conn):
              {"account_id": 1, "amount": -20.0, "raw": "NEW PLACE", "category_id": None},
              {"account_id": 1, "amount": -900.0, "raw": "RENT", "category_id": rent}]
     budgeting.set_setting(conn, "pending_this_month", json.dumps({"month": "2026-03", "items": items}))
-    p = budgeting.pace(conn, date(2026, 3, 10))
+    p = budgeting.forecast(conn, date(2026, 3, 10))
     assert (p["pending"], p["spent"]) == (100, 700)
-    assert budgeting.pace(conn, date(2026, 4, 2))["pending"] == 0  # a snapshot from last month is ignored
+    assert budgeting.forecast(conn, date(2026, 4, 2))["pending"] == 0  # a snapshot from last month is ignored
 
 
 def _snapshot(conn, items, month="2026-03"):
@@ -67,9 +116,9 @@ def test_pace_can_leave_pending_out(conn):
     setup(conn, 600, 5000)
     groceries = conn.execute("SELECT id FROM categories WHERE name = 'Groceries'").fetchone()[0]
     _snapshot(conn, [{"account_id": 1, "amount": -80.0, "raw": "SAFEWAY", "category_id": groceries}])
-    assert budgeting.pace(conn, date(2026, 3, 10))["pending"] == 80
+    assert budgeting.forecast(conn, date(2026, 3, 10))["pending"] == 80
     budgeting.set_setting(conn, budgeting.PACE_COUNTS_PENDING, "0")
-    p = budgeting.pace(conn, date(2026, 3, 10))
+    p = budgeting.forecast(conn, date(2026, 3, 10))
     assert (p["pending"], p["spent"]) == (0, 600)
 
 

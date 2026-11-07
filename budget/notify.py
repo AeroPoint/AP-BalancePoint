@@ -215,12 +215,19 @@ def sync_problems(report, failure=None):
     return out
 
 
-def pace_line(check):
-    if not check or check.get("spent") is None:
+def forecast_line(check):
+    """Day 6 of 30: flexible on track for $1,900 of $5,000 ($103 a day left); fixed $4,980 of $5,000."""
+    if not check or not check.get("groups"):
         return None
-    ahead = check["ahead"]
-    return (f"Day {check['day']} of {check['days']}: flexible {_money(check['spent'])} of {_money(check['target'])}, "
-            f"{_money(ahead)} {'over' if ahead > 0 else 'under'} pace")
+    parts = []
+    for g in check["groups"].values():
+        if not g["target"]:
+            continue
+        part = f"{g['label'].lower()} on track for {_money(g['forecast'])} of {_money(g['target'])}"
+        if g is check["groups"].get("flexible") and check.get("per_day_left") is not None and check["per_day_left"] >= 0:
+            part += f" ({_money(check['per_day_left'])} a day left)"
+        parts.append(part)
+    return f"Day {check['day']} of {check['days']}: " + "; ".join(parts) if parts else None
 
 
 def month_summary(conn, today):
@@ -311,9 +318,9 @@ def build(conn, cfg, today, report=None, check=None, failure=None, test=False):
         title = f"BalancePoint: {n} warning{'s' if n != 1 else ''}"
     else:
         title = "BalancePoint: daily"
-    pace = pace_line(check)
-    if pace:
-        lines.append(pace)
+    line = forecast_line(check)
+    if line:
+        lines.append(line)
     lines += warnings
     if weekly:
         lines += recurring_lines(conn, today)

@@ -219,7 +219,7 @@ def dashboard():
         row["average"] = averages.get(row["id"])
     card = budgeting.scorecard(conn, year, month, acct) if view == "month" else None
     today = date.today()
-    pace = budgeting.pace(conn, today) if view == "month" and (year, month) == (today.year, today.month) and not acct else None
+    pace = budgeting.forecast(conn, today) if view == "month" and (year, month) == (today.year, today.month) and not acct else None
     return render_template(
         "dashboard.html", card=card, pace=pace, sync_behind=simplefin_import.behind(conn) if pace else None, saving=budgeting.savings_rate(conn, start, end, acct),
         year_groups=budgeting.by_group(conn, start, end, acct)[0] if view == "year" else None,
@@ -287,6 +287,9 @@ def plan():
         backup_accounts=[budgeting.get_setting(conn, k, cast=int) for k in budgeting.BACKUP_KEYS],
         backup_mins=[budgeting.get_setting(conn, k) for k in budgeting.BACKUP_MIN_KEYS],
         this_month=date.today().strftime("%Y-%m"),
+        plan_items=conn.execute("SELECT * FROM plan_items ORDER BY start_month, id").fetchall(),
+        categories=conn.execute("SELECT id, name, COALESCE(grp, 'flexible') AS grp FROM categories WHERE kind = 'expense' "
+                                "ORDER BY sort, name").fetchall(),
     )
 
 
@@ -318,12 +321,13 @@ def save_plan_item():
         flash("A plan change needs a name, an amount per month and a first month.", "error")
         return redirect(url_for(".plan") + "#changes")
     iid = _int(form.get("id"))
+    category = _int(form.get("category_id")) if amount < 0 else None
     if iid:
-        conn.execute("UPDATE plan_items SET label = ?, amount = ?, start_month = ?, end_month = ? WHERE id = ?",
-                     (label, amount, start, end, iid))
+        conn.execute("UPDATE plan_items SET label = ?, amount = ?, start_month = ?, end_month = ?, category_id = ? WHERE id = ?",
+                     (label, amount, start, end, category, iid))
     else:
-        conn.execute("INSERT INTO plan_items (label, amount, start_month, end_month) VALUES (?, ?, ?, ?)",
-                     (label, amount, start, end))
+        conn.execute("INSERT INTO plan_items (label, amount, start_month, end_month, category_id) VALUES (?, ?, ?, ?, ?)",
+                     (label, amount, start, end, category))
     conn.commit()
     return redirect(url_for(".plan") + "#changes")
 
@@ -2023,7 +2027,7 @@ def notifications_save():
         return redirect(url_for(".notifications_page"))
     try:
         cfg = notify.config(settings, conn)
-        title, body = notify.build(conn, cfg, date.today(), check=budgeting.pace(conn), test=True)
+        title, body = notify.build(conn, cfg, date.today(), check=budgeting.forecast(conn), test=True)
         notify.send(cfg, data_dir, title, body)
     except (notify.NotifyError, personal.PersonalConfigError) as exc:
         flash(f"Test message not sent: {exc}", "error")

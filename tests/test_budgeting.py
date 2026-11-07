@@ -251,4 +251,4 @@ def test_pace_warns_when_a_backup_is_under_its_minimum(conn):
     checking, (savings,) = plan(conn, backups=((800.0, "Savings"),))
     budgeting.set_setting(conn, "plan_backup_min", 1000)
     assert any("Savings is at $800, $200 below the $1,000 the plan keeps in it." == w
-               for w in budgeting.pace(conn, TODAY)["warnings"])
+               for w in budgeting.forecast(conn, TODAY)["warnings"])

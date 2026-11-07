@@ -119,7 +119,7 @@ ntfy_url = "https://ntfy.example.net/a-long-random-topic-name"
 
 
 def on_track(conn):
-    """A plan with a target, on pace, no warnings."""
+    """A plan with a target, on track, no warnings."""
     chk = account(conn, "Joint Checking")
     conn.execute("INSERT INTO balances (account_id, month, amount, as_of, source) VALUES (?, '2026-03', 9000, '2026-03-01', 'manual')", (chk,))
     budgeting.set_setting(conn, "flex_target", 5500)
@@ -188,15 +188,15 @@ def test_warnings_mode_sends_only_with_warnings(app, conn, fake_smtp):
     s, dd = settings(app), data_dir(app)
     notify.save_password(dd, SECRET)
     lines = []
-    assert not notify.after_sync(s, conn, dd, report(), budgeting.pace(conn, today), today=today, out=lines.append)
+    assert not notify.after_sync(s, conn, dd, report(), budgeting.forecast(conn, today), today=today, out=lines.append)
     assert fake_smtp == [] and lines == []
-    assert notify.after_sync(s, conn, dd, report(stale=["Card"]), budgeting.pace(conn, today), today=today, out=lines.append)
+    assert notify.after_sync(s, conn, dd, report(stale=["Card"]), budgeting.forecast(conn, today), today=today, out=lines.append)
     body = fake_smtp[-1].msg.get_content()
     assert "STALE: Card" in body and fake_smtp[-1].msg["Subject"] == "BalancePoint: 1 warning"
-    # a pace warning is enough on its own
-    budgeting.set_setting(conn, "flex_target", 600)
-    assert notify.after_sync(s, conn, dd, report(), budgeting.pace(conn, today), today=today, out=lines.append)
-    assert "ahead of pace" in fake_smtp[-1].msg.get_content()
+    # a forecast warning is enough on its own
+    budgeting.set_setting(conn, "flex_target", 150)
+    assert notify.after_sync(s, conn, dd, report(), budgeting.forecast(conn, today), today=today, out=lines.append)
+    assert "over the $150 target" in fake_smtp[-1].msg.get_content()
     # and a failed sync
     assert notify.after_sync(s, conn, dd, failure="Couldn't reach https://u:pw@bridge.example.com/x", today=today, out=lines.append)
     failed = fake_smtp[-1].msg.get_content()
@@ -210,12 +210,12 @@ def test_daily_always_and_message_content(app, conn, fake_smtp):
     conn.commit()
     today = date(2026, 3, 4)
     notify.save_password(data_dir(app), SECRET)
-    assert notify.after_sync(settings(app), conn, data_dir(app), report(added=12), budgeting.pace(conn, today),
+    assert notify.after_sync(settings(app), conn, data_dir(app), report(added=12), budgeting.forecast(conn, today),
                              today=today, out=lambda line: None)
     msg = fake_smtp[0].msg
     body = msg.get_content()
     assert msg["Subject"] == "BalancePoint: daily"
-    assert "Day 4 of 31: flexible $200 of $5,500, $510 under pace" in body
+    assert "Day 4 of 31: flexible on track for $200 of $5,500 ($189 a day left)" in body
     assert "Bank sync: 12 new transactions." in body
     assert "To categorize: 2 (1 uncategorized, 1 guessed)." in body  # as the Categorize page counts them
     assert body.rstrip().endswith("http://budget-mac:5000")
@@ -232,7 +232,7 @@ def test_monthly_only_on_the_first_and_once(app, conn, fake_smtp):
     assert not notify.after_sync(s, conn, dd, report(stale=["Card"]), today=date(2026, 3, 2), out=print)
     assert fake_smtp == []
     first = date(2026, 3, 1)
-    assert notify.after_sync(s, conn, dd, report(), budgeting.pace(conn, first), today=first, out=print)
+    assert notify.after_sync(s, conn, dd, report(), budgeting.forecast(conn, first), today=first, out=print)
     msg = fake_smtp[0].msg
     assert msg["Subject"] == "BalancePoint: February 2026"
     body = msg.get_content()
@@ -270,12 +270,12 @@ def test_ntfy_posts_body_and_title(app, conn, posts):
     on_track(conn)
     today = date(2026, 3, 4)
     lines = []
-    assert notify.after_sync(settings(app), conn, data_dir(app), report(), budgeting.pace(conn, today),
+    assert notify.after_sync(settings(app), conn, data_dir(app), report(), budgeting.forecast(conn, today),
                              today=today, out=lines.append)
     req = posts[0]
     assert req.get_method() == "POST" and req.full_url == "https://ntfy.example.net/a-long-random-topic-name"
     assert req.get_header("Title") == "BalancePoint: daily"
-    assert b"flexible $200 of $5,500" in req.data
+    assert b"flexible on track for $200 of $5,500" in req.data
     assert lines == ["  Notification sent: ntfy at ntfy.example.net/a-l…"]
 
 
@@ -416,7 +416,7 @@ def test_weekly_only_on_the_weekday_and_once_a_week(app, conn, fake_smtp, monkey
     assert not notify.after_sync(s, conn, dd, report(stale=["Card"]), today=sunday, out=print)
     assert fake_smtp == []
     lines = []
-    assert notify.after_sync(s, conn, dd, report(), budgeting.pace(conn, monday), today=monday, out=lines.append)
+    assert notify.after_sync(s, conn, dd, report(), budgeting.forecast(conn, monday), today=monday, out=lines.append)
     msg = fake_smtp[0].msg
     assert msg["Subject"] == "BalancePoint: week of Mar 2 – 8"
     body = msg.get_content()
@@ -602,5 +602,5 @@ def test_failure_reported_once_a_day_and_the_weekly_recap_still_goes(app, conn, 
     assert notify.after_sync(s, conn, dd, failure="Couldn't reach SimpleFIN Bridge", today=monday, out=print)
     assert not notify.after_sync(s, conn, dd, failure="Couldn't reach SimpleFIN Bridge", today=monday, out=print)
     assert len(fake_smtp) == 1
-    assert notify.after_sync(s, conn, dd, report(), budgeting.pace(conn, monday), today=monday, out=print)
+    assert notify.after_sync(s, conn, dd, report(), budgeting.forecast(conn, monday), today=monday, out=print)
     assert len(fake_smtp) == 2 and "week of" in fake_smtp[1].msg["Subject"]

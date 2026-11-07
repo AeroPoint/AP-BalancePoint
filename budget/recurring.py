@@ -146,6 +146,46 @@ def _describe(key, name, category, charges, cadence, first_seen, history_start, 
     }
 
 
+def still_due(conn, today=None, pending=()):
+    """The regular charges still to come this month, for the month forecast (budgeting.forecast).
+
+    A charge already made this month (posted, or among `pending`: {"name", "amount" (negative)} from the
+    last bank sync) goes with the recurring item of the same merchant nearest its price, within 35%, and
+    moves that item's last date up. From each item's last date, every cycle that lands in this month is
+    still due, overdue ones included (a bill can post days late). Ended and "Not recurring" items are left
+    out. Returns [{"name", "category", "amount", "date"}], soonest first.
+    """
+    today = today or date.today()
+    start = today.replace(day=1)
+    end = _add_months(start, 1)
+    items = [i for i in find(conn, today) if not i["ignored"] and not i["stopped"]]
+    by_name = {}
+    for i in items:
+        by_name.setdefault(i["key"].split("|")[0], []).append(i)
+    made = [(normalize(r["name"]), date.fromisoformat(r["date"][:10]), r["amount"]) for r in conn.execute(
+        f"""SELECT t.name, t.date, -COALESCE(t.split_total, t.amount) AS amount
+            FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+            WHERE COALESCE(t.split_total, t.amount) < 0 AND t.split_of IS NULL AND {IS_SPEND}
+              AND t.date >= ? AND t.date < ?""", (start.isoformat(), end.isoformat()))]
+    made += [(normalize(p.get("name") or ""), date.fromisoformat(p["date"]) if p.get("date") else today, -p["amount"])
+             for p in pending if p.get("amount", 0) < 0]
+    last = {i["key"]: date.fromisoformat(i["last"]) for i in items}
+    for name, day, amount in made:
+        near = [i for i in by_name.get(name, []) if abs(amount - i["typical"]) <= 0.35 * i["typical"]]
+        if near:
+            i = min(near, key=lambda i: abs(amount - i["typical"]))
+            last[i["key"]] = max(last[i["key"]], day)
+    cadences = {c[0]: c for c in CADENCES}
+    out = []
+    for i in items:
+        day = _next_date(last[i["key"]], cadences[i["cadence"]])
+        while day < end:
+            if day >= start:
+                out.append({"name": i["name"], "category": i["category"], "amount": i["typical"], "date": day.isoformat()})
+            day = _next_date(day, cadences[i["cadence"]])
+    return sorted(out, key=lambda d: (d["date"], d["name"]))
+
+
 def ignored_keys(conn):
     return {r[0] for r in conn.execute("SELECT key FROM recurring_ignored")}
 

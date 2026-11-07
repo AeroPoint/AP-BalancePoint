@@ -308,13 +308,12 @@ def main():
             print(f"  {name}: mapped, but the Bridge didn't return it (removed at bridge.simplefin.org?)")
         for s in report["stale"]:
             print(f"  STALE: {s['account']} last pulled {s['last_synced'] or 'never'}")
-        from budget import budgeting
+        from budget import budgeting, notify
 
-        check = budgeting.pace(connect(app.config["DATABASE"]))
-        if check and check["spent"] is not None:
-            print(f"  Pace: day {check['day']} of {check['days']}, flexible ${check['spent']:,.0f}"
-                  + (f" (with ${check['pending']:,.0f} pending)" if check.get("pending") else "") + f" of ${check['target']:,.0f} "
-                  f"({'+' if check['ahead'] >= 0 else '-'}${abs(check['ahead']):,.0f} against the pace)")
+        check = budgeting.forecast(connect(app.config["DATABASE"]))
+        line = notify.forecast_line(check)
+        if line:
+            print(f"  Forecast: {line}")
         for w in (check or {}).get("warnings", []):
             print(f"  WARNING: {w}")
         if report["unmapped"]:
@@ -337,7 +336,7 @@ def main():
                              "[notify] section to data/personal.toml (personal.example.toml shows it; "
                              "README: 'Notifications (optional)').")
         try:
-            title, body = notify.build(conn, cfg, date.today(), check=budgeting.pace(conn), test=True)
+            title, body = notify.build(conn, cfg, date.today(), check=budgeting.forecast(conn), test=True)
             notify.send(cfg, data_dir, title, body)
         except notify.NotifyError as exc:
             raise SystemExit(f"Notification not sent: {exc}")

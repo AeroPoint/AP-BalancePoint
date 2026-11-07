@@ -11,6 +11,7 @@ A good month is judged on flexible spending against the monthly target you set, 
 part you decide on together. Savings rate is total saved (cash kept plus what paychecks put into
 retirement accounts, employer match included) over income including those contributions.
 """
+import re
 import statistics
 from datetime import date, timedelta
 
@@ -201,52 +202,128 @@ def pending_now(conn, today):
     return sorted(snap.get("items", []), key=lambda i: i.get("date") or "", reverse=True)
 
 
+def pending_by_group(conn, today):
+    """This month's still-pending spending per group ({"fixed", "flexible"}), from the last bank sync's
+    snapshot. Uncategorized money out counts as flexible."""
+    out = {"fixed": 0.0, "flexible": 0.0}
+    if not setting_on(conn, PACE_COUNTS_PENDING):
+        return out
+    cats = {r["id"]: r for r in conn.execute("SELECT id, kind, COALESCE(grp, 'flexible') AS grp FROM categories")}
+    for item in pending_now(conn, today):
+        c = cats.get(item.get("category_id"))
+        if c is None and item["amount"] < 0:
+            out["flexible"] -= item["amount"]
+        elif c and c["kind"] == "expense" and c["grp"] in out:
+            out[c["grp"]] -= item["amount"]
+    return {k: round(v, 2) for k, v in out.items()}
+
+
 def pending_flexible(conn, today):
     """Flexible spending in this month's still-pending charges, from the last bank sync's snapshot."""
-    import json
-    if not setting_on(conn, PACE_COUNTS_PENDING):
-        return 0.0
-    raw = conn.execute("SELECT value FROM settings WHERE key = 'pending_this_month'").fetchone()
-    try:
-        snap = json.loads(raw[0]) if raw else None
-    except (TypeError, ValueError):
-        return 0.0
-    if not snap or snap.get("month") != today.isoformat()[:7]:
-        return 0.0
-    cats = {r["id"]: r for r in conn.execute("SELECT id, kind, COALESCE(grp, 'flexible') AS grp FROM categories")}
-    total = 0.0
-    for item in snap.get("items", []):
-        c = cats.get(item.get("category_id"))
-        if (c and c["kind"] == "expense" and c["grp"] == "flexible") or (c is None and item["amount"] < 0):
-            total -= item["amount"]
-    return round(total, 2)
+    return pending_by_group(conn, today)["flexible"]
 
 
-def pace(conn, today=None):
-    """How this month is going so far: flexible spending against the share of the target that should be
-    gone by today, and the plan's spending account against its cushion. None without a target or plan.
+FORECAST_GROUPS = (("flexible", "flex_target", "Flexible"), ("fixed", "plan_fixed", "Fixed"))
+EXPECTED_MATCH = 0.15  # a charge this close to an expected one (and from it) is that charge
 
-    {"day", "days", "spent", "target", "expected", "ahead" (positive = spent more than the pace),
-     "per_day_left", "warnings": [text]}
+
+def _words(text):
+    return {w for w in re.findall(r"[a-z]+", (text or "").lower()) if len(w) >= 4}
+
+
+def expected_this_month(conn, today, pending=()):
+    """The plan's expected changes that are spending this month ({"label", "amount", "category", "grp",
+    "made"}); "made" when a charge this month (posted or pending) is within 15% of it and is its category
+    or shares a word with its name. grp is None for spending on top of the targets (no category, or a
+    non-monthly one)."""
+    key = today.strftime("%Y-%m")
+    start, end = reports.bounds(today.year, today.month)
+    cats = {r["id"]: r for r in conn.execute("SELECT id, name, COALESCE(grp, 'flexible') AS grp FROM categories")}
+    charges = [(r["category_id"], r["name"], -r["amount"]) for r in conn.execute(
+        f"""SELECT t.category_id, t.name, COALESCE(t.split_total, t.amount) AS amount {reports.JOIN}
+            WHERE t.split_of IS NULL AND COALESCE(t.split_total, t.amount) < 0 AND t.date >= ? AND t.date < ?""",
+        (start, end))]
+    charges += [(p.get("category_id"), p.get("name"), -p["amount"]) for p in pending if p.get("amount", 0) < 0]
+    out, used = [], set()
+    for i in conn.execute("""SELECT * FROM plan_items WHERE amount < 0 AND start_month <= ?
+                             AND COALESCE(end_month, '9999-12') >= ? ORDER BY id""", (key, key)):
+        amount = -i["amount"]
+        c = cats.get(i["category_id"])
+        made = next((n for n, (cid, name, paid) in enumerate(charges) if n not in used
+                     and abs(paid - amount) <= EXPECTED_MATCH * amount
+                     and ((i["category_id"] and cid == i["category_id"]) or _words(i["label"]) & _words(name))), None)
+        if made is not None:
+            used.add(made)
+        out.append({"label": i["label"], "amount": amount, "category": c["name"] if c else None,
+                    "grp": c["grp"] if c and c["grp"] in ("fixed", "flexible") else None, "made": made is not None})
+    return out
+
+
+def forecast(conn, today=None):
+    """Where this month's flexible and fixed spending is headed, against the plan's targets: spent so far
+    (pending charges included) plus what's known to still be coming, the regular charges from the
+    Recurring page and the expected changes entered on the Plan page. Nothing else is guessed, so the
+    flexible money left is shared over the days left (a day's allowance), and it warns when a forecast
+    passes its target or the allowance drops well below the plan's day. Also the plan account and backups against
+    their minimums. None without a target or plan.
+
+    {"day", "days", "days_left", "groups": {"flexible"|"fixed": {"label", "target", "spent", "pending",
+     "upcoming", "forecast", "left"}}, "coming": [{"name", "amount", "date", "grp", "kind"}],
+     "outside": [expected spending on top of the targets], "per_day_left", "planned_per_day",
+     "usual_per_day" (from recent months), "warnings",
+     and the flexible ones again as "target", "spent", "pending", "forecast"}
     """
+    from . import recurring
+
     today = today or date.today()
     start, end = reports.bounds(today.year, today.month)
     days = (date.fromisoformat(end) - date.fromisoformat(start)).days
-    target = get_setting(conn, "flex_target")
-    out = {"day": today.day, "days": days, "target": target, "warnings": [], "spent": None}
-    if target:
-        pending = pending_flexible(conn, today)
-        spent = by_group(conn, start, (today + timedelta(days=1)).isoformat())[0]["flexible"] + pending
-        out["pending"] = pending
-        expected = target * today.day / days
-        left_days = days - today.day + 1
-        out.update(spent=spent, expected=expected, ahead=spent - expected,
-                   per_day_left=(target - spent) / left_days if left_days else None)
-        if spent > target:
-            out["warnings"].append(f"Flexible spending is ${spent - target:,.0f} over the month's ${target:,.0f} target.")
-        elif spent - expected > max(50, 0.1 * target):
-            out["warnings"].append(f"Flexible spending is ${spent - expected:,.0f} ahead of pace for day {today.day}: "
-                                   f"${(target - spent) / left_days:,.0f} a day left for the rest of the month.")
+    days_left = days - today.day + 1
+    targets = {g: get_setting(conn, key) for g, key, _ in FORECAST_GROUPS}
+    out = {"day": today.day, "days": days, "days_left": days_left, "warnings": [], "spent": None, "target": targets["flexible"]}
+    if any(targets.values()):
+        grp_of = {r["name"]: r["grp"] for r in conn.execute("SELECT name, COALESCE(grp, 'flexible') AS grp FROM categories WHERE kind = 'expense'")}
+        pending_items = pending_now(conn, today) if setting_on(conn, PACE_COUNTS_PENDING) else []
+        pending = pending_by_group(conn, today)
+        spent = by_group(conn, start, (today + timedelta(days=1)).isoformat())[0]
+        coming = []
+        for r in recurring.still_due(conn, today, pending_items):
+            grp = grp_of.get(r["category"], "flexible") if r["category"] else "flexible"
+            if grp in targets:
+                coming.append({**r, "grp": grp, "kind": "recurring"})
+        expected = expected_this_month(conn, today, pending_items)
+        coming += [{"name": e["label"], "amount": e["amount"], "date": None, "grp": e["grp"], "kind": "expected"}
+                   for e in expected if e["grp"] and not e["made"]]
+        out["coming"] = sorted(coming, key=lambda c: (c["date"] or "9999", c["name"]))
+        out["outside"] = [e for e in expected if not e["grp"]]
+        groups = {}
+        for g, _, label in FORECAST_GROUPS:
+            upcoming = sum(c["amount"] for c in coming if c["grp"] == g)
+            total = spent[g] + pending[g] + upcoming
+            groups[g] = {"label": label, "target": targets[g], "spent": spent[g] + pending[g], "pending": pending[g],
+                         "upcoming": upcoming, "forecast": total,
+                         "left": targets[g] - total if targets[g] else None}
+            if targets[g] and total > targets[g]:
+                out["warnings"].append(f"{label} spending is on track for ${total:,.0f} this month, "
+                                       f"${total - targets[g]:,.0f} over the ${targets[g]:,.0f} target.")
+        out["groups"] = groups
+        flex = groups["flexible"]
+        out.update(spent=flex["spent"], pending=flex["pending"], forecast=flex["forecast"], per_day_left=None,
+                   planned_per_day=None, usual_per_day=None)
+        if targets["flexible"]:
+            # A day's allowance against the plan's: the target less the regular flexible charges, over the month.
+            regular = sum(i["monthly"] for i in recurring.report(conn, today)["active"]
+                          if grp_of.get(i["category"], "flexible") == "flexible")
+            out["per_day_left"] = flex["left"] / days_left
+            out["planned_per_day"] = max(targets["flexible"] - regular, 0.0) / days
+            usual, _, months = typical_flexible(conn, today.year, today.month)
+            if usual and months:
+                out["usual_per_day"] = max(usual - regular, 0.0) / days
+            short = (out["planned_per_day"] - out["per_day_left"]) * days_left
+            if flex["left"] >= 0 and short > max(50, 0.1 * targets["flexible"]):
+                last = date.fromisoformat(end) - timedelta(days=1)
+                out["warnings"].append(f"${out['per_day_left']:,.0f} a day is left for flexible spending through "
+                                       f"{last:%b} {last.day}, under the plan's ${out['planned_per_day']:,.0f} a day.")
     account, cushion = get_setting(conn, "plan_account", cast=int), get_setting(conn, "plan_buffer")
     if account and cushion:
         ledger = load_ledgers(conn).get(account)
@@ -266,7 +343,7 @@ def pace(conn, today=None):
             if bal is not None and bal < floor:
                 out["warnings"].append(f"{ledger.account['name']} is at ${bal:,.0f}, ${floor - bal:,.0f} below the "
                                        f"${floor:,.0f} the plan keeps in it.")
-    return out if target or out["warnings"] else None
+    return out if any(targets.values()) or out["warnings"] else None
 
 
 def savings_rate(conn, start, end, accounts=None):
@@ -352,7 +429,12 @@ def project(conn, months=12, today=None):
     balance = (ledgers[account].on(iso) or 0.0) if account in ledgers else 0.0
     left = {b: ledgers[b].on(iso) or 0.0 for b in backups}
     buffer = values["plan_buffer"] or 0.0
-    items = [dict(r) for r in conn.execute("SELECT * FROM plan_items ORDER BY start_month, id")]
+    # A change with a fixed or flexible category is spending inside that month's target (the month
+    # forecast counts it there), so only the others move the plan.
+    items = [dict(r) for r in conn.execute(
+        """SELECT p.* FROM plan_items p LEFT JOIN categories c ON c.id = p.category_id
+           WHERE p.amount > 0 OR c.id IS NULL OR COALESCE(c.grp, 'flexible') NOT IN ('fixed', 'flexible')
+           ORDER BY p.start_month, p.id""")]
 
     rows, drawn = [], {b: 0.0 for b in backups}
     y, m = today.year, today.month

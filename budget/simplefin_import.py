@@ -237,7 +237,7 @@ PENDING_NOW_KEY = "pending_this_month"
 
 def pending_this_month(conn, account_id, transactions, sync_from, today):
     """This month's charges that are still pending, as {account_id, amount, raw, category_id} dicts. They
-    aren't stored as transactions (they post within days); the pace check counts them so it isn't
+    aren't stored as transactions (they post within days); the month forecast counts them so it isn't
     behind early in the month. Replaced by every sync."""
     month_start = today.replace(day=1).isoformat()
     engine = RuleEngine(conn)

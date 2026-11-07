@@ -162,7 +162,7 @@
     charge when it clears.</p>
   <form method="post" action="{{ url_for('main.bank_sync_pending') }}">
     <label class="check"><input type="checkbox" name="pace_counts_pending" value="1"{% if pace_counts_pending %} checked{% endif %}>
-      The Overview's pace check counts this month's pending charges</label>
+      The Overview's month forecast counts this month's pending charges</label>
     <label class="check"><input type="checkbox" name="show_pending" value="1"{% if show_pending %} checked{% endif %}>
       Show them at the top of Transactions, marked Pending (not in its totals)</label>
     <div class="form-actions"><button class="btn small">Save</button></div>
