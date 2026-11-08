@@ -82,8 +82,8 @@
       <label class="field">
         <span>Amazon's order history</span>
         <input type="file" name="orders" accept=".zip,.csv,application/zip,text/csv" required>
-        <small>The ZIP itself, the Order History CSV inside it, or the orders CSV from the Amazon Order History Reporter
-          extension (quicker for a month or two). Upload a newer one any time: matches already made stay.
+        <small>The ZIP itself, the Order History CSV inside it, or the orders CSV and then the items CSV from the Amazon Order
+          History Reporter extension (quicker for a month or two). Upload a newer one any time: matches already made stay.
           The file isn't kept; only each item's order, dates, name and amount are.</small>
       </label>
       <div><button class="btn primary">Upload Amazon orders</button></div>
@@ -106,9 +106,10 @@
       <li>Upload it here. A household with two Amazon accounts uploads both.</li>
     </ol>
     <p class="muted">For the latest month or two, the free, open-source <strong>Amazon Order History Reporter</strong>
-      extension for Chrome is quicker: signed in to Amazon, open it, choose the orders table for this year, and download
-      its CSV. It has no price per item, so each order shows its items at the order's total and matches a charge for the
-      whole order (an order charged in parts as it shipped won't match). If Amazon shows a captcha, solve it in an Amazon
+      extension for Chrome is quicker: signed in to Amazon, open it, choose the orders table for the months you want and
+      download its CSV, then do the same with its items table. Upload the orders CSV first: each order's total matches a
+      charge for the whole order (an order charged in parts as it shipped won't). The items CSV then breaks each order
+      into its items, sharing its total out by item price, for category suggestions and the Split form. If Amazon shows a captcha, solve it in an Amazon
       tab and run it again, or pick fewer months.</p>
     <p class="muted">Turn on “Sort by hand” and “Can be split” for Amazon in the Merchant dictionary, so its charges wait in Categorize with their items.</p>
   </section>

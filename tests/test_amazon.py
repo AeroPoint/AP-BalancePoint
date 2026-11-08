@@ -258,3 +258,57 @@ def test_the_extensions_orders_match_whole_and_give_way_to_the_full_export(conn,
     again = amazon.import_upload(conn, "amazon_order_history.csv", report(
         ("111-0000001", "2026-10-30", ["Board book", "Socks"], "19.29", "")))
     assert again["stored"] == 0 and linked(conn, whole) == ["Board book", "Socks"]
+
+
+ITEM_HEADER = ["order id", "order url", "order date", "quantity", "description", "item url", "price",
+               "subscribe & save", "ASIN", "category"]
+
+
+def report_items(*lines):
+    """The extension's items CSV: (order, product, quantity, price, asin) lines and its totals row."""
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(ITEM_HEADER)
+    for order, product, qty, price, asin in lines:
+        writer.writerow([order, "https://www.amazon.com/x", "2026-10-30", qty, product, "https://www.amazon.com/dp/x",
+                         f"${price}", "0", asin, "Toys & Games"])
+    writer.writerow(['=SUBTOTAL(103, A2:A9) & " items"', "", "", "", "", "", "", "=SUBTOTAL(109,H2:H9)", "", ""])
+    return out.getvalue().encode()
+
+
+def test_the_extensions_items_csv_shares_each_orders_total_by_price(conn, card):
+    toys, home = category(conn, "Kids & Education"), category(conn, "Home & Garden")
+    whole = charge(conn, card, "2026-10-31", -100.00)
+    amazon.import_upload(conn, "amazon_order_history.csv", report(
+        ("111-0000001", "2026-10-30", ["Toy truck", "Toilet wand refills"], "100.00", "")))
+    got = amazon.import_upload(conn, "amazon_order_history (1).csv", report_items(
+        ("111-0000001", "Toy truck", 2, "30.00", "B0TOY"), ("111-0000001", "Toilet wand refills", 1, "20.00", "B0WAND"),
+        ("111-0000002", "Not in the orders CSV", 1, "5.00", "B0OTHER")))
+    assert (got["itemized"], got["waiting"]) == (1, 1)
+    rows = conn.execute("SELECT product, asin, quantity, total FROM amazon_items WHERE transaction_id = ? ORDER BY total DESC",
+                        (whole,)).fetchall()
+    assert [tuple(r) for r in rows] == [("Toy truck", "B0TOY", 2, 75.0), ("Toilet wand refills", "B0WAND", 1, 25.0)]
+    # Uploading either file again changes nothing.
+    amazon.import_upload(conn, "amazon_order_history.csv", report(
+        ("111-0000001", "2026-10-30", ["Toy truck", "Toilet wand refills"], "100.00", "")))
+    amazon.import_upload(conn, "amazon_order_history (1).csv", report_items(
+        ("111-0000001", "Toy truck", 2, "30.00", "B0TOY"), ("111-0000001", "Toilet wand refills", 1, "20.00", "B0WAND")))
+    assert [tuple(r) for r in conn.execute(
+        "SELECT product, total, transaction_id FROM amazon_items ORDER BY total DESC")] == [
+        ("Toy truck", 75.0, whole), ("Toilet wand refills", 25.0, whole)]
+    # Products sorted before are suggested, and a mixed order starts its Split form with each share.
+    earlier = charge(conn, card, "2026-09-01", -10.00)
+    later = charge(conn, card, "2026-09-02", -8.00)
+    amazon.import_upload(conn, "a.csv", export(line("111-0000003", "2026-09-01", "2026-09-01", "Toy truck", "10.00", asin="B0TOY"),
+                                                line("111-0000004", "2026-09-01", "2026-09-02", "Refills", "8.00", asin="B0WAND",
+                                                     tracking="AMZN_US(TBA2)")).encode())
+    conn.execute("UPDATE transactions SET category_id = ?, category_source = 'manual' WHERE id = ?", (toys, earlier))
+    conn.execute("UPDATE transactions SET category_id = ?, category_source = 'manual' WHERE id = ?", (home, later))
+    items = amazon.items_for(conn, [whole])[whole]
+    assert amazon.Suggester(conn).for_charge(items, 100.00) == (None, [
+        {"category_id": toys, "amount": 75.0}, {"category_id": home, "amount": None}])
+
+
+def test_share_out_adds_up_to_the_cent():
+    assert amazon.share_out(10.00, [1, 1, 1]) == [3.33, 3.33, 3.34]
+    assert amazon.share_out(9.99, [0, 0]) == [5.0, 4.99]

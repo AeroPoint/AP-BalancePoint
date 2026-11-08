@@ -228,6 +228,10 @@ def main():
             sys.exit(f"{args.path}: {exc}")
         conn.commit()
         conn.close()
+        if "itemized" in got:
+            print(f"{got['itemized']:,} orders broken into their items; {got['waiting']:,} with no order entry "
+                  "to break up (upload the orders CSV first, or the full export has them).")
+            return
         print(f"{got['items']:,} items in {got['orders']:,} orders ({got['first']} to {got['last']}); matched "
               f"{got['matched']:,} more Amazon charges; {got['unmatched']:,} Amazon charges have no order to match.")
     elif args.command == "import-csv":

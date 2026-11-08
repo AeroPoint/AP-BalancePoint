@@ -15,7 +15,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
   bought before, and starts the Split form with each category's share for mixed orders.
   `run.py import-amazon <file>` does the same from the command line. The orders CSV from the Amazon
   Order History Reporter browser extension works too, for a quick month or two: each order is matched
-  whole, at its total.
+  whole, at its total, and the extension's items CSV then shares that total out among its items by price.
 - Month forecast on the Overview, replacing the pace check: flexible and fixed spending so far plus
   what's known to still be coming (regular charges from the Recurring page not yet charged this month,
   and expected changes from the Plan page), against their targets, with the flexible money left per day.

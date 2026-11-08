@@ -19,8 +19,10 @@ A smaller monthly alternative is the CSV that the Amazon Order History Reporter 
 (open source, github.com/philipmulcahy/azad) downloads from its orders table: one row per order with its
 items' names, the order date and what the order cost. It has no price per item, so each order is stored
 as one entry (REPORT_SHIPMENT) listing its items at the order's total, and matches a charge of that whole
-amount. Its totals already include the delivery fee. Orders the full export already has are left alone,
-and a later full export replaces an order's entry with its items.
+amount. Its totals already include the delivery fee. The extension's items CSV then breaks each of those
+entries into its items, sharing out the order's total by item price (its prices leave out tax, shipping
+and discounts, and may be today's price), so the shares always add up to the charge. Orders the full
+export already has are left alone, and a later full export replaces an order's entries with its items.
 
 Only what matching and the pages need is kept: no addresses, payment details or gift messages.
 """
@@ -44,6 +46,7 @@ ORDER_FILE = re.compile(r"order[ _.]?history.*\.csv$", re.IGNORECASE)
 MISSING = {"", "not available", "not applicable", "n/a"}
 REPORT_SHIPMENT = "order report"     # amazon_items.shipment of an order stored whole from the extension's CSV
 REPORT_COLUMNS = {"order id", "items", "date", "total"}
+REPORT_ITEM_COLUMNS = {"order id", "description", "price", "quantity"}
 
 
 class AmazonFormatError(ValueError):
@@ -132,6 +135,59 @@ def parse_report(rows):
     return items
 
 
+def parse_report_items(rows):
+    """The extension's items CSV: {order id: [(product, asin, quantity, price)]}, its totals row left out."""
+    header = [h.strip().lower() for h in rows[0]]
+    col = {name: header.index(name) for name in header}
+    get = lambda row, key: row[col[key]].strip() if key in col and col[key] < len(row) else ""
+    orders = {}
+    for row in rows[1:]:
+        order_id = get(row, "order id")
+        if not order_id or order_id.startswith("="):
+            continue
+        try:
+            quantity = max(int(float(get(row, "quantity") or 1)), 1)
+        except ValueError:
+            quantity = 1
+        orders.setdefault(order_id, []).append(
+            (" ".join(get(row, "description").split()) or "(no name)", get(row, "asin"), quantity, _money(get(row, "price"))))
+    return orders
+
+
+def share_out(total, weights):
+    """total split in proportion to weights (equally when none has any), to the cent, adding up exactly."""
+    if sum(weights) <= 0:
+        weights = [1] * len(weights)
+    shares = [round(total * w / sum(weights), 2) for w in weights]
+    shares[-1] = round(total - sum(shares[:-1]), 2)
+    return shares
+
+
+def itemize(conn, orders):
+    """Break each order's extension entries into its items (from parse_report_items), the order's total
+    shared out by item price, keeping the charge it matched. Returns (orders itemized, orders with no
+    entry yet: their orders CSV wasn't uploaded, or the full export has them)."""
+    done = waiting = 0
+    for order_id, lines in orders.items():
+        rows = conn.execute("SELECT * FROM amazon_items WHERE order_id = ? AND shipment = ?",
+                            (order_id, REPORT_SHIPMENT)).fetchall()
+        if not rows or conn.execute("SELECT 1 FROM amazon_items WHERE order_id = ? AND shipment != ?",
+                                    (order_id, REPORT_SHIPMENT)).fetchone():
+            waiting += 1
+            continue
+        total = round(sum(r["total"] for r in rows), 2)
+        tid = next((r["transaction_id"] for r in rows if r["transaction_id"]), None)
+        shares = share_out(total, [quantity * price for _, _, quantity, price in lines])
+        conn.execute("DELETE FROM amazon_items WHERE order_id = ? AND shipment = ?", (order_id, REPORT_SHIPMENT))
+        conn.executemany(
+            """INSERT INTO amazon_items (order_id, order_date, ship_date, shipment, product, asin, quantity, total,
+                                         transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(order_id, rows[0]["order_date"], rows[0]["ship_date"], REPORT_SHIPMENT, product, asin, quantity, share, tid)
+             for (product, asin, quantity, _), share in zip(lines, shares)])
+        done += 1
+    return done, waiting
+
+
 def parse_orders(text):
     """Items from Amazon's order history CSV (or the extension's, see parse_report). Cancelled lines and
     lines with nothing owed are left out."""
@@ -210,8 +266,9 @@ def store_items(conn, items):
         by_order.setdefault(item.order_id, []).append(item)
     for order_id, lines in list(by_order.items()):
         if lines[0].shipment == REPORT_SHIPMENT:
-            if conn.execute("SELECT 1 FROM amazon_items WHERE order_id = ? AND shipment != ?",
-                            (order_id, REPORT_SHIPMENT)).fetchone():
+            # Left alone when the full export has the order, or the items CSV already broke it into items.
+            rows = conn.execute("SELECT shipment, asin FROM amazon_items WHERE order_id = ?", (order_id,)).fetchall()
+            if any(r["shipment"] != REPORT_SHIPMENT or r["asin"] for r in rows) or len(rows) > 1:
                 del by_order[order_id]
         else:
             conn.execute("DELETE FROM amazon_items WHERE order_id = ? AND shipment = ?", (order_id, REPORT_SHIPMENT))
@@ -321,8 +378,25 @@ def match(conn):
     return len(matched)
 
 
+def _report_items_csv(filename, content):
+    """The extension's items CSV, read, or None for any other file."""
+    if filename.lower().endswith(".zip") or content[:2] == b"PK":
+        return None
+    rows = list(csv.reader(io.StringIO(content.decode("utf-8-sig", errors="replace"))))
+    if not rows or not REPORT_ITEM_COLUMNS <= {h.strip().lower() for h in rows[0]}:
+        return None
+    return parse_report_items(rows)
+
+
 def import_upload(conn, filename, content):
     """Read, store and match. Returns a dict for the page or the command line."""
+    orders = _report_items_csv(filename, content)
+    if orders is not None:
+        if not orders:
+            raise AmazonFormatError("No items in that file.")
+        done, waiting = itemize(conn, orders)
+        matched = match(conn)
+        return {"itemized": done, "waiting": waiting, "matched": matched, "unmatched": len(_charges(conn))}
     items = read_upload(filename, content)
     if not items:
         raise AmazonFormatError("No orders in that file.")

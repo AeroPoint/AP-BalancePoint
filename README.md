@@ -658,10 +658,12 @@ all of those.
 
 For the latest month or two without waiting for Amazon's ZIP, upload the orders CSV from the free,
 open-source [Amazon Order History Reporter](https://github.com/philipmulcahy/azad) extension for Chrome
-(signed in to Amazon, open it, pick the orders table for this year, download its CSV). It has no price per
-item, so each order is kept as one entry listing its items at the order's total, less any gift card, and
-matches a charge for the whole order; an order charged in parts as it shipped won't match. Its totals
-include the delivery fee. Orders already in an uploaded ZIP are left as they are, and a later ZIP replaces
+(signed in to Amazon, open it, pick the orders table for the months you want, download its CSV, then do the
+same with its items table). The orders CSV gives each order's total, less any gift card, which matches a
+charge for the whole order (its totals include the delivery fee; an order charged in parts as it shipped
+won't match). The items CSV, uploaded after it, breaks each order into its items, sharing the order's total
+out by item price: the extension's prices leave out tax, shipping and discounts, so the shares are close
+rather than exact, but they always add up to the charge, for category suggestions and the Split form. Orders already in an uploaded ZIP are left as they are, and a later ZIP replaces
 an order's entry with its items.
 
 A category can give its transactions a **checkbox** (Categories page), like "Rental property" on Home &
