@@ -10,7 +10,7 @@ from uuid import uuid4
 from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import amazon, blackjack, budgeting, business, personal, recurring, reports, seed, simplefin_import, splits, tax
+from . import amazon, blackjack, budgeting, business, manage_data, personal, recurring, reports, seed, simplefin_import, splits, tax
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import BAD_DATES_NOTE, CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -1404,13 +1404,57 @@ def upload_amazon():
     return redirect(url_for(".upload"))
 
 
-@bp.post("/upload/amazon/forget")
+# ---------------------------------------------------------------- manage data (manage_data.py)
+
+def _personal_settings():
+    return personal.load(current_app.config["PERSONAL_CONFIG"])
+
+
+@bp.route("/manage-data")
+def manage_data_page():
+    conn = get_db()
+    imports = conn.execute(
+        """SELECT i.id, i.filename, i.uploaded_at, a.name AS account_name,
+                  (SELECT COUNT(*) FROM transactions WHERE import_id = i.id) AS remaining
+           FROM imports i LEFT JOIN accounts a ON a.id = i.account_id ORDER BY i.id DESC""").fetchall()
+    return render_template("manage_data.html", counts=manage_data.counts(conn), imports=imports,
+                           points=manage_data.restore_points(_sf_data_dir()), erase_word=manage_data.ERASE_WORD,
+                           keep=manage_data.KEEP_RESTORE_POINTS)
+
+
+@bp.post("/manage-data/amazon")
 def forget_amazon():
     conn = get_db()
-    removed = conn.execute("DELETE FROM amazon_items").rowcount
+    manage_data.make_restore_point(conn, _sf_data_dir(), "before erasing Amazon items")
+    removed = manage_data.erase_amazon(conn)
     conn.commit()
-    flash(f"Removed {removed:,} Amazon items. Your transactions and their categories are unchanged.", "ok")
-    return redirect(url_for(".upload"))
+    flash(f"Erased {removed:,} Amazon items (a restore point was saved first). Transactions and their categories "
+          "are unchanged.", "ok")
+    return redirect(url_for(".manage_data_page"))
+
+
+@bp.post("/manage-data/everything")
+def erase_everything():
+    conn = get_db()
+    if request.form.get("confirm", "").strip() != manage_data.ERASE_WORD:
+        flash(f"Nothing was erased: type {manage_data.ERASE_WORD} in the box to confirm.", "error")
+        return redirect(url_for(".manage_data_page"))
+    point = manage_data.make_restore_point(conn, _sf_data_dir(), "before erasing everything")
+    manage_data.erase_everything(conn, _personal_settings())
+    flash(f"Everything was erased; the app is as it was when first installed. To undo, restore "
+          f"“{point.name}” below.", "ok")
+    return redirect(url_for(".manage_data_page"))
+
+
+@bp.post("/manage-data/restore")
+def restore_point():
+    conn = get_db()
+    point = manage_data.restore(conn, _sf_data_dir(), request.form.get("name", ""), _personal_settings())
+    if point is None:
+        flash("That restore point isn't there any more.", "error")
+    else:
+        flash(f"Restored the database as it was at {point['when']}. What it replaced was saved as a restore point.", "ok")
+    return redirect(url_for(".manage_data_page"))
 
 
 @bp.post("/upload/blackjack")
@@ -1440,11 +1484,15 @@ def upload_blackjack():
 @bp.post("/imports/<int:iid>/delete")
 def delete_import(iid):
     conn = get_db()
-    removed = conn.execute("SELECT COUNT(*) FROM transactions WHERE import_id = ?", (iid,)).fetchone()[0]
-    conn.execute("DELETE FROM imports WHERE id = ?", (iid,))
+    name = conn.execute("SELECT filename FROM imports WHERE id = ?", (iid,)).fetchone()
+    if name is None:
+        flash("That import isn't there any more.", "error")
+        return redirect(url_for(".manage_data_page"))
+    manage_data.make_restore_point(conn, _sf_data_dir(), f"before removing import {name[0]}")
+    _, removed = manage_data.erase_import(conn, iid)
     conn.commit()
-    flash(f"Removed that import and its {removed} transactions.", "ok")
-    return redirect(url_for(".upload"))
+    flash(f"Removed {name[0]} and its {removed:,} transactions (a restore point was saved first).", "ok")
+    return redirect(url_for(".manage_data_page"))
 
 
 # ---------------------------------------------------------------- blackjack bankroll

@@ -166,6 +166,8 @@ def main():
     sub.add_parser("simplefin-status", help="when each SimpleFIN account was last pulled")
     sub.add_parser("simplefin-synced-today", help="exit 0 if today's sync already succeeded, else 1 (for retry schedules)")
     sub.add_parser("notify-test", help="send a test notification with today's numbers (Notifications page or [notify] in personal.toml)")
+    sub.add_parser("backup-check", help="exit 0 if data/budget.db is fine to commit as the newest backup, 3 if it "
+                   "lost most of its transactions without an Erase everything (for sync-mac.sh)")
     sub.add_parser("notify-setup-password", help="save the SMTP password for email notifications (only you can read it)")
     demo = sub.add_parser("demo", help="build a made-up household in its own folder (never your real data) to try the app")
     demo.add_argument("--dir", default="demo-data", help="folder for the demo (default: demo-data)")
@@ -329,6 +331,12 @@ def main():
             for external_id, org, label in report["unmapped"]:
                 print(f"    {external_id}  {_sf_name(org, label)}")
         _notify_after_sync(app, data_dir, report=report, check=check)
+    elif args.command == "backup-check":
+        from budget import manage_data
+
+        ok, message = manage_data.backup_check(Path(app.config["DATABASE"]).parent)
+        print(("  backup check: " if ok else "  WARNING: backup held back: ") + message)
+        sys.exit(0 if ok else 3)
     elif args.command == "notify-test":
         from budget import budgeting, notify
 

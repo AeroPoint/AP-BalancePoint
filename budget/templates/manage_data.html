@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Manage data{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Manage data</h1>
+    <p class="sub">Everything that erases data in bulk lives here. Before any of it runs, the app saves a restore point: a
+      copy of the whole database you can put back below.</p>
+  </div>
+</header>
+
+<section class="panel">
+  <div class="panel-head"><h2>Restore points</h2>
+    <p class="muted">The newest {{ keep }} are kept, on this computer only. Restoring puts the whole database back as it was then,
+      and saves what it replaces as a restore point too, so a restore can be undone the same way.</p></div>
+  {% if points %}
+  <div class="table-wrap">
+    <table class="ledger cards">
+      <thead><tr><th>Saved</th><th>Why</th><th class="num">Size</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+        {% for p in points %}
+        <tr>
+          <td class="date c-main">{{ p.when }}</td>
+          <td class="c-meta">{{ p.reason|capitalize }}</td>
+          <td class="num c-meta" data-label="Size">{{ '{:,.1f}'.format(p.size / 1048576) }} MB</td>
+          <td class="actions c-side">
+            <form method="post" action="{{ url_for('main.restore_point') }}"
+                  data-confirm="Put the whole database back as it was at {{ p.when }}? Everything since then is replaced (and saved as a restore point first).">
+              <input type="hidden" name="name" value="{{ p.name }}">
+              <button class="btn small">Restore</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">None yet: one is saved the first time anything on this page erases data.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Amazon items</h2></div>
+  <p>{{ '{:,}'.format(counts.amazon_items) }} items stored from your Amazon order history, shown on {{ '{:,}'.format(counts.amazon_charges) }} charges.</p>
+  <ul class="muted">
+    <li><strong>Erased:</strong> each item's order, dates, name and amount.</li>
+    <li><strong>Stays:</strong> every transaction, its category and its split. Charges just stop showing what they bought,
+      until you upload Amazon orders again.</li>
+  </ul>
+  {% if counts.amazon_items %}
+  <form method="post" action="{{ url_for('main.forget_amazon') }}"
+        data-confirm="Erase all {{ '{:,}'.format(counts.amazon_items) }} stored Amazon items? Transactions and their categories stay.">
+    <button class="btn small danger">Erase Amazon items</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel flush">
+  <div class="panel-head" style="padding: 16px clamp(14px, 2.5vw, 24px) 0"><h2>Remove an import</h2>
+    <p class="muted">For a file uploaded to the wrong account, or twice. <strong>Erased:</strong> the transactions that file added,
+      with their categories, splits and notes. <strong>Stays:</strong> everything else, and the file itself in the data folder.</p></div>
+  {% if imports %}
+  <div class="table-wrap">
+    <table class="ledger cards">
+      <thead><tr><th>File</th><th>Account</th><th>Imported</th><th class="num">Transactions</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+        {% for i in imports %}
+        <tr>
+          <td class="c-main" style="overflow-wrap:anywhere">{{ i.filename }}</td>
+          <td class="source-tag c-meta">{{ i.account_name or '—' }}</td>
+          <td class="date c-meta" data-label="Imported">{{ i.uploaded_at[:16] }}</td>
+          <td class="num c-meta" data-label="Transactions">{{ '{:,}'.format(i.remaining) }}</td>
+          <td class="actions c-side">
+            <form method="post" action="{{ url_for('main.delete_import', iid=i.id) }}"
+                  data-confirm="Remove {{ i.filename }} and the {{ i.remaining }} transactions it added? A restore point is saved first.">
+              <button class="btn small quiet danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted" style="padding: 0 clamp(14px, 2.5vw, 24px) 16px">Nothing imported.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Erase everything</h2></div>
+  <p>Starts the app over as if just installed. Use it to hand the app to someone else, or to start from scratch.</p>
+  <ul class="muted">
+    <li><strong>Erased:</strong> all {{ '{:,}'.format(counts.transactions) }} transactions, {{ '{:,}'.format(counts.accounts) }} accounts and their
+      balances, categories and the merchant dictionary you built, the plan, recurring and tax notes, Amazon items, the
+      bankroll, bank sync account links, and every setting (notifications included).</li>
+    <li><strong>Stays:</strong> the files in the data folder: uploaded bank files and workbooks, personal.toml, the bank sync
+      and email passwords, and these restore points. The built-in categories and dictionary come back. Bank sync stays
+      connected, but its accounts need linking again.</li>
+    <li><strong>Backups:</strong> a restore point is saved first, and older copies stay in your backups. The daily backup
+      knows this erase was meant, so it backs up the empty app as the newest copy without touching older ones.</li>
+  </ul>
+  <form method="post" action="{{ url_for('main.erase_everything') }}" class="stack"
+        data-confirm="Erase everything in the app? A restore point is saved first.">
+    <label class="field">
+      <span>Type {{ erase_word }} to confirm</span>
+      <input name="confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" required pattern="{{ erase_word }}">
+    </label>
+    <div><button class="btn danger">Erase everything</button></div>
+  </form>
+</section>
+{% endblock %}

@@ -246,6 +246,28 @@ nothing changes.
 Never put it on the open internet, even with both. It has no HTTPS of its own, and the password is the
 only thing between a stranger and your finances. Use Tailscale (or another VPN) to reach it from away.
 
+## Manage data and restore points
+
+Everything that erases data in bulk is on one page, **Manage data** (in the menu), each with what it
+erases and what stays: the stored Amazon items, one import and the transactions it added, or **Erase
+everything**, which starts the app over as if just installed (type ERASE to confirm). Erase everything
+empties every table and loads the built-in categories and dictionary again; the files in the data folder
+(uploads, workbooks, `personal.toml`, the bank and email passwords) stay, and bank sync stays connected
+but its accounts need linking again. Single rows (a transaction, a rule, a plan line) are still deleted
+where they're shown.
+
+Before any erase, the app saves a **restore point**: a copy of the whole database in
+`data/restore-points/` (the newest 10 are kept, on this computer only, and left out of `data/`'s git repo).
+The same page lists them with a **Restore** button, which puts the whole database back as it was then and
+saves what it replaces as a restore point first, so a restore can be undone too.
+
+Backups never replace older copies with a wiped one: `data/`'s git history keeps every version, and file
+backups with snapshots (restic, Time Machine) keep the old ones. What could go wrong is a wiped or damaged
+database quietly becoming the newest backup, so the scheduled sync checks first (`run.py backup-check`):
+a database that can't be read, or has under half the transactions of the last backup with no Erase
+everything in the last two days, isn't committed, and the sync log says so. After a real Erase
+everything, the commit before it is tagged `before-erase-<date>` in `data/`'s git repo.
+
 ## Personal settings
 
 Anything specific to your household goes in `data/personal.toml`, never in the code:
@@ -336,6 +358,9 @@ behind, so a stale month forecast never looks like good news.
 - **macOS:** `install-mac.sh` (see *Optional: keep it running on an always-on Mac*) runs `sync-mac.sh`
   **every day at 6:00**, again every hour until 21:00 if that failed, and whenever the Mac starts up. If `data/` is a git repository, it
   commits `data/` before and after, so a bad sync is one `git revert` away. Log: `data/simplefin-sync.log`.
+  Before each commit, `run.py backup-check` makes sure the database didn't lose most of its transactions
+  without an *Erase everything* (see *Manage data and restore points*); if it did, that commit is held
+  back and the log says why (`sync-mac.sh --force-backup` commits it anyway).
 - **Linux, cron** (`crontab -e`; use your own path):
 
   ```

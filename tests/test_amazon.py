@@ -196,7 +196,7 @@ def test_upload_page_and_forgetting(conn, card, client):
     response = client.post("/upload/amazon", data=data, content_type="multipart/form-data", follow_redirects=True)
     assert "Matched 1 more Amazon charges" in response.get_data(as_text=True)
     assert "1 items in 1 orders" in client.get("/upload").get_data(as_text=True)
-    client.post("/upload/amazon/forget")
+    client.post("/manage-data/amazon")
     assert conn.execute("SELECT COUNT(*) FROM amazon_items").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 1
 
