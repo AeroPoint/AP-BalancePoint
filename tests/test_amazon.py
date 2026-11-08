@@ -246,6 +246,7 @@ def test_the_extensions_orders_match_whole_and_give_way_to_the_full_export(conn,
         ("111-0000001", "2026-10-30", ["Board book", "Socks"], "19.29", ""),
         ("111-0000009", "2026-10-30", ["Already in the full export"], "12.00", "")))
     assert got["matched"] == 1 and linked(conn, whole) == ["Board book\nSocks"]
+    assert got["report"] and (got["items"], got["orders"]) == (2, 2)
     # The full export's items replace the order's entry, and the charge (with its 31-cent fee) matches them.
     for fee_charge in ("2026-09-03", "2026-09-10", "2026-09-17"):
         charge(conn, card, fee_charge, -10.31)

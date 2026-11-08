@@ -232,6 +232,10 @@ def main():
             print(f"{got['itemized']:,} orders broken into their items; {got['waiting']:,} with no order entry "
                   "to break up (upload the orders CSV first, or the full export has them).")
             return
+        if got["report"]:
+            print(f"{got['items']:,} orders ({got['first']} to {got['last']}), {got['orders']:,} new or updated; matched "
+                  f"{got['matched']:,} more Amazon charges. Now import the extension's items CSV.")
+            return
         print(f"{got['items']:,} items in {got['orders']:,} orders ({got['first']} to {got['last']}); matched "
               f"{got['matched']:,} more Amazon charges; {got['unmatched']:,} Amazon charges have no order to match.")
     elif args.command == "import-csv":

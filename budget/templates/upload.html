@@ -99,18 +99,24 @@
 
   <section class="panel steps">
     <div class="panel-head"><h2>Getting your Amazon orders</h2></div>
+    <h3 class="h-sm">Your whole history: Amazon's own export</h3>
     <ol>
       <li>On amazon.com, open Account, then <strong>Request Your Data</strong> (under Data and Privacy).</li>
       <li>Choose <strong>Your Orders</strong> and submit, then confirm with the link Amazon emails you.</li>
       <li>In a few hours to a few days Amazon emails a download link. Download the ZIP.</li>
       <li>Upload it here. A household with two Amazon accounts uploads both.</li>
     </ol>
-    <p class="muted">For the latest month or two, the free, open-source <strong>Amazon Order History Reporter</strong>
-      extension for Chrome is quicker: signed in to Amazon, open it, choose the orders table for the months you want and
-      download its CSV, then do the same with its items table. Upload the orders CSV first: each order's total matches a
-      charge for the whole order (an order charged in parts as it shipped won't). The items CSV then breaks each order
-      into its items, sharing its total out by item price, for category suggestions and the Split form. If Amazon shows a captcha, solve it in an Amazon
-      tab and run it again, or pick fewer months.</p>
+    <h3 class="h-sm">Each month, quicker: the Order History Reporter extension</h3>
+    <ol>
+      <li>Install the free, open-source <strong>Amazon Order History Reporter</strong> extension for Chrome and sign in to amazon.com.</li>
+      <li>Open it, choose the <strong>orders</strong> table for the last month or two, and download its CSV.</li>
+      <li>Do the same with its <strong>items</strong> table, for the same months.</li>
+      <li>Upload the orders CSV here <strong>first</strong>, then the items CSV. Two Amazon accounts: do both.</li>
+    </ol>
+    <p class="muted">The orders CSV has each order's real total, which equals its bank charge, so it's what matches a
+      charge to an order. The items CSV then shares that total out among the order's items by price (close, not exact:
+      check the Split form before saving). An order charged in parts as it shipped won't match. If Amazon shows a captcha,
+      solve it in an Amazon tab and run the extension again, or pick fewer months.</p>
     <p class="muted">Turn on “Sort by hand” and “Can be split” for Amazon in the Merchant dictionary, so its charges wait in Categorize with their items.</p>
   </section>
 </div>

@@ -656,15 +656,40 @@ matches already made stay, and new shipments are added. The export itself isn't 
 the app stores only its order, dates, name, quantity and amount, and *Remove Amazon order data* deletes
 all of those.
 
-For the latest month or two without waiting for Amazon's ZIP, upload the orders CSV from the free,
-open-source [Amazon Order History Reporter](https://github.com/philipmulcahy/azad) extension for Chrome
-(signed in to Amazon, open it, pick the orders table for the months you want, download its CSV, then do the
-same with its items table). The orders CSV gives each order's total, less any gift card, which matches a
-charge for the whole order (its totals include the delivery fee; an order charged in parts as it shipped
-won't match). The items CSV, uploaded after it, breaks each order into its items, sharing the order's total
-out by item price: the extension's prices leave out tax, shipping and discounts, so the shares are close
-rather than exact, but they always add up to the charge, for category suggestions and the Split form. Orders already in an uploaded ZIP are left as they are, and a later ZIP replaces
-an order's entry with its items.
+**Amazon orders each month, without the big download.** Amazon's ZIP takes hours or days to arrive and
+holds your whole history. For the latest month or two, the free, open-source
+[Amazon Order History Reporter](https://github.com/philipmulcahy/azad) extension for Chrome is quicker:
+
+1. Install it from the Chrome Web Store (publisher Philip Mulcahy) and sign in to amazon.com.
+2. Open the extension, choose the **orders** table and the months you want (the last one or two), let it
+   read them, and download its CSV.
+3. Do the same with its **items** table, for the same months.
+4. On *Upload data*, under **Amazon orders**, upload the orders CSV **first**, then the items CSV (or
+   `run.py import-amazon <file>` for each, in that order).
+5. A household with two Amazon accounts does this on each account.
+
+Why both files: a bank charge has only an amount, a date and a code (`AMAZON MKTPL*AB12CD34E`) that
+appears nowhere in Amazon's data. The orders CSV has each order's real total, with tax and delivery fee
+and less any gift card, which equals the bank charge to the cent, so the app matches charge to order by
+amount and date. The items CSV has each item's price but no totals, and its prices leave out tax,
+shipping and discounts (and may be today's price), so on its own it can't be matched to a charge. Uploaded
+after the orders CSV, it breaks each matched order into its items by order ID, sharing the order's total
+out by item price. The shares always add up to the charge, so a mixed order's Split form starts with each
+category's share and products sorted before are suggested; they are close rather than exact, so check
+them before saving.
+
+Good to know:
+- An order Amazon charged in parts as it shipped won't match, and its charges stay plain "Amazon" to
+  sort by hand (about one order in ten). So won't one paid wholly by gift card.
+- Uploading either file again changes nothing. Uploading the items CSV first is harmless: the upload says
+  which orders are waiting for their orders CSV; upload that, then the items CSV again.
+- Orders already in an uploaded ZIP are left alone (the ZIP has exact item amounts), and a later ZIP
+  replaces an order's extension entries with its items. A ZIP every 6 to 12 months keeps the category
+  suggestions learning.
+- If Amazon shows a captcha while the extension reads your orders, solve it in an Amazon tab and run it
+  again, or pick fewer months.
+- If the extension changes its file layout, the upload is refused with a message and nothing changes.
+- Nothing is categorized by itself: items show on Categorize and Transactions, and you confirm.
 
 A category can give its transactions a **checkbox** (Categories page), like "Rental property" on Home &
 Garden or "Should be FSA/HSA" on Health & Fitness, for tax time: filter Transactions by it and a year for

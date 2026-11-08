@@ -1391,6 +1391,11 @@ def upload_amazon():
               "item price." + (f" {got['waiting']:,} orders weren't: upload the extension's orders CSV first (or "
                                "the full export already has them)." if got["waiting"] else ""), "ok")
         return redirect(url_for(".upload"))
+    if got["report"]:
+        flash(f"{f.filename}: {got['items']:,} orders ({got['first']} to {got['last']}), {got['orders']:,} of them new "
+              f"or updated (the rest were already here). Matched {got['matched']:,} more Amazon charges. "
+              "Now upload the extension's items CSV for the same months.", "ok")
+        return redirect(url_for(".upload"))
     flash(f"{f.filename}: {got['items']:,} items in {got['orders']:,} orders ({got['first']} to {got['last']}). "
           f"Matched {got['matched']:,} more Amazon charges to their items"
           + (f"; {got['unmatched']:,} Amazon charges have no order to match (older or newer than the export, "

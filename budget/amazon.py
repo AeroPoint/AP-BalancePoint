@@ -406,7 +406,8 @@ def import_upload(conn, filename, content):
     first = min((i.order_date or i.ship_date for i in items if i.order_date or i.ship_date), default=None)
     last = max((i.ship_date or i.order_date for i in items if i.order_date or i.ship_date), default=None)
     return {"items": len(items), "orders": orders, "stored": stored, "matched": matched,
-            "unmatched": left, "first": first, "last": last}
+            "unmatched": left, "first": first, "last": last,
+            "report": all(i.shipment == REPORT_SHIPMENT for i in items)}
 
 
 def items_for(conn, ids):
