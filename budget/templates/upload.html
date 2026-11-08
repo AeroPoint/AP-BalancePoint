@@ -84,15 +84,17 @@
         <input type="file" name="orders" accept=".zip,.csv,application/zip,text/csv" required>
         <small>The ZIP itself, the Order History CSV inside it, or the orders CSV and then the items CSV from the Amazon Order
           History Reporter extension (quicker for a month or two). Upload a newer one any time: matches already made stay.
-          The file isn't kept; only each item's order, dates, name and amount are.</small>
+          Each file is read once into the app's database and not kept, so you can delete it after uploading.</small>
       </label>
       <div><button class="btn primary">Upload Amazon orders</button></div>
     </form>
     {% if amazon_status.items %}
     <p class="muted">{{ '{:,}'.format(amazon_status.items) }} items in {{ '{:,}'.format(amazon_status.orders) }} orders
       ({{ amazon_status.first }} to {{ amazon_status.last }}), matched to {{ '{:,}'.format(amazon_status.charges) }} charges.</p>
-    <form method="post" action="{{ url_for('main.forget_amazon') }}" data-confirm="Remove all Amazon order items? Transactions and their categories stay.">
-      <button class="btn small quiet danger">Remove Amazon order data</button>
+    <p class="muted">Only each item's order, dates, name and amount are stored. To erase them all (say, before sharing the
+      app), use the button below; transactions and their categories stay, and charges just stop showing their items.</p>
+    <form method="post" action="{{ url_for('main.forget_amazon') }}" data-confirm="Erase every stored Amazon item? Transactions and their categories stay; charges stop showing what they bought until you upload again.">
+      <button class="btn small quiet danger">Erase stored Amazon items</button>
     </form>
     {% endif %}
   </section>
@@ -108,8 +110,11 @@
     </ol>
     <h3 class="h-sm">Each month, quicker: the Order History Reporter extension</h3>
     <ol>
-      <li>Install the free, open-source <strong>Amazon Order History Reporter</strong> extension for Chrome and sign in to amazon.com.</li>
-      <li>Open it, choose the <strong>orders</strong> table for the last month or two, and download its CSV.</li>
+      <li>Install the free, open-source <a href="https://chromewebstore.google.com/detail/amazon-order-history-repo/mgkilgclilajckgnedgjgnfdokkgnibi" target="_blank" rel="noopener noreferrer">Amazon Order History
+        Reporter</a> extension for Chrome.</li>
+      <li>Sign in to amazon.com and go to <strong>Returns &amp; Orders</strong> (Your Orders): the extension doesn't work
+        from Amazon's home page.</li>
+      <li>Open the extension there, choose the <strong>orders</strong> table for the last month or two, and download its CSV.</li>
       <li>Do the same with its <strong>items</strong> table, for the same months.</li>
       <li>Upload the orders CSV here <strong>first</strong>, then the items CSV. Two Amazon accounts: do both.</li>
     </ol>

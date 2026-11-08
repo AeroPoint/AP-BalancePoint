@@ -652,21 +652,25 @@ shipping. For Amazon charges waiting in Categorize, the app suggests a category 
 product you've bought before, when every earlier purchase of it went to the same category.
 A charge whose items go to different categories gets its Split form filled in with each category's
 share, and the last line takes what's left, such as a delivery fee. Upload a newer export any time:
-matches already made stay, and new shipments are added. The export itself isn't kept. For each item
-the app stores only its order, dates, name, quantity and amount, and *Remove Amazon order data* deletes
-all of those.
+matches already made stay, and new shipments are added. Every upload is read once into the app's
+database and the file isn't kept, so delete it afterwards. For each item the app stores only its order,
+dates, name, quantity and amount; *Erase stored Amazon items* deletes all of those (transactions and their
+categories stay, charges just stop showing their items).
 
 **Amazon orders each month, without the big download.** Amazon's ZIP takes hours or days to arrive and
 holds your whole history. For the latest month or two, the free, open-source
 [Amazon Order History Reporter](https://github.com/philipmulcahy/azad) extension for Chrome is quicker:
 
-1. Install it from the Chrome Web Store (publisher Philip Mulcahy) and sign in to amazon.com.
-2. Open the extension, choose the **orders** table and the months you want (the last one or two), let it
-   read them, and download its CSV.
-3. Do the same with its **items** table, for the same months.
-4. On *Upload data*, under **Amazon orders**, upload the orders CSV **first**, then the items CSV (or
+1. Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/amazon-order-history-repo/mgkilgclilajckgnedgjgnfdokkgnibi) (publisher Philip Mulcahy).
+2. Sign in to amazon.com and go to **Returns & Orders** (Your Orders): the extension doesn't work from
+   Amazon's home page.
+3. Open the extension there, choose the **orders** table and the months you want (the last one or two),
+   let it read them, and download its CSV.
+4. Do the same with its **items** table, for the same months.
+5. On *Upload data*, under **Amazon orders**, upload the orders CSV **first**, then the items CSV (or
    `run.py import-amazon <file>` for each, in that order).
-5. A household with two Amazon accounts does this on each account.
+6. A household with two Amazon accounts does this on each account.
+7. Delete the downloaded files: the app read them into its database and doesn't need them again.
 
 Why both files: a bank charge has only an amount, a date and a code (`AMAZON MKTPL*AB12CD34E`) that
 appears nowhere in Amazon's data. The orders CSV has each order's real total, with tax and delivery fee
