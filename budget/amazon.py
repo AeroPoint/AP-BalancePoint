@@ -15,6 +15,13 @@ few days before, at most) and 10 days after shipping, the one nearest the ship d
 leaves out (Colorado's is under 50 cents), so a last pass allows a charge up to FEE_ALLOWANCE more than
 its items when that same difference keeps turning up. Charges that don't match stay exactly as they were.
 
+A smaller monthly alternative is the CSV that the Amazon Order History Reporter browser extension
+(open source, github.com/philipmulcahy/azad) downloads from its orders table: one row per order with its
+items' names, the order date and what the order cost. It has no price per item, so each order is stored
+as one entry (REPORT_SHIPMENT) listing its items at the order's total, and matches a charge of that whole
+amount. Its totals already include the delivery fee. Orders the full export already has are left alone,
+and a later full export replaces an order's entry with its items.
+
 Only what matching and the pages need is kept: no addresses, payment details or gift messages.
 """
 import csv
@@ -35,6 +42,8 @@ MAX_SHIPMENTS = 8                    # orders with more shipments only match one
 MAX_CSV_BYTES = 100 * 1024 * 1024    # per file read out of the ZIP
 ORDER_FILE = re.compile(r"order[ _.]?history.*\.csv$", re.IGNORECASE)
 MISSING = {"", "not available", "not applicable", "n/a"}
+REPORT_SHIPMENT = "order report"     # amazon_items.shipment of an order stored whole from the extension's CSV
+REPORT_COLUMNS = {"order id", "items", "date", "total"}
 
 
 class AmazonFormatError(ValueError):
@@ -101,12 +110,37 @@ def _column(header, *names):
     return None
 
 
+def parse_report(rows):
+    """Orders from the Amazon Order History Reporter's orders CSV, each one Item listing its products (one
+    per line) at what the order cost less any gift card. Its totals row and orders with nothing owed are
+    left out."""
+    header = [h.strip().lower() for h in rows[0]]
+    col = {name: header.index(name) for name in header}
+    get = lambda row, key: row[col[key]].strip() if key in col and col[key] < len(row) else ""
+    items = []
+    for row in rows[1:]:
+        order_id, day = get(row, "order id"), get(row, "date")
+        if not order_id or order_id.startswith("=") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            continue
+        total = _money(get(row, "total"))
+        owed = round(total - min(_money(get(row, "gift")), total), 2)
+        if owed <= 0:
+            continue
+        names = [" ".join(n.split()) for n in get(row, "items").rstrip(";").split("; ")]
+        items.append(Item(order_id=order_id, order_date=day, ship_date=day, shipment=REPORT_SHIPMENT,
+                          product="\n".join(n for n in names if n) or "(no name)", asin="", quantity=1, total=owed))
+    return items
+
+
 def parse_orders(text):
-    """Items from Amazon's order history CSV. Cancelled lines and lines with nothing owed are left out."""
+    """Items from Amazon's order history CSV (or the extension's, see parse_report). Cancelled lines and
+    lines with nothing owed are left out."""
     rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
     if not rows:
         raise AmazonFormatError("The file is empty.")
     header = rows[0]
+    if REPORT_COLUMNS <= {h.strip().lower() for h in header}:
+        return parse_report(rows)
     col = {
         "order_id": _column(header, "Order ID"),
         "order_date": _column(header, "Order Date"),
@@ -122,7 +156,8 @@ def parse_orders(text):
         raise AmazonFormatError(
             "This doesn't look like Amazon's order history (it needs Order ID, Product Name, Total Owed or "
             "Total Amount, and a date). "
-            "Upload the ZIP from Request Your Data, or the Order History CSV inside it.")
+            "Upload the ZIP from Request Your Data, the Order History CSV inside it, or the orders CSV "
+            "from the Amazon Order History Reporter extension.")
     get = lambda row, key: row[col[key]].strip() if col[key] is not None and col[key] < len(row) else ""
     items = []
     for row in rows[1:]:
@@ -167,10 +202,19 @@ def read_upload(filename, content):
 def store_items(conn, items):
     """Save items. A later export replaces an order's unmatched items and adds any new ones (a shipment
     that left since), while items already matched to a charge stay as they are, so a new export never
-    undoes a match. Returns (orders read, items added)."""
+    undoes a match. An order from the extension's CSV is skipped when the full export already has it,
+    and the full export's items replace an order's extension entry (its charge matches again).
+    Returns (orders read, items added)."""
     by_order = {}
     for item in items:
         by_order.setdefault(item.order_id, []).append(item)
+    for order_id, lines in list(by_order.items()):
+        if lines[0].shipment == REPORT_SHIPMENT:
+            if conn.execute("SELECT 1 FROM amazon_items WHERE order_id = ? AND shipment != ?",
+                            (order_id, REPORT_SHIPMENT)).fetchone():
+                del by_order[order_id]
+        else:
+            conn.execute("DELETE FROM amazon_items WHERE order_id = ? AND shipment = ?", (order_id, REPORT_SHIPMENT))
     key = lambda i: (i["product"], i["asin"], round(i["total"], 2), i["ship_date"], i["shipment"])
     added = 0
     for order_id, lines in by_order.items():
@@ -310,9 +354,16 @@ def items_for(conn, ids):
     return {tid: by_parent[p] for tid, p in parent.items() if p in by_parent}
 
 
+def _short(name, width):
+    return name if len(name) <= width else name[:width - 3].rstrip() + "…"
+
+
 def item_label(item):
-    name = item["product"]
-    name = name if len(name) <= 70 else name[:67].rstrip() + "…"
+    """A product's name, shortened; an order from the extension's CSV lists each of its products."""
+    names = item["product"].split("\n")
+    if len(names) > 1:
+        return " · ".join(_short(n, 45) for n in names)
+    name = _short(item["product"], 70)
     return f"{item['quantity']}× {name}" if item["quantity"] > 1 else name
 
 

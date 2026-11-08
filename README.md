@@ -656,6 +656,14 @@ matches already made stay, and new shipments are added. The export itself isn't 
 the app stores only its order, dates, name, quantity and amount, and *Remove Amazon order data* deletes
 all of those.
 
+For the latest month or two without waiting for Amazon's ZIP, upload the orders CSV from the free,
+open-source [Amazon Order History Reporter](https://github.com/philipmulcahy/azad) extension for Chrome
+(signed in to Amazon, open it, pick the orders table for this year, download its CSV). It has no price per
+item, so each order is kept as one entry listing its items at the order's total, less any gift card, and
+matches a charge for the whole order; an order charged in parts as it shipped won't match. Its totals
+include the delivery fee. Orders already in an uploaded ZIP are left as they are, and a later ZIP replaces
+an order's entry with its items.
+
 A category can give its transactions a **checkbox** (Categories page), like "Rental property" on Home &
 Garden or "Should be FSA/HSA" on Health & Fitness, for tax time: filter Transactions by it and a year for
 the total. Transactions marked "to check" have the box and a ✕ to dismiss; the filter lists them too.

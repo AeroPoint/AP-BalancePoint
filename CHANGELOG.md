@@ -13,7 +13,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   what it paid for, on Categorize and Transactions (and Transactions search finds item names). Charges are
   matched by amount and date, allowing for a state delivery fee. Categorize suggests a category for products
   bought before, and starts the Split form with each category's share for mixed orders.
-  `run.py import-amazon <file>` does the same from the command line.
+  `run.py import-amazon <file>` does the same from the command line. The orders CSV from the Amazon
+  Order History Reporter browser extension works too, for a quick month or two: each order is matched
+  whole, at its total.
 - Month forecast on the Overview, replacing the pace check: flexible and fixed spending so far plus
   what's known to still be coming (regular charges from the Recurring page not yet charged this month,
   and expected changes from the Plan page), against their targets, with the flexible money left per day.

@@ -211,3 +211,50 @@ def test_no_suggestion_for_a_product_sorted_two_ways(conn, card):
     conn.execute("UPDATE transactions SET category_id = ?, category_source = 'manual' WHERE id = ?", (shopping, b))
     items = amazon.items_for(conn, [new])
     assert amazon.Suggester(conn).for_charge(items[new], 5.00) == (None, [])
+
+
+REPORT_HEADER = ["order id", "order url", "items", "to", "date", "total", "shipping", "shipping_refund", "gift", "tax",
+                 "refund", "payments", "invoice"]
+
+
+def report(*orders):
+    """The Amazon Order History Reporter extension's orders CSV, with its spreadsheet totals row."""
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(REPORT_HEADER)
+    for order, day, items, total, gift in orders:
+        writer.writerow([order, "https://www.amazon.com/x", "; ".join(items) + "; ", "Pat Smith", day, total, "0", "",
+                         gift, "1.00", "", "", "https://www.amazon.com/y"])
+    writer.writerow(['=SUBTOTAL(103, A2:A9) & " items"', "", "", "", "", "=SUBTOTAL(109,F2:F9)"] + [""] * 7)
+    return out.getvalue().encode()
+
+
+def test_reads_the_extensions_orders_csv():
+    items = amazon.read_upload("amazon_order_history.csv", report(
+        ("111-0000001", "2026-10-30", ["Board book", "Toddler   socks, 6 pack"], "19.29", ""),
+        ("111-0000002", "2026-10-31", ["Gift-card-paid puzzle"], "12.00", "12.00"),
+        ("111-0000003", "2026-11-01", ["Part gift card"], "20.00", "5.00"),
+    ))
+    assert [(i.order_id, i.ship_date, i.total, i.shipment) for i in items] == [
+        ("111-0000001", "2026-10-30", 19.29, amazon.REPORT_SHIPMENT), ("111-0000003", "2026-11-01", 15.00, amazon.REPORT_SHIPMENT)]
+    assert amazon.item_label(vars(items[0])) == "Board book · Toddler socks, 6 pack"
+
+
+def test_the_extensions_orders_match_whole_and_give_way_to_the_full_export(conn, card):
+    whole = charge(conn, card, "2026-10-31", -19.29)
+    got = amazon.import_upload(conn, "amazon_order_history.csv", report(
+        ("111-0000001", "2026-10-30", ["Board book", "Socks"], "19.29", ""),
+        ("111-0000009", "2026-10-30", ["Already in the full export"], "12.00", "")))
+    assert got["matched"] == 1 and linked(conn, whole) == ["Board book\nSocks"]
+    # The full export's items replace the order's entry, and the charge (with its 31-cent fee) matches them.
+    for fee_charge in ("2026-09-03", "2026-09-10", "2026-09-17"):
+        charge(conn, card, fee_charge, -10.31)
+    amazon.import_upload(conn, "b.csv", export(
+        line("111-0000001", "2026-10-30", "2026-10-31", "Board book", "11.00"),
+        line("111-0000001", "2026-10-30", "2026-10-31", "Socks", "7.98", asin="B000000002"),
+        *(line(f"111-00001{n}", day, day, "Batteries", "10.00", asin="B000000003", tracking=f"AMZN_US(TBA{n})")
+          for n, day in enumerate(("2026-09-03", "2026-09-10", "2026-09-17")))).encode())
+    assert linked(conn, whole) == ["Board book", "Socks"]
+    again = amazon.import_upload(conn, "amazon_order_history.csv", report(
+        ("111-0000001", "2026-10-30", ["Board book", "Socks"], "19.29", "")))
+    assert again["stored"] == 0 and linked(conn, whole) == ["Board book", "Socks"]
