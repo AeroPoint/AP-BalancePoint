@@ -19,6 +19,7 @@ import json
 import os
 import re
 import smtplib
+import subprocess
 import ssl
 import urllib.error
 import urllib.parse
@@ -182,11 +183,30 @@ def save_password(data_dir, password):
     return path
 
 
+KEYCHAIN_PREFIX = "keychain:"   # notify-password holding "keychain:<item>": read that macOS Keychain item
+
+
 def load_password(data_dir):
+    """The SMTP password: BUDGET_NOTIFY_PASSWORD, else data/notify-password. That file may instead name a
+    macOS Keychain item ("keychain:Mail alerts"), read each time a message goes out, so one app password
+    shared with other jobs on the Mac is renewed in one place."""
     if os.environ.get(PASSWORD_ENV):
         return os.environ[PASSWORD_ENV]
     path = password_path(data_dir)
-    return path.read_text(encoding="utf-8").rstrip("\r\n") if path.exists() else None
+    if not path.exists():
+        return None
+    saved = path.read_text(encoding="utf-8").rstrip("\r\n")
+    if not saved.startswith(KEYCHAIN_PREFIX):
+        return saved
+    item = saved[len(KEYCHAIN_PREFIX):].strip()
+    try:
+        found = subprocess.run(["security", "find-generic-password", "-s", item, "-w"],
+                               capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        raise NotifyError(f"couldn't read the Keychain item “{item}” (only works on a Mac).") from None
+    if found.returncode != 0 or not found.stdout.strip():
+        raise NotifyError(f"no Keychain item “{item}” (or it couldn't be read): check its name in Keychain Access.")
+    return found.stdout.strip().replace(" ", "")
 
 
 # ---------------------------------------------------------------- the message

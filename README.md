@@ -465,7 +465,10 @@ email password.
   `personal.toml`: save it on the Notifications page, or `run.py notify-setup-password` asks for it
   without showing it. Either way it goes to `data/notify-password` (only your user can read it; kept
   out of `data/`'s own git) and is never shown again; or set `BUDGET_SMTP_PASSWORD` for the scheduled
-  job. Gmail and most others want an *app password* here, not your usual one.
+  job. Gmail and most others want an *app password* here, not your usual one. On a Mac, saving
+  `keychain:<item name>` instead (like `keychain:Mail alerts`) reads the password from that Keychain
+  item each time a message goes out, so one app password shared with other jobs on the Mac is renewed
+  in one place. Changing your Google password cancels every app password: make a new one then.
 - **ntfy** (a phone notification, [ntfy.sh](https://ntfy.sh) or your own server): `method = "ntfy"`,
   `ntfy_url = "https://ntfy.sh/<long random topic>"`. An ntfy.sh topic is public to anyone who knows
   its name, so make it long and random, or run your own server (a `user:password@` in the link is sent

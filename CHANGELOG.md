@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Email notifications on a Mac can use a Keychain item's password (save `keychain:<item name>`),
+  read each time a message goes out, so an app password shared with other jobs is renewed in one place.
 - Manage data (in the menu): every bulk erase in one place, each saying what it erases and what stays:
   stored Amazon items, one import, or Erase everything (type ERASE). A restore point (a copy of the whole
   database) is saved before each, and the page can put any of the last 10 back. The scheduled backup

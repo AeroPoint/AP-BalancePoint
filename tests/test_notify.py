@@ -604,3 +604,24 @@ def test_failure_reported_once_a_day_and_the_weekly_recap_still_goes(app, conn, 
     assert len(fake_smtp) == 1
     assert notify.after_sync(s, conn, dd, report(), budgeting.forecast(conn, monday), today=monday, out=print)
     assert len(fake_smtp) == 2 and "week of" in fake_smtp[1].msg["Subject"]
+
+
+def test_the_password_can_be_a_keychain_item(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.delenv(notify.PASSWORD_ENV, raising=False)
+    notify.save_password(tmp_path, "keychain:Mail alerts")
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        found = args[args.index("-s") + 1] == "Mail alerts"
+        return subprocess.CompletedProcess(args, 0 if found else 44, "abcd efgh ijkl mnop\n" if found else "", "")
+
+    monkeypatch.setattr(notify.subprocess, "run", fake_run)
+    assert notify.load_password(tmp_path) == "abcdefghijklmnop"
+    assert calls[0][:2] == ["security", "find-generic-password"]
+    notify.save_password(tmp_path, "keychain:Missing item")
+    with pytest.raises(notify.NotifyError, match="Missing item"):
+        notify.load_password(tmp_path)
+    notify.save_password(tmp_path, "plainapppassword")
+    assert notify.load_password(tmp_path) == "plainapppassword"
