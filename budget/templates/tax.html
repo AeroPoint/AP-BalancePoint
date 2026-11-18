@@ -163,6 +163,34 @@
 </section>
 
 {# ------------------------------------------------------------ rental #}
+{% macro rental_setup_form(su) %}
+<details class="tax-more no-print"{% if not t.rental %} open{% endif %}>
+  <summary>What counts as the rental</summary>
+  <form method="post" action="{{ url_for('main.tax_rental_setup', year=year) }}" class="stack rental-setup">
+    <label class="field"><span>Checkbox that marks rental costs</span>
+      <select name="label"><option value="">None</option>
+        {% for l in (su.labels + ([su.label] if su.label and su.label not in su.labels else [])) %}
+        <option value="{{ l }}"{% if l == su.label %} selected{% endif %}>{{ l }}{% if l not in su.labels %} (no category has it){% endif %}</option>{% endfor %}
+      </select></label>
+    <fieldset class="field"><legend>Rent comes in as</legend>
+      {% for c in su.income_categories %}<label class="check"><input type="checkbox" name="income" value="{{ c.id }}"{% if c.id in su.income %} checked{% endif %}> {{ c.name }}</label> {% endfor %}
+    </fieldset>
+    <fieldset class="field"><legend>Mortgage payments are in</legend>
+      {% for c in su.spending_categories %}<label class="check"><input type="checkbox" name="mortgage" value="{{ c.id }}"{% if c.id in su.mortgage %} checked{% endif %}> {{ c.name }}</label> {% endfor %}
+    </fieldset>
+    <p class="muted">Costs are charges ticked with that checkbox (give categories it on <a href="{{ url_for('main.categories_page') }}">Categories</a>).
+      Ticked payments in a mortgage category are split into interest, escrow and principal with the loan picked here.</p>
+    <div><button class="btn small">Save</button></div>
+  </form>
+</details>
+{% endmacro %}
+{% if not t.rental %}
+<section class="panel" id="rental">
+  <div class="panel-head"><h2>Rental</h2></div>
+  <p class="muted">No rental income or costs in {{ year }}. If you rent out a property, say which categories and checkbox are its.</p>
+  {{ rental_setup_form(t.rental_setup) }}
+</section>
+{% endif %}
 {% if t.rental %}
 {% set r = t.rental %}
 <section class="panel" id="rental">
@@ -184,7 +212,7 @@
         <tr><td>Mortgage payments <span class="muted">· whole payments: pick the loan below to leave principal out</span></td><td class="num">−{{ r.paid|money }}</td></tr>
         {% endif %}
         {% endif %}
-        {% if r.others %}<tr><td>Other costs ticked {{ '“Rental property”' }} <span class="muted">· {{ r.others|length }}</span></td><td class="num">−{{ r.other_costs|money }}</td></tr>{% endif %}
+        {% if r.others %}<tr><td>Other costs ticked “{{ r.label }}” <span class="muted">· {{ r.others|length }}</span></td><td class="num">−{{ r.other_costs|money }}</td></tr>{% endif %}
       </tbody>
       <tfoot><tr><td>Net rental income</td><td class="num">{{ signed(r.net) }}</td></tr></tfoot>
     </table>
@@ -195,8 +223,8 @@
     loan's terms; the lender's Form 1098 has the exact interest, and your property tax and insurance bills the exact escrow.</p>
   {% endif %}
   {% if not r.payments %}
-  <p class="muted tax-check">To count a mortgage, give its category the {{ '“Rental property”' }} checkbox on
-    <a href="{{ url_for('main.categories_page') }}">Categories</a> and tick the payments.</p>
+  <p class="muted tax-check">To count a mortgage, give its category the “{{ r.label }}” checkbox on
+    <a href="{{ url_for('main.categories_page') }}">Categories</a>, tick the payments, and pick it under “What counts as the rental”.</p>
   {% endif %}
   {% if r.loans and r.payments %}
   <form method="post" action="{{ url_for('main.tax_rental_loan', year=year) }}" class="inline no-print">
@@ -210,6 +238,7 @@
     <summary>Show the {{ (r.income_rows + r.payments + r.others)|length }} transactions</summary>
     {{ txn_table(r.income_rows + r.payments + r.others) }}
   </details>
+  {{ rental_setup_form(t.rental_setup) }}
 </section>
 {% endif %}
 

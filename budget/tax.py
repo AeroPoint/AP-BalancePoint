@@ -6,6 +6,7 @@ effective date, like every other report, so a year here matches the Overview's y
 """
 import csv
 import io
+import json
 import re
 from datetime import date
 
@@ -14,7 +15,8 @@ from .balances import loan_payment, months_elapsed
 
 SECTIONS = {"checkbox": "Checkbox items", "business": "Business", "income": "Income", "rental": "Rental",
             "notes": "Questions for your accountant"}
-RENTAL_LABEL = "Rental property"  # the checkbox that marks a rental's costs, in any category
+RENTAL_LABEL = "Rental property"  # the checkbox that marks a rental's costs, unless another is picked
+RENTAL_SETUP_KEY = "tax_rental_setup"  # JSON {"label", "income": [category ids], "mortgage": [category ids]}
 RENTAL_LOAN_KEY = "tax_rental_loan"  # loan_terms id of the rental's mortgage, to split payments
 CSV_COLUMNS = ["section", "date", "account", "merchant", "category", "amount", "checkbox", "notes"]
 # "cpa" as a word, or anything starting with "tax" (taxes, taxable, tax-deductible) except "taxi".
@@ -112,23 +114,55 @@ def rental_loans(conn):
         """SELECT lt.*, a.name AS account FROM loan_terms lt JOIN accounts a ON a.id = lt.account_id ORDER BY a.name""")]
 
 
+def rental_setup(conn):
+    """Which checkbox marks rental costs, which income categories are rent, which categories are the mortgage.
+
+    What was picked on Tax time, else found by name: the "Rental property" checkbox, income categories named
+    like "Rental…", and categories with "mortgage" in the name. Deleted categories drop out."""
+    try:
+        saved = json.loads(budgeting.get_setting(conn, RENTAL_SETUP_KEY, cast=str) or "{}")
+    except ValueError:
+        saved = {}
+    cats = [dict(r) for r in conn.execute("SELECT id, name, kind, flag FROM categories ORDER BY sort, name")]
+    ids = {c["id"] for c in cats}
+    income = [c for c in cats if c["kind"] == "income"]
+    spending = [c for c in cats if c["kind"] != "income"]
+    labels = sorted({c["flag"] for c in cats if c["flag"]})
+    by_name = {
+        "label": RENTAL_LABEL,
+        "income": [c["id"] for c in income if c["name"].lower().startswith("rental")],
+        "mortgage": [c["id"] for c in spending if "mortgage" in c["name"].lower()],
+    }
+    pick = {k: saved[k] if k in saved else v for k, v in by_name.items()}
+    pick["income"] = [i for i in pick["income"] if i in ids]
+    pick["mortgage"] = [i for i in pick["mortgage"] if i in ids]
+    return {**pick, "saved": bool(saved), "labels": labels, "income_categories": income, "spending_categories": spending}
+
+
+def save_rental_setup(conn, label, income_ids, mortgage_ids):
+    budgeting.set_setting(conn, RENTAL_SETUP_KEY, json.dumps(
+        {"label": " ".join((label or "").split()), "income": sorted(set(income_ids)), "mortgage": sorted(set(mortgage_ids))}))
+
+
 def rental(conn, year):
     """Rental income against its deductible costs, like a business. None without rental income or costs.
 
-    Costs are transactions ticked "Rental property" in any category. Ticked mortgage payments (a category
-    named like "Mortgage") are split with the rental loan's schedule: interest and escrow (property tax and
+    Costs are transactions ticked with the rental checkbox (rental_setup) in any category. Ticked payments in a
+    mortgage category are split with the rental loan's schedule: interest and escrow (property tax and
     insurance, the part of the payment above principal and interest) count; principal doesn't."""
     start, end = reports.bounds(year)
-    income_rows = _rows(conn, "c.kind = 'income' AND c.name LIKE 'Rental%' AND t.effective_date >= ? AND t.effective_date < ?",
-                        (start, end))
+    setup = rental_setup(conn)
+    income_ids = setup["income"] or [0]
+    income_rows = _rows(conn, f"t.category_id IN ({', '.join('?' * len(income_ids))}) AND t.effective_date >= ? AND t.effective_date < ?",
+                        (*income_ids, start, end))
     ticked = _rows(conn, f"{TICKED} AND c.flag = ? AND t.effective_date >= ? AND t.effective_date < ?",
-                   (RENTAL_LABEL, start, end))
+                   (setup["label"], start, end)) if setup["label"] else []
     if not income_rows and not ticked:
         return None
     loans = rental_loans(conn)
     loan_id = budgeting.get_setting(conn, RENTAL_LOAN_KEY, cast=int)
     loan = next((l for l in loans if l["id"] == loan_id), None)
-    payments = [r for r in ticked if "mortgage" in (r["category"] or "").lower() and r["amount"] < 0]
+    payments = [r for r in ticked if r["category_id"] in setup["mortgage"] and r["amount"] < 0]
     others = [r for r in ticked if r not in payments]
     paid = -sum(r["amount"] for r in payments)
     interest = principal = escrow = 0.0
@@ -145,7 +179,7 @@ def rental(conn, year):
         "income": round(income_total, 2), "income_rows": income_rows, "payments": payments, "others": others,
         "paid": round(paid, 2), "interest": round(interest, 2), "principal": round(principal, 2), "escrow": round(escrow, 2),
         "other_costs": round(other_costs, 2), "deductible": round(deductible, 2), "net": round(income_total - deductible, 2),
-        "loan": loan, "loans": loans,
+        "loan": loan, "loans": loans, "label": setup["label"],
     }
 
 
@@ -179,7 +213,8 @@ def summary(conn, year, today=None, with_business=True):
     boxes, to_check = checkboxes(conn, year)
     biz = businesses(conn, year, today) if with_business else []
     return {"year": year, "boxes": boxes, "to_check": to_check, "businesses": biz, "income": income(conn, year),
-            "notes": notes(conn, year), "questions": questions(conn, year), "rental": rental(conn, year), "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
+            "notes": notes(conn, year), "questions": questions(conn, year), "rental": rental(conn, year),
+            "rental_setup": rental_setup(conn), "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
 
 
 def _checkbox_text(r):

@@ -517,6 +517,10 @@ of April, then this year; pick any year at the top). Like every report it counts
 - **Business**: each business account's income, costs and profit for the year (the same numbers as the
   Business page) and its transactions.
 - **Income** by category, uncategorized deposits worth a look, and paycheck retirement savings if set up.
+- **Rental**: rent against the rental's costs (charges ticked with its checkbox), with ticked mortgage
+  payments split into interest, escrow and principal from the loan's terms. *What counts as the rental* picks
+  the checkbox, the income categories that are rent and the mortgage categories; until then it uses a
+  "Rental property" checkbox, income categories named "Rental…" and categories named like "Mortgage".
 - **Questions for your accountant**: transactions whose notes mention "CPA" or taxes. Write "ask the CPA:
   ..." in a transaction's note during the year and it lands here.
 
@@ -727,6 +731,7 @@ Good to know:
 A category can give its transactions a **checkbox** (Categories page), like "Rental property" on Home &
 Garden or "Should be FSA/HSA" on Health & Fitness, for tax time: filter Transactions by it and a year for
 the total. Transactions marked "to check" have the box and a ✕ to dismiss; the filter lists them too.
+A tick belongs to its checkbox: moving a charge to a category with a different checkbox (or none) clears it.
 Tick **Every one** next to a checkbox when everything in the category belongs in it ("Charitable donation"
 on a Giving category kept for donations): Tax time then counts all of its transactions, with nothing to tick.
 

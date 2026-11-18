@@ -477,6 +477,8 @@ tr.done select, tr.done input { opacity: 0.6; }
 .more-panel { right: 0; }
 .acct-panel fieldset { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
 .acct-panel legend { margin-bottom: 4px; padding: 0; color: var(--ink-2); font-size: 0.82rem; font-weight: 600; }
+.rental-setup fieldset { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; border: 0; }
+.rental-setup legend { width: 100%; margin-bottom: 4px; padding: 0; color: var(--ink-2); font-size: 0.82rem; font-weight: 600; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 0.92rem; }
 
 .chip-groups { display: grid; gap: 10px; margin-bottom: 12px; }

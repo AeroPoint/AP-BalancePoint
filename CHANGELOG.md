@@ -8,6 +8,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Added
 - Category checkboxes can count every transaction in the category ("Every one" on the Categories page), so Tax
   time totals a category like charitable giving without ticking each charge.
+- Tax time: *What counts as the rental* picks the rental's checkbox, its rent categories and its mortgage
+  categories, so a rental works whatever they're called (it used to need "Rental property", "Rental…" and
+  "Mortgage" names). The section shows even before a rental has anything in it, to set it up.
 - Email notifications on a Mac can use a Keychain item's password (save `keychain:<item name>`),
   read each time a message goes out, so an app password shared with other jobs is renewed in one place.
 - Manage data (in the menu): every bulk erase in one place, each saying what it erases and what stays:
@@ -33,6 +36,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   log and notifications carry its line.
 - Plan changes can say which category they come out of: a fixed or flexible one counts in that month's
   forecast instead of the projection.
+
+### Fixed
+- A ticked charge moved to a category with a different checkbox no longer arrives already ticked there.
 
 ## [0.1.1] - 2026-10-31
 

@@ -1647,6 +1647,17 @@ def tax_rental_loan():
     return redirect(url_for(".tax_page", year=_tax_year()) + "#rental")
 
 
+@bp.post("/tax/rental-setup")
+def tax_rental_setup():
+    conn = get_db()
+    form = request.form
+    tax.save_rental_setup(conn, form.get("label"), [i for i in map(_int, form.getlist("income")) if i],
+                          [i for i in map(_int, form.getlist("mortgage")) if i])
+    conn.commit()
+    flash("Saved what counts as the rental.", "ok")
+    return redirect(url_for(".tax_page", year=_tax_year()) + "#rental")
+
+
 @bp.post("/tax/questions")
 def tax_questions_save():
     conn = get_db()

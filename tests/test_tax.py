@@ -207,3 +207,39 @@ def test_saving_a_category_keeps_every_one_only_with_a_checkbox(conn, client):
     client.post("/categories/save", data={"id": cid, "name": "Giving", "kind": "expense", "grp": "flexible",
                                           "flag": "", "flag_all": "1"})
     assert tuple(conn.execute("SELECT flag, flag_all FROM categories WHERE id = ?", (cid,)).fetchone()) == (None, 0)
+
+
+def test_the_rental_can_use_other_names(conn, client):
+    """Nothing named "Rental…" or "Mortgage": pick the checkbox and categories on Tax time."""
+    chk = account(conn, "Checking")
+    conn.execute("INSERT INTO categories (name, kind, grp) VALUES ('Rent received', 'income', NULL), ('House loan', 'expense', 'fixed')")
+    _flag(conn, "Home & Garden", "Cabin")
+    _flag(conn, "House loan", "Cabin")
+    txn(conn, chk, "2025-03-01", 1500, "Rent received", "Tenant")
+    txn(conn, chk, "2025-03-05", -900, "House loan", "Lender", flag="yes")
+    txn(conn, chk, "2025-03-09", -80, "Home & Garden", "Hardware", flag="yes")
+    conn.commit()
+    assert tax.rental(conn, 2025) is None  # found by name: nothing matches
+    assert "What counts as the rental" in client.get("/tax?year=2025").get_data(as_text=True)
+    ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM categories")}
+    client.post("/tax/rental-setup?year=2025", data={"label": "Cabin", "income": [ids["Rent received"]],
+                                                     "mortgage": [ids["House loan"]]})
+    r = tax.rental(conn, 2025)
+    assert (r["income"], r["paid"], r["other_costs"], r["label"]) == (1500, 900, 80, "Cabin")
+    assert "Other costs ticked “Cabin”" in client.get("/tax?year=2025").get_data(as_text=True)
+    conn.execute("DELETE FROM categories WHERE id = ?", (ids["Rent received"],))  # deleted: drops out
+    assert tax.rental_setup(conn)["income"] == []
+
+
+def test_a_tick_is_cleared_when_its_charge_moves_to_another_checkbox(conn):
+    chk = account(conn, "Checking")
+    _flag(conn, "Home & Garden", "Rental property")
+    _flag(conn, "Mortgage & HOA", "Rental property")
+    _flag(conn, "Health & Fitness", "Should be FSA/HSA")
+    tid = txn(conn, chk, "2025-03-09", -80, "Home & Garden", "Hardware", flag="yes")
+    ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM categories")}
+    tick = lambda: conn.execute("SELECT flag FROM transactions WHERE id = ?", (tid,)).fetchone()[0]
+    conn.execute("UPDATE transactions SET category_id = ? WHERE id = ?", (ids["Mortgage & HOA"], tid))
+    assert tick() == "yes"  # same checkbox: kept
+    conn.execute("UPDATE transactions SET category_id = ? WHERE id = ?", (ids["Health & Fitness"], tid))
+    assert tick() is None  # another checkbox: cleared, not counted as FSA/HSA

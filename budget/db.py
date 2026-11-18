@@ -368,6 +368,15 @@ def migrate(conn):
                         created  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )""")
 
+    # A tick belongs to its category's checkbox: moving a charge to a category with another checkbox (or none)
+    # clears it, so it can't show up already ticked as something else.
+    conn.execute("""CREATE TRIGGER IF NOT EXISTS clear_tick_on_category_change
+                    AFTER UPDATE OF category_id ON transactions
+                    WHEN NEW.flag IS NOT NULL AND NEW.category_id IS NOT OLD.category_id
+                     AND (SELECT flag FROM categories WHERE id = NEW.category_id)
+                         IS NOT (SELECT flag FROM categories WHERE id = OLD.category_id)
+                    BEGIN UPDATE transactions SET flag = NULL WHERE id = NEW.id; END""")
+
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version < 1:
         _fold_old_categories(conn)
