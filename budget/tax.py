@@ -1,6 +1,6 @@
 """Tax time page: what an accountant asks for, for one calendar year.
 
-Checkbox items (categories with a tax checkbox: transactions ticked yes, or all of a category set to count every one), each business account's income,
+Tax items (per category, chosen on the page: its ticked transactions, all of them, or none), each business account's income,
 costs and profit, income by category, and notes that mention a CPA or taxes. Everything counts on the
 effective date, like every other report, so a year here matches the Overview's year and the Business page.
 """
@@ -13,7 +13,7 @@ from datetime import date
 from . import budgeting, business, reports
 from .balances import loan_payment, months_elapsed
 
-SECTIONS = {"checkbox": "Checkbox items", "business": "Business", "income": "Income", "rental": "Rental",
+SECTIONS = {"checkbox": "Tax items", "business": "Business", "income": "Income", "rental": "Rental",
             "notes": "Questions for your accountant"}
 RENTAL_LABEL = "Rental property"  # the checkbox that marks a rental's costs, unless another is picked
 RENTAL_SETUP_KEY = "tax_rental_setup"  # JSON {"label", "income": [category ids], "mortgage": [category ids]}
@@ -22,11 +22,14 @@ CSV_COLUMNS = ["section", "date", "account", "merchant", "category", "amount", "
 # "cpa" as a word, or anything starting with "tax" (taxes, taxable, tax-deductible) except "taxi".
 ACCOUNTANT_NOTE = re.compile(r"\bcpa\b|\btax(?!i)", re.IGNORECASE)
 
-# A category whose checkbox counts every charge (flag_all) reads as ticked, so no one has to tick them.
-TICKED = "(t.flag = 'yes' OR c.flag_all = 1)"
+# What Tax time does with a category (categories.tax_mode): leave it out, count its ticked transactions, or count
+# all of them. Unset: ticked when it has a checkbox, else out. All-in categories read as ticked, nothing to tick.
+TAX_MODES = {"off": "Left out", "ticked": "Ticked ones", "all": "All of it"}
+TICKED = "(t.flag = 'yes' OR c.tax_mode = 'all')"
 TXN_SELECT = """SELECT t.id, t.effective_date, t.date, t.amount, t.name, t.notes, t.category_id,
-                       CASE WHEN c.flag IS NOT NULL AND c.flag_all = 1 THEN 'yes' ELSE t.flag END AS flag,
-                       a.name AS account, c.name AS category, c.flag AS checkbox
+                       CASE WHEN c.tax_mode = 'all' THEN 'yes' ELSE t.flag END AS flag,
+                       a.name AS account, c.name AS category,
+                       CASE WHEN c.tax_mode = 'all' THEN COALESCE(c.flag, c.name) ELSE c.flag END AS checkbox
                 FROM transactions t JOIN accounts a ON a.id = t.account_id
                 LEFT JOIN categories c ON c.id = t.category_id"""
 ORDER = " ORDER BY t.effective_date, t.date, t.id"
@@ -42,22 +45,52 @@ def _rows(conn, where, params):
     return [dict(r) for r in conn.execute(f"{TXN_SELECT} WHERE {where}{ORDER}", params)]
 
 
-def checkboxes(conn, year):
-    """[{label, categories, rows, total, n}] per checkbox label, plus the year's count still to check.
+def tax_mode(c):
+    """'off', 'ticked' or 'all' for a category row (needs flag and tax_mode)."""
+    mode = c["tax_mode"] if c["tax_mode"] in TAX_MODES else ("ticked" if c["flag"] else "off")
+    return "off" if mode == "ticked" and not c["flag"] else mode
 
-    total is the signed sum (money out is negative). Two categories with the same label share one box."""
+
+def tax_categories(conn):
+    """Every category with what Tax time does with it, for the page's choices."""
+    return [{**dict(c), "mode": tax_mode(c)} for c in conn.execute(
+        "SELECT id, name, kind, flag, tax_mode FROM categories ORDER BY CASE kind WHEN 'expense' THEN 0 WHEN 'income' THEN 1 ELSE 2 END, sort, name")]
+
+
+def save_tax_mode(conn, cid, mode):
+    """Store a choice, or clear it when it's what the category would do anyway."""
+    c = conn.execute("SELECT flag, NULL AS tax_mode FROM categories WHERE id = ?", (cid,)).fetchone()
+    if c is None or mode not in TAX_MODES or (mode == "ticked" and not c["flag"]):
+        return
+    conn.execute("UPDATE categories SET tax_mode = ? WHERE id = ?", (None if mode == tax_mode(c) else mode, cid))
+
+
+def checkboxes(conn, year):
+    """[{label, categories, rows, total, n}] per section, plus the year's count still to check.
+
+    A category on Tax time adds its ticked transactions (or all of them) under its checkbox's label, or its own
+    name when it has none. total is the signed sum (money out is negative). Same label: one section."""
     start, end = reports.bounds(year)
-    boxes = {}
-    for c in conn.execute("SELECT id, name, flag, flag_all FROM categories WHERE flag IS NOT NULL ORDER BY sort, name"):
-        boxes.setdefault(c["flag"], {"label": c["flag"], "categories": [], "rows": []})["categories"].append(dict(c))
-    for r in _rows(conn, f"{TICKED} AND c.flag IS NOT NULL AND t.effective_date >= ? AND t.effective_date < ?",
-                   (start, end)):
+    boxes, ticked, every = {}, [], []
+    for c in tax_categories(conn):
+        if c["mode"] == "off":
+            continue
+        label = c["flag"] or c["name"]
+        boxes.setdefault(label, {"label": label, "categories": [], "rows": []})["categories"].append(c)
+        (every if c["mode"] == "all" else ticked).append(c["id"])
+    if not boxes:
+        return [], 0
+    ids = ticked + every
+    marks = ", ".join("?" * len(ids))
+    for r in _rows(conn, f"""t.category_id IN ({marks}) AND (t.flag = 'yes' OR c.tax_mode = 'all')
+                             AND t.effective_date >= ? AND t.effective_date < ?""", (*ids, start, end)):
         boxes[r["checkbox"]]["rows"].append(r)
     for b in boxes.values():
         b["total"] = round(sum(r["amount"] for r in b["rows"]), 2)
         b["n"] = len(b["rows"])
     to_check = conn.execute(
-        "SELECT COUNT(*) FROM transactions WHERE flag = 'check' AND effective_date >= ? AND effective_date < ?", (start, end)
+        f"""SELECT COUNT(*) FROM transactions WHERE flag = 'check' AND category_id IN ({', '.join('?' * len(ticked)) or 'NULL'})
+            AND effective_date >= ? AND effective_date < ?""", (*ticked, start, end)
     ).fetchone()[0]
     return list(boxes.values()), to_check
 
@@ -214,7 +247,7 @@ def summary(conn, year, today=None, with_business=True):
     biz = businesses(conn, year, today) if with_business else []
     return {"year": year, "boxes": boxes, "to_check": to_check, "businesses": biz, "income": income(conn, year),
             "notes": notes(conn, year), "questions": questions(conn, year), "rental": rental(conn, year),
-            "rental_setup": rental_setup(conn), "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
+            "rental_setup": rental_setup(conn), "tax_categories": tax_categories(conn), "modes": TAX_MODES, "profit": round(sum(b["totals"]["profit"] for b in biz), 2)}
 
 
 def _checkbox_text(r):

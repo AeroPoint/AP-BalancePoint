@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS categories (
     snap_to_month INTEGER NOT NULL DEFAULT 0,  -- 1 = count on the nearest 1st (rent paid a day early)
     grp           TEXT,                        -- spending: fixed | flexible | nonmonthly; transfers: saving
     flag          TEXT,                        -- a checkbox its transactions get, e.g. "Rental property" (for taxes)
-    flag_all      INTEGER NOT NULL DEFAULT 0   -- 1 = every transaction counts as ticked (nothing to tick)
+    tax_mode      TEXT                         -- on Tax time: 'off', 'ticked' or 'all'; NULL = ticked if it has a checkbox
 );
 
 -- The merchant dictionary + auto-categorization rules.
@@ -336,8 +336,10 @@ def migrate(conn):
         conn.execute("ALTER TABLE transactions ADD COLUMN pending INTEGER NOT NULL DEFAULT 0")
     if "flag" not in _columns(conn, "categories"):
         conn.execute("ALTER TABLE categories ADD COLUMN flag TEXT")
-    if "flag_all" not in _columns(conn, "categories"):
-        conn.execute("ALTER TABLE categories ADD COLUMN flag_all INTEGER NOT NULL DEFAULT 0")
+    if "tax_mode" not in _columns(conn, "categories"):
+        conn.execute("ALTER TABLE categories ADD COLUMN tax_mode TEXT")
+        if "flag_all" in _columns(conn, "categories"):  # a short-lived "every one" checkbox, now a Tax time choice
+            conn.execute("UPDATE categories SET tax_mode = 'all' WHERE flag_all = 1")
     existing = _columns(conn, "transactions")
     if "split_total" not in existing:
         conn.execute("ALTER TABLE transactions ADD COLUMN split_total REAL")

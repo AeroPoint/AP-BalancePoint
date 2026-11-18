@@ -6,8 +6,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- Category checkboxes can count every transaction in the category ("Every one" on the Categories page), so Tax
-  time totals a category like charitable giving without ticking each charge.
+- Tax time: *Choose what's on Tax time* sets, for each category, whether it's left out, counted by its ticked
+  transactions, or counted whole with nothing to tick (a donations category, say). "Checkbox items" is now
+  "Tax items".
 - Tax time: *What counts as the rental* picks the rental's checkbox, its rent categories and its mortgage
   categories, so a rental works whatever they're called (it used to need "Rental property", "Rental…" and
   "Mortgage" names). The section shows even before a rental has anything in it, to set it up.

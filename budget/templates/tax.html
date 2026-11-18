@@ -66,12 +66,13 @@
 {# ------------------------------------------------------------ checkbox items #}
 <section class="panel" id="checkbox">
   <div class="panel-head">
-    <h2>Checkbox items</h2>
+    <h2>Tax items</h2>
     {% if t.boxes %}{{ download('checkbox') }}{% endif %}
   </div>
   {% if not t.boxes %}
-  <p class="muted">No category has a tax checkbox yet. On <a href="{{ url_for('main.categories_page') }}">Categories</a>, give one a
-    checkbox like "Rental property" or "Should be FSA/HSA", then tick its transactions.</p>
+  <p class="muted">Nothing is on Tax time yet. Count a whole category below (like charitable giving), or on
+    <a href="{{ url_for('main.categories_page') }}">Categories</a> give one a checkbox like "Rental property" or
+    "Should be FSA/HSA" and tick its transactions.</p>
   {% else %}
   {% if t.to_check %}
   <p class="tax-check">{{ t.to_check }} transaction{{ 's' if t.to_check != 1 }} in {{ year }} still {{ 'need' if t.to_check != 1 else 'needs' }} a look.
@@ -92,6 +93,34 @@
   </div>
   {% endfor %}
   {% endif %}
+  <details class="tax-more no-print"{% if not t.boxes %} open{% endif %}>
+    <summary>Choose what's on Tax time</summary>
+    <p class="muted">For each category: leave it out, count only the transactions ticked with its checkbox, or count all of it.
+      Categories with the same checkbox share one total; a category counted whole without a checkbox shows under its own name.
+      Checkboxes are named on <a href="{{ url_for('main.categories_page') }}">Categories</a>.</p>
+    <form method="post" action="{{ url_for('main.tax_categories_save', year=year) }}">
+      <div class="table-wrap">
+        <table class="ledger cards tax-choose">
+          <thead><tr><th>Category</th><th>Checkbox</th><th>On Tax time</th></tr></thead>
+          <tbody>
+            {% for c in t.tax_categories %}
+            <tr>
+              <td class="c-main">{{ c.name }}{% if c.kind == 'income' %} <span class="muted">· income (also under Income)</span>{% endif %}</td>
+              <td class="c-meta muted" data-label="Checkbox">{{ c.flag or '—' }}</td>
+              <td class="c-side">
+                <select name="mode-{{ c.id }}" aria-label="{{ c.name }} on Tax time">
+                  {% for value, label in t.modes.items() %}{% if value != 'ticked' or c.flag %}
+                  <option value="{{ value }}"{% if c.mode == value %} selected{% endif %}>{{ label }}</option>{% endif %}{% endfor %}
+                </select>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div><button class="btn small">Save</button></div>
+    </form>
+  </details>
 </section>
 
 {# ------------------------------------------------------------ business #}

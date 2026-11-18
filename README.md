@@ -511,9 +511,11 @@ moved in and out of the business account shown apart.
 The **Tax time** page gathers what an accountant asks for, for one calendar year (last year until the end
 of April, then this year; pick any year at the top). Like every report it counts on the effective date.
 
-- **Checkbox items**: for each category checkbox (Categories page), the transactions ticked yes (or all of
-  them, for a checkbox set to count every one) and their total, plus how many are still "to check", with a
-  link to finish them on Transactions.
+- **Tax items**: a total for each category checkbox (Categories page) from the transactions ticked yes, plus
+  how many are still "to check", with a link to finish them on Transactions. *Choose what's on Tax time*
+  sets each category to be left out, counted by its ticked transactions (the default for one with a
+  checkbox), or counted whole with nothing to tick, like a Giving category kept for donations. A whole
+  category without a checkbox gets a total under its own name.
 - **Business**: each business account's income, costs and profit for the year (the same numbers as the
   Business page) and its transactions.
 - **Income** by category, uncategorized deposits worth a look, and paycheck retirement savings if set up.
@@ -732,8 +734,8 @@ A category can give its transactions a **checkbox** (Categories page), like "Ren
 Garden or "Should be FSA/HSA" on Health & Fitness, for tax time: filter Transactions by it and a year for
 the total. Transactions marked "to check" have the box and a ✕ to dismiss; the filter lists them too.
 A tick belongs to its checkbox: moving a charge to a category with a different checkbox (or none) clears it.
-Tick **Every one** next to a checkbox when everything in the category belongs in it ("Charitable donation"
-on a Giving category kept for donations): Tax time then counts all of its transactions, with nothing to tick.
+Tax time can instead count a whole category, with nothing to tick, or leave one out (*Choose what's on Tax
+time* there); a category counted whole shows no tick box on Transactions.
 
 The built-in dictionary of national merchants lives in `budget/seed.py`. New entries there are
 added on the next start without touching anything you've edited.

@@ -101,16 +101,16 @@ def test_csv_export_columns_and_tricky_names(conn, client):
     rows = list(csv.reader(io.StringIO(r.get_data(as_text=True))))
     assert rows[0] == tax.CSV_COLUMNS
     body = rows[1:]
-    assert ["Checkbox items", "2025-05-01", 'Pat "Main", Checking', 'Smith, "Pat" & Co', "Home & Garden", "-80.50",
+    assert ["Tax items", "2025-05-01", 'Pat "Main", Checking', 'Smith, "Pat" & Co', "Home & Garden", "-80.50",
             "Rental property", 'Ask CPA: "repair", or improvement?'] in body
     paycheck = next(row for row in body if row[0] == "Income")
     assert paycheck[3] == "'=HYPERLINK(1)" and paycheck[5] == "2000.00"  # never a formula in a spreadsheet
     notes = [row for row in body if row[0] == "Questions for your accountant"]
     assert len(notes) == 2 and "To check: Rental property" in [row[6] for row in notes]
-    assert {row[0] for row in body} == {"Checkbox items", "Income", "Rental", "Questions for your accountant"}
+    assert {row[0] for row in body} == {"Tax items", "Income", "Rental", "Questions for your accountant"}
 
     one = list(csv.reader(io.StringIO(client.get("/tax/export.csv?year=2025&section=checkbox").get_data(as_text=True))))
-    assert len(one) == 2 and one[1][0] == "Checkbox items"
+    assert len(one) == 2 and one[1][0] == "Tax items"
     assert len(list(csv.reader(io.StringIO(client.get("/tax/export.csv?year=2024&section=income").get_data(as_text=True))))) == 1
 
 
@@ -124,7 +124,7 @@ def test_pages_render_on_demo_and_empty(demo_conn, client):
 
 def test_empty_database(client):
     page = client.get("/tax").get_data(as_text=True)
-    assert "No category has a tax checkbox yet" in page and "No income recorded" in page
+    assert "Nothing is on Tax time yet" in page and "No income recorded" in page
     assert client.get("/tax/export.csv").get_data(as_text=True).strip() == ",".join(tax.CSV_COLUMNS)
 
 
@@ -182,31 +182,33 @@ def test_rental_nets_income_against_interest_escrow_and_ticked_costs(conn, clien
     assert len(body) == 1 + 2 + 2 + 1  # header, rent x2, payments x2, hardware
 
 
-def test_a_checkbox_can_count_every_transaction_in_its_category(conn, client):
+def test_tax_time_can_count_a_whole_category_or_leave_one_out(conn, client):
     acct = account(conn, "Joint Checking")
-    conn.execute("UPDATE categories SET flag = 'Charitable donation', flag_all = 1 WHERE name = 'Giving'")
+    _flag(conn, "Giving", "Charitable donation")
+    _flag(conn, "Health & Fitness", "Should be FSA/HSA")
     txn(conn, acct, "2026-03-01", -100.0, "Giving")  # never ticked
     txn(conn, acct, "2026-04-01", -25.0, "Giving", flag="check")
     txn(conn, acct, "2025-12-31", -999.0, "Giving")  # another year
+    txn(conn, acct, "2026-05-01", -40.0, "Health & Fitness", flag="yes")
+    txn(conn, acct, "2026-06-01", -60.0, "Taxes & Fees")  # no checkbox
     conn.commit()
-    boxes, to_check = tax.checkboxes(conn, 2026)
-    box = next(b for b in boxes if b["label"] == "Charitable donation")
-    assert box["total"] == -125.0 and box["n"] == 2
-    assert all(r["flag"] == "yes" for r in box["rows"])
-    giving = conn.execute("SELECT id FROM categories WHERE name = 'Giving'").fetchone()[0]
-    html = client.get(f"/transactions?flag=yes:{giving}&period=2026").get_data(as_text=True)
-    assert "flag-check" not in html  # nothing to tick
-    assert html.count("Giving") >= 2
+    ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM categories")}
+    labels = lambda: {b["label"]: (b["total"], b["n"]) for b in tax.checkboxes(conn, 2026)[0]}
+    assert labels() == {"Charitable donation": (0, 0), "Should be FSA/HSA": (-40.0, 1)}  # by default: ticked ones
+    assert tax.checkboxes(conn, 2026)[1] == 1
+    assert "Choose what's on Tax time" in client.get("/tax?year=2026").get_data(as_text=True)
 
+    client.post("/tax/categories?year=2026", data={f"mode-{ids['Giving']}": "all", f"mode-{ids['Health & Fitness']}": "off",
+                                                   f"mode-{ids['Taxes & Fees']}": "all"})
+    assert labels() == {"Charitable donation": (-125.0, 2), "Taxes & Fees": (-60.0, 1)}
+    assert tax.checkboxes(conn, 2026)[1] == 0  # Giving needs no ticking; FSA/HSA is left out
+    html = client.get(f"/transactions?flag=yes:{ids['Giving']}&period=2026").get_data(as_text=True)
+    assert "flag-check" not in html and html.count("Giving") >= 2
 
-def test_saving_a_category_keeps_every_one_only_with_a_checkbox(conn, client):
-    cid = conn.execute("SELECT id FROM categories WHERE name = 'Giving'").fetchone()[0]
-    client.post("/categories/save", data={"id": cid, "name": "Giving", "kind": "expense", "grp": "flexible",
-                                          "flag": "Charitable donation", "flag_all": "1"})
-    assert conn.execute("SELECT flag_all FROM categories WHERE id = ?", (cid,)).fetchone()[0] == 1
-    client.post("/categories/save", data={"id": cid, "name": "Giving", "kind": "expense", "grp": "flexible",
-                                          "flag": "", "flag_all": "1"})
-    assert tuple(conn.execute("SELECT flag, flag_all FROM categories WHERE id = ?", (cid,)).fetchone()) == (None, 0)
+    client.post("/tax/categories?year=2026", data={f"mode-{ids['Health & Fitness']}": "ticked"})
+    assert conn.execute("SELECT tax_mode FROM categories WHERE id = ?", (ids["Health & Fitness"],)).fetchone()[0] is None
+    client.post("/tax/categories?year=2026", data={f"mode-{ids['Pets']}": "ticked"})  # no checkbox: can't be "ticked"
+    assert conn.execute("SELECT tax_mode FROM categories WHERE id = ?", (ids["Pets"],)).fetchone()[0] is None
 
 
 def test_the_rental_can_use_other_names(conn, client):
