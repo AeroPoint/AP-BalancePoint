@@ -6,6 +6,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Category checkboxes can count every transaction in the category ("Every one" on the Categories page), so Tax
+  time totals a category like charitable giving without ticking each charge.
 - Email notifications on a Mac can use a Keychain item's password (save `keychain:<item name>`),
   read each time a message goes out, so an app password shared with other jobs is renewed in one place.
 - Manage data (in the menu): every bulk erase in one place, each saying what it erases and what stays:

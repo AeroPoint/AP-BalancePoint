@@ -9,6 +9,8 @@
       Categories that count on the nearest 1st, like rent and mortgage, land in the month they're for even when paid a few days early or late.
       “Counts as” sorts spending for the Overview's month check: fixed bills that barely change, flexible spending you steer day to day
       (the part judged against your monthly target), and non-monthly costs like projects, travel and taxes.
+      A checkbox (like “Rental property”) is ticked per transaction for Tax time; “Every one” counts all of the category's
+      transactions instead, for a category that's only ever that, like charitable giving.
     </p>
   </div>
 </header>
@@ -79,7 +81,10 @@
               <span class="visually-hidden">Count {{ c.name }} on the nearest 1st of the month</span><span class="phone-only" aria-hidden="true">Count on the nearest 1st</span>
             </label>
           </td>
-          <td class="c-full" data-label="Checkbox on its transactions"><input form="cat-{{ c.id }}" name="flag" value="{{ c.flag or '' }}" placeholder="none" aria-label="Checkbox on {{ c.name }} transactions"></td>
+          <td class="c-full" data-label="Checkbox on its transactions"><input form="cat-{{ c.id }}" name="flag" value="{{ c.flag or '' }}" placeholder="none" aria-label="Checkbox on {{ c.name }} transactions">
+            <label class="check" title="Every {{ c.name }} transaction counts on Tax time, with nothing to tick">
+              <input type="checkbox" form="cat-{{ c.id }}" name="flag_all" value="1"{% if c.flag_all %} checked{% endif %}> <span>Every one</span>
+            </label></td>
           <td class="num c-meta" data-label="Transactions">{% if c.n %}<a href="{{ url_for('main.transactions', category=c.id) }}">{{ '{:,}'.format(c.n) }}</a>{% else %}0{% endif %}</td>
           <td class="num c-meta" data-label="Entries">{{ c.rule_count }}</td>
           <td class="num c-meta" data-label="Total">{{ c.total|money(false) }}</td>

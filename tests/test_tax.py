@@ -180,3 +180,30 @@ def test_rental_nets_income_against_interest_escrow_and_ticked_costs(conn, clien
     assert "Net rental income" in html and "principal, which isn't a cost" in html and "rental net" in html
     body = list(csv.reader(io.StringIO(client.get("/tax/export.csv?year=2025&section=rental").get_data(as_text=True))))
     assert len(body) == 1 + 2 + 2 + 1  # header, rent x2, payments x2, hardware
+
+
+def test_a_checkbox_can_count_every_transaction_in_its_category(conn, client):
+    acct = account(conn, "Joint Checking")
+    conn.execute("UPDATE categories SET flag = 'Charitable donation', flag_all = 1 WHERE name = 'Giving'")
+    txn(conn, acct, "2026-03-01", -100.0, "Giving")  # never ticked
+    txn(conn, acct, "2026-04-01", -25.0, "Giving", flag="check")
+    txn(conn, acct, "2025-12-31", -999.0, "Giving")  # another year
+    conn.commit()
+    boxes, to_check = tax.checkboxes(conn, 2026)
+    box = next(b for b in boxes if b["label"] == "Charitable donation")
+    assert box["total"] == -125.0 and box["n"] == 2
+    assert all(r["flag"] == "yes" for r in box["rows"])
+    giving = conn.execute("SELECT id FROM categories WHERE name = 'Giving'").fetchone()[0]
+    html = client.get(f"/transactions?flag=yes:{giving}&period=2026").get_data(as_text=True)
+    assert "flag-check" not in html  # nothing to tick
+    assert html.count("Giving") >= 2
+
+
+def test_saving_a_category_keeps_every_one_only_with_a_checkbox(conn, client):
+    cid = conn.execute("SELECT id FROM categories WHERE name = 'Giving'").fetchone()[0]
+    client.post("/categories/save", data={"id": cid, "name": "Giving", "kind": "expense", "grp": "flexible",
+                                          "flag": "Charitable donation", "flag_all": "1"})
+    assert conn.execute("SELECT flag_all FROM categories WHERE id = ?", (cid,)).fetchone()[0] == 1
+    client.post("/categories/save", data={"id": cid, "name": "Giving", "kind": "expense", "grp": "flexible",
+                                          "flag": "", "flag_all": "1"})
+    assert tuple(conn.execute("SELECT flag, flag_all FROM categories WHERE id = ?", (cid,)).fetchone()) == (None, 0)

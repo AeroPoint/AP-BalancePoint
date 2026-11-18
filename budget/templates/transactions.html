@@ -139,7 +139,7 @@
           <td class="cat-cell">
             <select class="cat-select" aria-label="Category for {{ t.name }}">{{ category_options(categories, t.category_id) }}</select>
             {% if t.category_source == 'mcc' %}<span class="guess" data-tip="Guessed from the card's merchant type. Pick a category to confirm it.">guess</span>{% endif %}
-            {% if t.category_flag %}
+            {% if t.category_flag and not t.category_flag_all %}
             <label class="flag-label"><input type="checkbox" class="flag-check"{% if t.flag == 'yes' %} checked{% endif %}> {{ t.category_flag }}</label>
             {% if t.flag == 'check' %}<button type="button" class="guess flag-dismiss" title="Not {{ t.category_flag|lower }}: stop asking">to check ✕</button>{% endif %}
             {% endif %}

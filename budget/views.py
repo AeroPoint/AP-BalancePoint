@@ -466,7 +466,7 @@ def transactions():
     if flag == "check":
         where.append("t.flag = 'check'")
     elif flag.startswith("yes:") and _int(flag[4:]):
-        where.append("t.flag = 'yes' AND t.category_id = ?")
+        where.append("(t.flag = 'yes' OR t.category_id IN (SELECT id FROM categories WHERE flag_all = 1)) AND t.category_id = ?")
         params.append(int(flag[4:]))
 
     clause = " AND ".join(where)
@@ -475,7 +475,7 @@ def transactions():
         f"SELECT COUNT(*) AS n, COALESCE(SUM(t.amount), 0) AS total FROM transactions t WHERE {clause}", params
     ).fetchone()
     rows = conn.execute(
-        f"""SELECT t.*, a.name AS account_name, c.name AS category_name, c.flag AS category_flag
+        f"""SELECT t.*, a.name AS account_name, c.name AS category_name, c.flag AS category_flag, c.flag_all AS category_flag_all
             FROM transactions t JOIN accounts a ON a.id = t.account_id
             LEFT JOIN categories c ON c.id = t.category_id
             WHERE {clause}
@@ -813,6 +813,7 @@ def save_category():
     snap = int(request.form.get("snap_to_month") == "1")
     grp = request.form.get("grp")
     flag = " ".join(request.form.get("flag", "").split()) or None
+    flag_all = int(bool(flag) and request.form.get("flag_all") == "1")
     if kind == "expense":
         grp = grp if grp in {g for g, _, _ in seed.SPENDING_GROUPS} else "flexible"
     elif kind == "transfer":
@@ -822,14 +823,14 @@ def save_category():
     try:
         if cid:
             conn.execute(
-                "UPDATE categories SET name = ?, kind = ?, snap_to_month = ?, grp = ?, flag = ? WHERE id = ?",
-                (name, kind, snap, grp, flag, cid),
+                "UPDATE categories SET name = ?, kind = ?, snap_to_month = ?, grp = ?, flag = ?, flag_all = ? WHERE id = ?",
+                (name, kind, snap, grp, flag, flag_all, cid),
             )
             sync_dates(conn, "category_id = ?", (cid,))
         else:
             conn.execute(
-                "INSERT INTO categories (name, kind, sort, snap_to_month, grp, flag) VALUES (?, ?, 999, ?, ?, ?)",
-                (name, kind, snap, grp, flag),
+                "INSERT INTO categories (name, kind, sort, snap_to_month, grp, flag, flag_all) VALUES (?, ?, 999, ?, ?, ?, ?)",
+                (name, kind, snap, grp, flag, flag_all),
             )
         conn.commit()
         flash(f"Saved category “{name}”.", "ok")

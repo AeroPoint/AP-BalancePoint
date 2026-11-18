@@ -1,6 +1,6 @@
 """Tax time page: what an accountant asks for, for one calendar year.
 
-Checkbox items (categories with a tax checkbox, transactions ticked yes), each business account's income,
+Checkbox items (categories with a tax checkbox: transactions ticked yes, or all of a category set to count every one), each business account's income,
 costs and profit, income by category, and notes that mention a CPA or taxes. Everything counts on the
 effective date, like every other report, so a year here matches the Overview's year and the Business page.
 """
@@ -20,7 +20,10 @@ CSV_COLUMNS = ["section", "date", "account", "merchant", "category", "amount", "
 # "cpa" as a word, or anything starting with "tax" (taxes, taxable, tax-deductible) except "taxi".
 ACCOUNTANT_NOTE = re.compile(r"\bcpa\b|\btax(?!i)", re.IGNORECASE)
 
-TXN_SELECT = """SELECT t.id, t.effective_date, t.date, t.amount, t.name, t.notes, t.flag, t.category_id,
+# A category whose checkbox counts every charge (flag_all) reads as ticked, so no one has to tick them.
+TICKED = "(t.flag = 'yes' OR c.flag_all = 1)"
+TXN_SELECT = """SELECT t.id, t.effective_date, t.date, t.amount, t.name, t.notes, t.category_id,
+                       CASE WHEN c.flag IS NOT NULL AND c.flag_all = 1 THEN 'yes' ELSE t.flag END AS flag,
                        a.name AS account, c.name AS category, c.flag AS checkbox
                 FROM transactions t JOIN accounts a ON a.id = t.account_id
                 LEFT JOIN categories c ON c.id = t.category_id"""
@@ -43,9 +46,9 @@ def checkboxes(conn, year):
     total is the signed sum (money out is negative). Two categories with the same label share one box."""
     start, end = reports.bounds(year)
     boxes = {}
-    for c in conn.execute("SELECT id, name, flag FROM categories WHERE flag IS NOT NULL ORDER BY sort, name"):
+    for c in conn.execute("SELECT id, name, flag, flag_all FROM categories WHERE flag IS NOT NULL ORDER BY sort, name"):
         boxes.setdefault(c["flag"], {"label": c["flag"], "categories": [], "rows": []})["categories"].append(dict(c))
-    for r in _rows(conn, "t.flag = 'yes' AND c.flag IS NOT NULL AND t.effective_date >= ? AND t.effective_date < ?",
+    for r in _rows(conn, f"{TICKED} AND c.flag IS NOT NULL AND t.effective_date >= ? AND t.effective_date < ?",
                    (start, end)):
         boxes[r["checkbox"]]["rows"].append(r)
     for b in boxes.values():
@@ -118,7 +121,7 @@ def rental(conn, year):
     start, end = reports.bounds(year)
     income_rows = _rows(conn, "c.kind = 'income' AND c.name LIKE 'Rental%' AND t.effective_date >= ? AND t.effective_date < ?",
                         (start, end))
-    ticked = _rows(conn, "t.flag = 'yes' AND c.flag = ? AND t.effective_date >= ? AND t.effective_date < ?",
+    ticked = _rows(conn, f"{TICKED} AND c.flag = ? AND t.effective_date >= ? AND t.effective_date < ?",
                    (RENTAL_LABEL, start, end))
     if not income_rows and not ticked:
         return None
