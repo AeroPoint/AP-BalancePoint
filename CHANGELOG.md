@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-18
+
 ### Added
 - Tax time: *Choose what's on Tax time* sets, for each category, whether it's left out, counted by its ticked
   transactions, or counted whole with nothing to tick (a donations category, say). "Checkbox items" is now
@@ -146,6 +148,7 @@ Everything up to the first public release.
 - `python run.py demo`: a made-up demo household (Pat and Sam Smith) in its own `demo-data/` folder.
 - Test suite on made-up data, run by GitHub Actions on macOS, Windows and Linux.
 
-[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/AeroPoint/AP-BalancePoint/releases/tag/v0.1.0
