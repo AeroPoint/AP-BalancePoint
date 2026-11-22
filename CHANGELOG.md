@@ -15,7 +15,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   reaches an amount by a date (today's or future dollars) across the accounts you pick, split across accounts by
   shares, on the expected path or in 3 of 4 or 9 of 10 futures. The answer can be a flat amount a month, a % of
   income (with a yearly raise), or a % of what each month leaves over, and the same goal is answered for
-  other dates 5 years apart.
+  other dates 5 years apart. Money going in can be set per account (an amount, a yearly raise, from and until),
+  and lump sums added: a property sale that pays off its loan, or a windfall.
 
 ### Fixed (Projection)
 - Paycheck retirement contributions are averaged over the months since they were set up, not always 12.

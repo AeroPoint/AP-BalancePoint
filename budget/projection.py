@@ -164,11 +164,39 @@ def accounts(conn, setup, today):
         out.append({
             "id": a["id"], "name": a["name"], "kind": a["kind"], "debt": debt, "balance": balance,
             "rate": rate, "vol": vol, "source": source, "on": pick.get("on", on) if "on" in pick else on,
-            "monthly_in": _monthly(recent.get(a["id"], {}), today),
+            "paycheck_in": _monthly(recent.get(a["id"], {}), today),
+            "set_in": pick.get("add_in", ""), "add_raise": _number(pick.get("add_raise"), -20, 50) or 0.0,
+            "add_from": pick.get("add_from") or "", "add_until": pick.get("add_until") or "",
             "loans": loans.get(a["id"], []) if debt else [],
             "set_rate": pick.get("rate", ""), "set_vol": pick.get("vol", ""),
         })
+    for a in out:  # money going in each month: as set here, else what paychecks put in lately
+        typed = _number(a["set_in"], 0, 1e8)
+        a["monthly_in"] = typed if typed is not None else a["paycheck_in"]
     return out
+
+
+def _month_ok(value):
+    value = str(value or "")
+    return value if len(value) == 7 and value[4] == "-" and value[:4].isdigit() and value[5:].isdigit() else ""
+
+
+def lump_sums(setup, ids):
+    """One-time events, cleaned up: [{label, month, amount, costs (%), into, payoff (loan id), property (account id)}].
+    A sale: the price less costs and what's still owed on the loan goes into `into`, the loan is paid off, and
+    the property's value drops by the price. A windfall: just an amount into an account."""
+    out = []
+    for e in setup.get("lumps") or []:
+        amount = _number(e.get("amount"), 0, 1e10)
+        into = int(e["into"]) if str(e.get("into") or "").isdigit() and int(e["into"]) in ids else None
+        month = _month_ok(e.get("month"))
+        if not (amount and into and month):
+            continue
+        payoff = int(e["payoff"]) if str(e.get("payoff") or "").isdigit() and int(e["payoff"]) in ids else None
+        prop = int(e["property"]) if str(e.get("property") or "").isdigit() and int(e["property"]) in ids else None
+        out.append({"label": str(e.get("label") or "Lump sum")[:80], "month": month, "amount": amount,
+                    "costs": _number(e.get("costs"), 0, 50) or 0.0, "into": into, "payoff": payoff, "property": prop})
+    return sorted(out, key=lambda e: e["month"])
 
 
 # How the monthly saving is set: a flat amount; a % of an income (a yearly amount, growing by a raise each
@@ -259,11 +287,36 @@ def project(conn, setup=None, today=None, runs=RUNS):
         nets.append(budgeting.plan_month(values, items if key <= plan_end else [], key)[3] if with_plan else 0.0)
     saving = values["savings"] if with_plan and values["mode"] == "savings" else 0.0
     save_to = values["savings_account"] if values["savings_account"] in ids else None
+    # Money going in, month by month: each account's amount from its first month through its last, raised
+    # each year by its raise (paychecks' 401(k) money grows with pay).
+    adds = {}
+    for a in used:
+        if not a["monthly_in"]:
+            continue
+        start, until = _month_ok(a["add_from"]), _month_ok(a["add_until"])
+        first = start or keys[0]
+        row = []
+        for k in keys:
+            if (start and k < start) or (until and k > until):
+                row.append(0.0)
+                continue
+            years_in = ((int(k[:4]) - int(first[:4])) * 12 + int(k[5:]) - int(first[5:])) // 12
+            row.append(a["monthly_in"] * (1 + a["add_raise"] / 100) ** years_in)
+        adds[a["id"]] = row
+    lumps = [e for e in lump_sums(setup, set(ids)) if keys and keys[0] <= e["month"] <= keys[-1]]
+    lump_at = {}
+    for e in lumps:
+        lump_at.setdefault(keys.index(e["month"]), []).append(e)
     loan_path = {}
     for a in used:
         if a["loans"]:
             loan_path[a["id"]] = [sum(loan_balance(l["principal"], l["annual_rate"], l["term_months"], l["start_date"], f"{k}-28")
                                       for l in a["loans"]) for k in keys]
+    for e in lumps:  # a loan paid off by a sale stays at 0 after it
+        if e["payoff"] in loan_path:
+            idx = keys.index(e["month"])
+            e["owed"] = loan_path[e["payoff"]][idx - 1] if idx else loan_path[e["payoff"]][0]
+            loan_path[e["payoff"]][idx:] = [0.0] * (len(keys) - idx)
 
     # The goal's saving each month, per unit solved for: $1 (flat), 100% of the income, or 100% of the surplus.
     goal_error = None
@@ -303,7 +356,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         for a in used:
             sm = a["vol"] / 100 / math.sqrt(12)
             mu = math.log(1 + a["rate"] / 100) / 12
-            params.append((a["id"], a["debt"], mu - sm * sm / 2 if rng else mu, sm if rng else 0.0, a["monthly_in"]))
+            params.append((a["id"], a["debt"], mu - sm * sm / 2 if rng else mu, sm if rng else 0.0, adds.get(a["id"])))
         index = peak = 1.0
         drop = 0.0
         per_dollar = dict.fromkeys(goal["into"], 0.0) if goal else {}
@@ -322,11 +375,21 @@ def project(conn, setup=None, today=None, runs=RUNS):
                     per_dollar[aid] = per_dollar[aid] * g + weights_t[t]
                 if bal[aid] > 0 or debt:
                     bal[aid] *= g
-                bal[aid] += added
+                if added:
+                    bal[aid] += added[t]
             if weights:
                 index *= moved
                 peak = max(peak, index)
                 drop = max(drop, 1 - index / peak)
+            for e in lump_at.get(t, ()):
+                owed = 0.0
+                if e["payoff"] is not None:
+                    owed = e["owed"] if "owed" in e else bal[e["payoff"]]
+                    bal[e["payoff"]] = 0.0
+                e["net"] = e["amount"] * (1 - e["costs"] / 100) - owed
+                bal[e["into"]] += e["net"]
+                if e["property"] is not None:
+                    bal[e["property"]] = max(bal[e["property"]] - e["amount"], 0.0)
             if with_plan and plan_acct in bal:
                 bal[plan_acct] += nets[t]
                 if save_to is not None:
@@ -387,6 +450,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         "savings": saving, "save_to": save_to, "runs": runs, "mix": mix,
         "goal": _solve(goal, expected, sims, inflation, today) if goal else None, "goal_setup": setup.get("goal") or {},
         "plan_income": values["plan_income"], "plan_end": plan_end, "plan_months": plan_months,
+"lumps": lumps, "lump_setup": setup.get("lumps") or [],
         "goal_error": goal_error, "goal_first": weights_t[0] if goal and weights_t else None,
         "span": horizon / 12,
     }

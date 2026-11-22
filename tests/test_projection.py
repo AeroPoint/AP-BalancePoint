@@ -264,3 +264,39 @@ def test_the_goal_is_also_answered_for_other_dates_and_contributions_average_fro
                                           f"measure-{fund}": "1", f"share-{fund}": "100"})
     assert "The same goal by other dates" in client.get("/projection").get_data(as_text=True)
     assert projection._monthly({"2026-01": 100, "2026-10": 100}, TODAY) == 20  # Jan through Oct: 10 months
+
+
+def test_money_going_in_with_a_raise_and_dates_and_a_property_sale(conn, client):
+    fund = account(conn, "Fund", "brokerage")
+    hsa = account(conn, "HSA", "hsa")
+    home = account(conn, "Townhouse", "property")
+    loan = account(conn, "Townhouse Loan", "loan")
+    for acct, amount in ((fund, 0.01), (hsa, 0.01), (home, 500_000)):
+        balance(conn, acct, "2026-10", amount)
+    conn.execute("""INSERT INTO loan_terms (account_id, label, principal, annual_rate, term_months, start_date)
+                    VALUES (?, 'loan', 240000, 0, 240, '2026-11-01')""", (loan,))  # 1,000 a month off, no interest
+    conn.commit()
+    zero = {str(a): {"rate": "0", "vol": "0"} for a in (fund, home)}
+    zero[str(hsa)] = {"rate": "0", "vol": "0", "add_in": 100, "add_raise": "10", "add_from": "2027-01", "add_until": "2028-12"}
+    setup = {"years": 3, "plan": False, "accounts": zero,
+             "lumps": [{"label": "Sell the townhouse", "month": "2027-08", "amount": 500_000, "costs": "6",
+                        "payoff": str(loan), "property": str(home), "into": str(fund)}]}
+    p = projection.project(conn, setup, TODAY, runs=5)
+    hsa_end = {r["key"]: r["accounts"][hsa] for r in p["rows"]}
+    assert abs(hsa_end["2027-11"] - (0.01 + 11 * 100)) < 0.01  # Jan through Nov 2027
+    assert abs(hsa_end["2029-11"] - (0.01 + 12 * 100 + 12 * 110)) < 0.01  # a 10% raise in its second year, then it stops
+    sale = p["lumps"][0]
+    assert sale["owed"] == 240_000 - 8 * 1000  # 8 payments, Dec through Jul
+    assert abs(sale["net"] - (500_000 * 0.94 - 232_000)) < 0.01
+    last = p["rows"][-1]["accounts"]
+    assert last[loan] == 0 and last[home] == 0 and abs(last[fund] - (0.01 + sale["net"])) < 0.01
+
+    client.post("/projection/lumps", data={"label": "Windfall", "month": "2027-03", "amount": "$1,000", "into": str(fund)})
+    client.post("/projection", data={"years": "3", "account": [str(hsa)], f"on-{hsa}": "1", f"in-{hsa}": "375",
+                                     f"raise-{hsa}": "2.5", f"from-{hsa}": "2027-01", f"until-{hsa}": "2057-01"})
+    saved = projection.load_setup(conn)
+    assert saved["lumps"][0]["amount"] == 1000 and saved["accounts"][str(hsa)]["add_in"] == 375
+    html = client.get("/projection").get_data(as_text=True)
+    assert "Lump sums" in html and "Windfall" in html and "Money going in" in html
+    client.post("/projection/lumps", data={"delete": "1"})
+    assert projection.load_setup(conn)["lumps"] == []

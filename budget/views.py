@@ -282,12 +282,37 @@ def save_projection():
              "global_rate": form.get("global_rate", "").strip(), "global_vol": form.get("global_vol", "").strip(), "accounts": {}}
     for aid in form.getlist("account"):
         if _int(aid):
+            money = _money_input(form.get(f"in-{aid}"))
             setup["accounts"][aid] = {"on": form.get(f"on-{aid}") == "1", "rate": form.get(f"rate-{aid}", "").strip(),
-                                      "vol": form.get(f"vol-{aid}", "").strip()}
-    setup["goal"] = projection.load_setup(conn).get("goal")  # set in its own form
+                                      "vol": form.get(f"vol-{aid}", "").strip(),
+                                      "add_in": "" if money is None else money,
+                                      "add_raise": form.get(f"raise-{aid}", "").strip().rstrip("%"),
+                                      "add_from": _month_input(form.get(f"from-{aid}")) or "",
+                                      "add_until": _month_input(form.get(f"until-{aid}")) or ""}
+    saved = projection.load_setup(conn)
+    setup["goal"], setup["lumps"] = saved.get("goal"), saved.get("lumps", [])  # set in their own forms
     projection.save_setup(conn, setup)
     conn.commit()
     return redirect(url_for(".projection_page"))
+
+
+@bp.post("/projection/lumps")
+def save_projection_lump():
+    conn = get_db()
+    form = request.form
+    setup = projection.load_setup(conn)
+    lumps = setup.get("lumps") or []
+    remove = _int(form.get("delete"))
+    if remove:
+        lumps = [e for i, e in enumerate(lumps, 1) if i != remove]
+    else:
+        lumps.append({"label": " ".join(form.get("label", "").split()), "month": _month_input(form.get("month")) or "",
+                      "amount": _money_input(form.get("amount")), "costs": form.get("costs", "").strip().rstrip("%"),
+                      "into": form.get("into", ""), "payoff": form.get("payoff", ""), "property": form.get("property", "")})
+    setup["lumps"] = lumps
+    projection.save_setup(conn, setup)
+    conn.commit()
+    return redirect(url_for(".projection_page") + "#lumps")
 
 
 @bp.post("/projection/goal")
