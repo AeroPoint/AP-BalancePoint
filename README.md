@@ -589,7 +589,8 @@ inflation, or dollars of that day) by a month, across the accounts you tick (a l
 with the saving split across accounts by shares (say 60/40; an account saved into always counts), on the
 expected path or in 3 of 4 or 9 of 10 futures. The saving can be a flat amount a month, a % of an income
 (a yearly amount, the Plan's by default, growing by a raise each year), or a % of what you save (what each
-of the Plan's months leaves over, moved out of the spending account). It reruns the same futures
+of the Plan's months leaves over, moved out of the spending account). Not sure when? The same goal is
+also answered for the same month every 5 years, up to 40 years out. It reruns the same futures
 with the amount added each month (on top of the Plan) and finds the smallest that gets there.
 
 ### The month forecast

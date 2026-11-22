@@ -14,7 +14,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   the chance of being behind over time, and N0. "What would it take?" works out the monthly saving that
   reaches an amount by a date (today's or future dollars) across the accounts you pick, split across accounts by
   shares, on the expected path or in 3 of 4 or 9 of 10 futures. The answer can be a flat amount a month, a % of
-  income (with a yearly raise), or a % of what each month leaves over.
+  income (with a yearly raise), or a % of what each month leaves over, and the same goal is answered for
+  other dates 5 years apart.
+
+### Fixed (Projection)
+- Paycheck retirement contributions are averaged over the months since they were set up, not always 12.
 - Plan through: the Plan can run up to 40 years ahead to a month you pick (still the next 12 months by
   default), shown monthly for the first year and then yearly. After it, the Projection carries the planned
   month on as it is now, without the changes.

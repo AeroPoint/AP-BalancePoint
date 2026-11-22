@@ -69,6 +69,27 @@
     it comes out of what you'd otherwise spend, so it's on top of the Plan.{% elif g.basis == 'income' %}It moves with the income{% if g.raise %} as it grows{% endif %},
     and comes out of what you'd otherwise spend, on top of the Plan.{% else %}It changes with the month: more when the Plan's month leaves more over,
     nothing in months that run short.{% endif %}</p>
+  {% if g.others|length > 1 %}
+  <details class="tax-more" open>
+    <summary>Not sure when? The same goal by other dates</summary>
+    <div class="table-wrap">
+      <table class="ledger cards">
+        <thead><tr><th>Reach it by</th><th class="num">{{ 'Save a month' if g.basis == 'flat' else 'Save' }}</th><th class="num">Expected without extra</th><th class="num">Futures that reach it without extra</th></tr></thead>
+        <tbody>
+          {% for o in g.others %}
+          <tr{% if o.chosen %} class="strong"{% endif %}>
+            <td class="c-main">{{ o.by|month_label }}{% if o.chosen %} <span class="muted">· your date</span>{% endif %}</td>
+            <td class="num c-side" data-label="Save">{% if o.needed is none %}out of reach{% elif o.on_track %}nothing extra{% elif g.basis == 'income' %}{{ '%.1f'|format(o.needed * 100) }}% of income{% elif g.basis == 'savings' %}{{ '%.0f'|format(o.needed * 100) }}% of what you save{% else %}{{ o.needed|money(false) }}{% endif %}</td>
+            <td class="num c-meta" data-label="Expected without extra">{{ o.expected_without|money(false) }}</td>
+            <td class="num c-meta" data-label="Reach it without extra">{{ '%.0f'|format(o.reach_without * 100) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Each row asks the same question ({{ g.amount|money(false) }}{{ " in today's dollars" if g.real }}, {{ g.label }}) for a different date.</p>
+  </details>
+  {% endif %}
   {% endif %}
   {% set gm = gs.measure if gs.measure is iterable and gs.measure is not string else [] %}
   {% set gi = gs.into if gs.into is mapping else {} %}

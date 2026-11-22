@@ -100,6 +100,17 @@ def history_rate(conn, account_id, flows):
     return round(yearly, 1), round(min(vol, 60.0), 1), len(returns)
 
 
+def _monthly(by_month, today):
+    """Average a month from {"YYYY-MM": amount} over the last 12 whole months, counting only from the first
+    month with any (a setup that started this year isn't averaged over months before it)."""
+    if not by_month:
+        return 0.0
+    first = min(by_month)
+    y, m = int(first[:4]), int(first[5:])
+    span = max(1, min(12, (today.year - y) * 12 + today.month - m))
+    return round(sum(by_month.values()) / span, 2)
+
+
 def _number(value, low, high):
     try:
         v = float(str(value).replace("%", "").strip())
@@ -153,7 +164,7 @@ def accounts(conn, setup, today):
         out.append({
             "id": a["id"], "name": a["name"], "kind": a["kind"], "debt": debt, "balance": balance,
             "rate": rate, "vol": vol, "source": source, "on": pick.get("on", on) if "on" in pick else on,
-            "monthly_in": round(sum(recent.get(a["id"], {}).values()) / 12, 2),
+            "monthly_in": _monthly(recent.get(a["id"], {}), today),
             "loans": loans.get(a["id"], []) if debt else [],
             "set_rate": pick.get("rate", ""), "set_vol": pick.get("vol", ""),
         })
@@ -216,6 +227,10 @@ def project(conn, setup=None, today=None, runs=RUNS):
     backups = [(budgeting.get_setting(conn, k, cast=int), budgeting.get_setting(conn, mk) or 0.0)
                for k, mk in zip(budgeting.BACKUP_KEYS, budgeting.BACKUP_MIN_KEYS)]
     goal = _goal(setup, today, {a["id"] for a in accts}, {a["id"]: a["kind"] for a in accts})
+    if goal:  # the chosen date, and the same month every 5 years, to compare when it could be reached
+        month = int(goal["by"][5:])
+        others = {(y - today.year) * 12 + month - today.month for y in range(today.year + 5, today.year + 41, 5)}
+        goal["dates"] = sorted({goal["months"], *(n for n in others if 12 <= n <= 40 * 12)})
     needed_ids = {plan_acct, values["savings_account"], *(b for b, _ in backups)} if with_plan else set()
     if goal:
         needed_ids |= set(goal["into"]) | set(goal["measure"])
@@ -232,7 +247,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
     # carries on as it is now (the baseline), without the changes.
     plan_end, plan_months, _ = budgeting.plan_end(conn, today)
     horizon = years * 12
-    months = max(horizon, goal["months"] if goal else 0)
+    months = max(horizon, max(goal["dates"]) if goal else 0)
 
     # Month by month, what doesn't depend on markets: plan nets, loan balances.
     keys, nets = [], []
@@ -292,7 +307,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         index = peak = 1.0
         drop = 0.0
         per_dollar = dict.fromkeys(goal["into"], 0.0) if goal else {}
-        at_goal = None
+        at_goal = {}
         for t in range(months):
             z = rng.gauss(0, 1) if rng else 0.0
             moved = 0.0
@@ -324,11 +339,11 @@ def project(conn, setup=None, today=None, runs=RUNS):
                     bal[plan_acct] += take
                 if short_at is None and bal[plan_acct] < buffer - 0.005:
                     short_at = keys[t]
-            if goal and t == goal["months"] - 1:
+            if goal and t + 1 in goal["dates"]:
                 grown = sum(share * per_dollar[aid] for aid, share in goal["into"].items())
                 if goal["basis"] == "savings" and plan_acct in goal["measure"]:
                     grown -= sum(weights_t[:t + 1])  # moved out of the spending account, which counts too
-                at_goal = (measured(bal), grown)
+                at_goal[t + 1] = (measured(bal), grown)
             if t < horizon and ((t + 1) % 12 == 0 or t == horizon - 1):
                 yearly.append((t + 1, dict(bal)))
         return {"yearly": yearly, "short": short_at, "drop": drop, "goal": at_goal}
@@ -370,7 +385,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         "rate_mode": "global" if setup.get("rate_mode") == "global" else "account",
         "global_rate": setup.get("global_rate", ""), "global_vol": setup.get("global_vol", ""),
         "savings": saving, "save_to": save_to, "runs": runs, "mix": mix,
-        "goal": _solve(goal, expected, sims, inflation) if goal else None, "goal_setup": setup.get("goal") or {},
+        "goal": _solve(goal, expected, sims, inflation, today) if goal else None, "goal_setup": setup.get("goal") or {},
         "plan_income": values["plan_income"], "plan_end": plan_end, "plan_months": plan_months,
         "goal_error": goal_error, "goal_first": weights_t[0] if goal and weights_t else None,
         "span": horizon / 12,
@@ -381,15 +396,26 @@ def _normal_cdf(x):
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
-def _solve(goal, expected, sims, inflation):
-    """How much a month, saved into the goal's account on top of everything else, reaches the goal: on the
-    expected path, or in 3 of 4 / 9 of 10 futures. Each future's measure at the goal date is its value
-    without the extra plus the extra times what $1 a month grows to in it, so the answer is exact for the
-    simulated futures (backup draws aside)."""
-    years = goal["months"] / 12
+def _solve(goal, expected, sims, inflation, today=None):
+    """The answer for the chosen date, with "others": the same question for the same month every 5 years."""
+    today = today or date.today()
+    out = _solve_at(goal, goal["months"], expected, sims, inflation)
+    others = []
+    for n in goal["dates"]:
+        y, m = reports.add_months(today.year, today.month, n)
+        others.append({**_solve_at(goal, n, expected, sims, inflation), "by": _month_key(y, m), "chosen": n == goal["months"]})
+    return {**out, "others": others}
+
+
+def _solve_at(goal, months, expected, sims, inflation):
+    """How much a month, saved into the goal's accounts on top of everything else, reaches the goal `months`
+    from now: on the expected path, or in 3 of 4 / 9 of 10 futures. Each future's measure at that date is its
+    value without the extra plus the extra times what was saved grows to in it, so the answer is exact for
+    the simulated futures (backup draws aside)."""
+    years = months / 12
     target = goal["amount"] * ((1 + inflation / 100) ** years if goal["real"] else 1.0)
-    base, per = expected["goal"]
-    futures = [s["goal"] for s in sims]
+    base, per = expected["goal"][months]
+    futures = [s["goal"][months] for s in sims]
     if goal["confidence"] == "expected":
         needed = (target - base) / per if per else None
     else:

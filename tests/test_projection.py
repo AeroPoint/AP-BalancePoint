@@ -247,3 +247,20 @@ def test_the_saving_can_be_a_share_of_income_or_of_what_the_month_leaves_over(co
                                           "raise": "3", "account": [str(fund)], f"share-{fund}": "100"})
     assert projection.load_setup(conn)["goal"]["income"] == 120_000
     assert "of income</b> ($120,000 a year, growing 3.0% a year" in client.get("/projection").get_data(as_text=True)
+
+
+def test_the_goal_is_also_answered_for_other_dates_and_contributions_average_from_their_start(conn, client):
+    fund = account(conn, "Fund", "brokerage")
+    balance(conn, fund, "2026-10", 0.01)
+    conn.commit()
+    setup = {"accounts": {str(fund): {"rate": "0", "vol": "0"}}, "years": 1,
+             "goal": {"amount": 120_000, "by": "2036-11", "into": {str(fund): 100}, "measure": [str(fund)], "confidence": "0.9"}}
+    g = projection.project(conn, setup, TODAY, runs=20)["goal"]
+    by = {o["by"]: o["needed"] for o in g["others"]}
+    assert list(by)[:3] == ["2031-11", "2036-11", "2041-11"] and len(by) == 8
+    assert abs(by["2036-11"] - 1000) < 0.01 and abs(by["2031-11"] - 2000) < 0.01  # half the time, twice the saving
+    assert [o["chosen"] for o in g["others"]].count(True) == 1
+    client.post("/projection/goal", data={"amount": "120000", "by": "2036-11", "confidence": "0.9", "account": [str(fund)],
+                                          f"measure-{fund}": "1", f"share-{fund}": "100"})
+    assert "The same goal by other dates" in client.get("/projection").get_data(as_text=True)
+    assert projection._monthly({"2026-01": 100, "2026-10": 100}, TODAY) == 20  # Jan through Oct: 10 months
