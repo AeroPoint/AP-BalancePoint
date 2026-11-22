@@ -145,12 +145,27 @@ def test_what_would_it_take_solves_for_the_monthly_saving(conn, client):
     swinging["goal"].update(amount=400, measure="worth")  # the 500 in checking already covers it
     assert projection.project(conn, swinging, TODAY, runs=20)["goal"]["on_track"]
 
-    client.post("/projection/goal", data={"amount": "$250,000", "by": "2040-01", "real": "1", "measure": "investments",
-                                          "into": str(fund), "confidence": "0.9"})
+    other = account(conn, "Other Fund", "retirement")
+    balance(conn, other, "2026-10", 0.01)
+    conn.commit()
+    client.post("/projection/goal", data={"amount": "$250,000", "by": "2040-01", "real": "1", "confidence": "0.9",
+                                          "account": [str(fund), str(cash), str(other)], f"measure-{fund}": "1",
+                                          f"share-{fund}": "100"})
     saved = projection.load_setup(conn)["goal"]
     assert saved["amount"] == 250_000 and saved["real"] and saved["confidence"] == "0.9"
+    assert saved["measure"] == [str(fund)] and saved["into"] == {str(fund): "100"}
     html = client.get("/projection").get_data(as_text=True)
     assert "a month</b> into Fund" in html and "in 9 of 10 futures" in html and "How this works" in html
+
+    # Split 60/40 across two accounts, both counted (the second because it's saved into), at 0% and no swings.
+    split = {"accounts": {str(fund): {"rate": "0", "vol": "0"}, str(other): {"rate": "0", "vol": "0"}}, "years": 1,
+             "goal": {"amount": 12_000, "by": "2027-11", "into": {str(fund): "60", str(other): "40"}, "measure": [str(fund)]}}
+    g = projection.project(conn, split, TODAY, runs=5)["goal"]
+    assert g["measure"] == sorted([fund, other]) and abs(g["into"][fund] - 0.6) < 1e-9
+    assert abs(g["needed"] - (12_000 - 0.02) / 12) < 0.01
+    client.post("/projection/goal", data={"amount": "12000", "by": "2027-11", "account": [str(fund), str(other)],
+                                          f"measure-{fund}": "1", f"share-{fund}": "60", f"share-{other}": "40"})
+    assert "split Fund 60%, Other Fund 40%" in client.get("/projection").get_data(as_text=True)
     client.post("/projection/goal", data={"clear": "1"})
     assert "goal" not in projection.load_setup(conn)
 
@@ -169,32 +184,28 @@ def test_how_bumpy_drawdowns_chance_behind_and_n0(conn, client):
     assert "How bumpy the ride is" in html and "N0" in html
 
 
-def test_with_the_plan_the_projection_stops_at_the_plans_end(conn, client):
+def test_after_the_plans_end_the_planned_month_carries_on_without_the_changes(conn, client):
     chk = account(conn, "Checking")
     fund = account(conn, "Fund", "brokerage")
     balance(conn, chk, "2026-10", 2000)
     balance(conn, fund, "2026-10", 1000)
     for key, value in (("plan_income", 5000), ("plan_fixed", 3000), ("flex_target", 1500), ("plan_account", chk)):
         budgeting.set_setting(conn, key, value)
+    conn.execute("INSERT INTO plan_items (label, amount, start_month) VALUES ('Time off work', -300, '2027-01')")  # no end
     conn.commit()
-    setup = {"years": 20, "accounts": {str(fund): {"rate": "0", "vol": "0"}}}
-    p = projection.project(conn, setup, TODAY, runs=5)  # no end set: the next 12 months
-    assert p["plan_end"] == "2027-11" and [r["key"] for r in p["rows"]] == ["2027-11"]
-    assert p["rows"][0]["accounts"][chk] == 2000 + 12 * 500
+    setup = {"years": 3, "accounts": {str(fund): {"rate": "0", "vol": "0"}}}
+    p = projection.project(conn, setup, TODAY, runs=5)  # plan ends 2027-11 (the next 12 months)
+    assert p["plan_end"] == "2027-11" and [r["key"] for r in p["rows"]] == ["2027-11", "2028-11", "2029-11"]
+    first_year = 2000 + 12 * 500 - 11 * 300  # the change runs Jan through Nov 2027
+    assert p["rows"][0]["accounts"][chk] == first_year
+    assert p["rows"][2]["accounts"][chk] == first_year + 24 * 500  # then the planned month as it is, without it
 
-    client.post("/plan/settings", data={"plan_through": "2030-05"})
+    client.post("/plan/settings", data={"plan_through": "2028-11"})
     p = projection.project(conn, setup, TODAY, runs=5)
-    assert [r["key"] for r in p["rows"]] == ["2027-11", "2028-11", "2029-11", "2030-05"] and p["rows"][-1]["partial"]
-    assert p["rows"][-1]["accounts"][chk] == 2000 + 42 * 500
-    assert len(projection.project(conn, {**setup, "plan": False}, TODAY, runs=5)["rows"]) == 20  # growth alone: the years picked
-    assert len(budgeting.project(conn, today=TODAY)["rows"]) == 42
-
-    setup["goal"] = {"amount": 50_000, "by": "2035-01", "into": str(fund), "measure": "worth"}
-    p = projection.project(conn, setup, TODAY, runs=5)
-    assert p["goal"] is None and p["goal_error"]
-    html = client.get("/projection").get_data(as_text=True)
-    assert "when your Plan ends" in html and "projection stops there" in html
+    assert p["rows"][1]["accounts"][chk] == first_year + 12 * 200
+    assert len(budgeting.project(conn, today=TODAY)["rows"]) == 24
     plan_html = client.get("/plan").get_data(as_text=True)
-    assert "Through May 2030" in plan_html and 'name="plan_through" value="2030-05"' in plan_html
+    assert "Through Nov 2028" in plan_html and 'name="plan_through" value="2028-11"' in plan_html
+    assert "then the planned month as it is now" in client.get("/projection").get_data(as_text=True)
     client.post("/plan/settings", data={"plan_through": ""})
     assert budgeting.plan_end(conn, TODAY) == ("2027-11", 12, False)

@@ -6,7 +6,7 @@
 <header class="page-head">
   <div>
     <h1>Projection</h1>
-    <p class="sub">Where your money could be {{ 'by ' ~ (p.plan_end|month_label) ~ ', when your Plan ends' if p.with_plan else 'in ' ~ p.years ~ (' years' if p.years != 1 else ' year') }}, and what it would take to reach a goal.
+    <p class="sub">Where your money could be in {{ p.years }} year{{ 's' if p.years != 1 }}, and what it would take to reach a goal.
       The app plays out {{ p.runs }} possible futures month by month: each account grows at its rate, markets swing up and down
       at random, paychecks keep putting into retirement accounts, loans pay down, and {{ 'the Plan runs through it' if p.with_plan else 'the Plan is left out' }}.
       <a href="#how">How this works</a></p>
@@ -35,11 +35,9 @@
   <div class="panel-head"><h2>What would it take?</h2>
     <p class="muted">Pick an amount and a date, and the app works out how much to save each month to get there, with your current
       rates and swings and everything else above staying as it is.</p></div>
-  {% if p.goal_error %}
-  <p class="goal-answer">Your goal's date is after the Plan ends ({{ p.plan_end|month_label }}), and with the Plan included the projection stops there.
-    Plan further ahead on <a href="{{ url_for('main.plan') }}">Plan</a> ("Plan through"), or turn off "Include the Plan" below.</p>
-  {% endif %}
   {% if g %}
+  {% set into_names = [] %}{% for aid, share in g.into.items() %}{% set _ = into_names.append(names.get(aid) ~ (' ' ~ '%.0f'|format(share * 100) ~ '%' if g.into|length > 1 else '')) %}{% endfor %}
+  {% set measure_names = [] %}{% for aid in g.measure %}{% set _ = measure_names.append(names.get(aid)) %}{% endfor %}
   <p class="goal-answer">
     {% if g.needed is none %}
       Even saving a lot more each month doesn't reach {{ g.amount|money(false) }} by {{ g.by|month_label }} {{ g.label }}: try a later date or a lower level of certainty.
@@ -47,31 +45,25 @@
       <b>You're already on track:</b> without saving anything extra, you'd reach {{ g.amount|money(false) }}{% if g.real %} (today's dollars){% endif %}
       by {{ g.by|month_label }} {{ g.label }}.
     {% else %}
-      Save <b>{{ g.needed|money(false) }} a month</b> into {{ names.get(g.into) }}, on top of what you do now, to have
-      <b>{{ g.amount|money(false) }}</b>{% if g.real %} in today's dollars ({{ g.target|money(false) }} in {{ g.by[:4] }} dollars){% endif %}
-      {% if g.measure == 'worth' %}of net worth{% elif g.measure == 'investments' %}in investments{% else %}in {{ names.get(g.measure) }}{% endif %}
+      Save <b>{{ g.needed|money(false) }} a month</b>{% if g.into|length > 1 %}, split {{ into_names|join(', ') }},{% else %} into {{ into_names[0] }}{% endif %}
+      on top of what you do now, to have <b>{{ g.amount|money(false) }}</b>{% if g.real %} in today's dollars ({{ g.target|money(false) }} in {{ g.by[:4] }} dollars){% endif %}
       by {{ g.by|month_label }}, {{ g.label }}.
       {% if p.plan_income %}That's {{ '%.0f'|format(g.needed / p.plan_income * 100) }}% of the Plan's monthly income.{% endif %}
     {% endif %}
   </p>
-  <p class="muted">Without saving anything extra, the expected path gets to {{ g.expected_without|money(false) }}{% if g.real %} in today's dollars{% endif %},
+  <p class="muted">Counted toward the goal: {{ measure_names|join(', ') }}{% if g.measure|length > 3 %} ({{ g.measure|length }} accounts){% endif %}.
+    Without saving anything extra, the expected path gets to {{ g.expected_without|money(false) }}{% if g.real %} in today's dollars{% endif %},
     and {{ '%.0f'|format(g.reach_without * 100) }}% of the futures reach the goal. The amount is the same each month{% if g.real %}, in dollars of the day (it isn't raised with inflation){% endif %};
     it comes out of what you'd otherwise spend, so it's on top of the Plan.</p>
   {% endif %}
+  {% set gm = gs.measure if gs.measure is iterable and gs.measure is not string else [] %}
+  {% set gi = gs.into if gs.into is mapping else {} %}
   <form method="post" action="{{ url_for('main.save_projection_goal') }}" class="stack">
     <div class="inline">
       <label class="field"><span>Reach</span><input name="amount" inputmode="decimal" required value="{{ '%.0f'|format(gs.amount) if gs.amount else '' }}" placeholder="2,000,000" size="11"></label>
       <label class="field"><span>By</span><input type="month" name="by" required value="{{ gs.by or '' }}"></label>
       <label class="field"><span>In</span>
         <select name="real"><option value="1"{% if gs.real %} selected{% endif %}>today's dollars</option><option value="0"{% if gs and not gs.real %} selected{% endif %}>dollars of that day</option></select></label>
-      <label class="field"><span>Measured as</span>
-        <select name="measure">
-          <option value="worth"{% if gs.measure == 'worth' %} selected{% endif %}>Net worth</option>
-          <option value="investments"{% if gs.measure == 'investments' %} selected{% endif %}>Investments (brokerage, retirement, HSA)</option>
-          {% for a in p.accounts if not a.debt %}<option value="{{ a.id }}"{% if gs.measure == a.id|string %} selected{% endif %}>Only {{ a.name }}</option>{% endfor %}
-        </select></label>
-      <label class="field"><span>Saving into</span>
-        <select name="into" required>{% for a in p.accounts if not a.debt %}<option value="{{ a.id }}"{% if gs.into == a.id|string %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></label>
       <label class="field"><span>How sure</span>
         <select name="confidence">
           <option value="expected"{% if gs.confidence == 'expected' %} selected{% endif %}>On the expected path (about a coin flip)</option>
@@ -79,6 +71,25 @@
           <option value="0.9"{% if gs.confidence == '0.9' %} selected{% endif %}>9 in 10 futures</option>
         </select></label>
     </div>
+    <div class="table-wrap">
+      <table class="ledger cards goal-accounts">
+        <thead><tr><th>Account</th><th>Counts toward the goal</th><th class="num">Share of the monthly saving</th></tr></thead>
+        <tbody>
+          {% for a in p.accounts %}
+          <tr>
+            <td class="c-main"><input type="hidden" name="account" value="{{ a.id }}">{{ a.name }}</td>
+            <td class="c-meta" data-label="Counts toward the goal"><label class="check"><input type="checkbox" name="measure-{{ a.id }}" value="1"
+              {% if (a.id|string) in (gm|map('string')|list) or (not gs and a.kind in ('brokerage', 'retirement', 'hsa')) %} checked{% endif %}>
+              <span class="visually-hidden">Count {{ a.name }}</span></label></td>
+            <td class="num c-side" data-label="Share of the saving">{% if not a.debt %}<input name="share-{{ a.id }}" inputmode="decimal" size="4" placeholder="0"
+              value="{{ gi.get(a.id|string, '') }}" aria-label="{{ a.name }} share, %"> %{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Tick the accounts whose total should reach the amount (a loan counts against it). Shares split the monthly saving,
+      like 60 and 40; they're scaled to add up to 100%, and an account you save into always counts toward the goal.</p>
     <div class="inline"><button class="btn primary">Work it out</button>{% if g %}<button class="btn quiet" name="clear" value="1" formnovalidate>Clear</button>{% endif %}</div>
   </form>
 </section>
@@ -154,13 +165,13 @@
       one move for all of them, scaled by each account's swings, because markets tend to fall together. Paycheck 401(k) money goes in,
       loans pay down on their schedules{% if p.with_plan %}, and the Plan's month happens: its surplus or shortfall lands in
       {{ names.get(p.plan_account, 'the spending account') }}, the backups top it up as on the Plan page, and any savings goal goes into its account.
-      The Plan ends in {{ p.plan_end|month_label }}, so the projection stops there too: nothing past the Plan is assumed.
-      To look further, plan further ahead, or turn off "Include the Plan" to see growth alone for the years you pick{% endif %}.</li>
+      The Plan's changes run through its last month ({{ p.plan_end|month_label }}); after that the planned month carries on as it is
+      now (income, spending and any savings goal), without the changes. Plan further ahead on the Plan page to include later changes{% endif %}.</li>
     <li><b>{{ p.runs }} futures</b> are played out this way, each with different market luck (the same set every time you open the page,
       so numbers only change when your data or settings do). The expected path is the same month-by-month math with no luck at all.</li>
     <li><b>Rates</b> come from an account's own history once it has 3 years of balances, otherwise from a typical figure for its kind.
       Change any of them below. "Swings" is volatility: how far a year usually lands from the average (about 15 for a stock fund, 0 for cash).</li>
-    <li><b>What would it take</b> reruns those same futures with a monthly amount added to the account you pick, and finds the smallest amount
+    <li><b>What would it take</b> reruns those same futures with a monthly amount added, split across the accounts you pick, and finds the smallest amount
       that reaches the goal on the expected path, or in 3 of 4 or 9 of 10 futures. A goal in today's dollars is raised by inflation
       ({{ p.inflation }}% a year) to the dollars of that date first.</li>
     <li><b>It's an estimate:</b> real markets have streaks and crashes bigger than this model's, and rates of the past don't promise the future.
@@ -172,11 +183,11 @@
   <div class="panel-head"><h2>Settings</h2></div>
   <form method="post" action="{{ url_for('main.save_projection') }}" class="stack proj-form">
     <div class="inline">
-      <label class="field"><span>Years{% if p.with_plan %} <small class="muted">without the Plan</small>{% endif %}</span>
+      <label class="field"><span>Years</span>
         <select name="years">{% for n in [1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 40] %}<option{% if n == p.years %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
       </label>
       <label class="check"><input type="checkbox" name="plan" value="1"{% if p.with_plan %} checked{% endif %}{% if not p.plan_ready %} disabled{% endif %}>
-        Include the Plan {% if not p.plan_ready %}<small class="muted">(set one up on <a href="{{ url_for('main.plan') }}">Plan</a> first)</small>{% else %}<small class="muted">its months through {{ p.plan_end|month_label }}, and the projection stops there (<a href="{{ url_for('main.plan') }}">change on Plan</a>)</small>{% endif %}</label>
+        Include the Plan {% if not p.plan_ready %}<small class="muted">(set one up on <a href="{{ url_for('main.plan') }}">Plan</a> first)</small>{% else %}<small class="muted">with its changes through {{ p.plan_end|month_label }}, then the planned month as it is now (<a href="{{ url_for('main.plan') }}">Plan</a>)</small>{% endif %}</label>
       <label class="check"><input type="checkbox" name="real" value="1"{% if p.real %} checked{% endif %}> In today's dollars</label>
       <label class="field"><span>Inflation % a year</span><input name="inflation" inputmode="decimal" value="{{ p.inflation }}" size="4"></label>
     </div>

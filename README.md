@@ -571,10 +571,9 @@ a month that jumped over 15% is taken as an unrecorded deposit and left out), el
 the kind of account (7% ±15 for investments, 0 for checking, 3% for a home, −15% for vehicles). Paycheck
 retirement contributions continue, loans with terms pay down on schedule, and **Include the Plan**
 runs the Plan's months through it: the surplus or shortfall lands in the spending account, the backups
-cover it as on the Plan page, and a savings goal goes into its account. With the Plan included the
-projection stops at the Plan's last month, since nothing past it is planned (plan further ahead to see
-further); without it, it shows growth alone for the years picked. A goal dated after the Plan's end asks
-for one or the other. The line is the expected path; the shaded range is the 10th to 90th percentile
+cover it as on the Plan page, and a savings goal goes into its account. The Plan's changes count through
+its last month; after that the planned month carries on as it is now (income, spending, any savings goal),
+without the changes, for the rest of the years picked. The line is the expected path; the shaded range is the 10th to 90th percentile
 of 300 simulated futures (a fixed seed, so it doesn't change on reload), where all investments rise and
 fall together. It says when the spending account can't be kept topped up and in how many of the futures,
 and can show today's dollars after inflation. Accounts held for someone else are left out.
@@ -586,8 +585,9 @@ standard deviation of the swings (as in card counting: the expected gain grows w
 with its square root).
 
 **What would it take?** solves for the monthly saving: reach an amount (today's dollars, raised by
-inflation, or dollars of that day) by a month, measured as net worth, investments or one account, saving
-into an account you pick, on the expected path or in 3 of 4 or 9 of 10 futures. It reruns the same futures
+inflation, or dollars of that day) by a month, across the accounts you tick (a loan counts against it),
+with the saving split across accounts by shares (say 60/40; an account saved into always counts), on the
+expected path or in 3 of 4 or 9 of 10 futures. It reruns the same futures
 with the amount added each month (on top of the Plan) and finds the smallest that gets there.
 
 ### The month forecast

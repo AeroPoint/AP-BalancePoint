@@ -6,8 +6,8 @@ known to have gone in, like paycheck 401(k) contributions), else from a default 
 either can be changed, per account or one rate for every investment. Paycheck contributions continue,
 loans with terms pay down on schedule, and the Plan's months can run through it: each month's surplus
 or shortfall lands in the plan account, draws from the backups as on the Plan page, and the savings goal
-goes into its account. With the Plan included the projection stops at the Plan's last month (Plan page,
-"Plan through"); without it, it runs the years picked here.
+goes into its account. After the Plan's last month (Plan page, "Plan through") the planned month carries
+on as it is now, without the changes.
 
 The expected line uses each rate exactly. The range comes from simulated runs (a fixed seed, so the page
 doesn't change on reload): every month draws one market move that all the investments share, scaled by
@@ -165,20 +165,30 @@ CONFIDENCE = {"expected": "on the expected path", "0.75": "in 3 of 4 futures", "
 
 def _goal(setup, today, ids, kinds):
     """The "what would it take" question, cleaned up, or None: reach `amount` by month `by` (today's or
-    future dollars), measured as net worth, investments or one account, saving into an account."""
+    future dollars) across the accounts of interest (`measure`, debts counting against it), saving each
+    month split across accounts (`into`: {account id: share}). Accounts saved into count toward the goal."""
     g = setup.get("goal") or {}
     amount = _number(g.get("amount"), 1, 1e12)
     by = str(g.get("by") or "")
-    into = int(g["into"]) if str(g.get("into") or "").isdigit() else None
-    if amount is None or len(by) != 7 or by <= today.isoformat()[:7] or into not in ids or kinds[into] in ("credit", "loan"):
+    if amount is None or len(by) != 7 or by <= today.isoformat()[:7]:
         return None
+    into = g.get("into")
+    if not isinstance(into, dict):  # an older single account
+        into = {str(into): 100} if into else {}
+    shares = {int(k): _number(v, 0, 100) or 0.0 for k, v in into.items() if str(k).isdigit()}
+    shares = {k: v for k, v in shares.items() if v > 0 and k in ids and kinds[k] not in ("credit", "loan")}
+    total = sum(shares.values())
+    if not total:
+        return None
+    measure = g.get("measure")
+    if not isinstance(measure, list):  # older: "worth", "investments" or one account
+        measure = (list(ids) if measure == "worth" else [i for i in ids if kinds[i] in INVESTMENT_KINDS] if measure == "investments"
+                   else [measure] if measure else [])
+    measure = {int(i) for i in measure if str(i).isdigit() and int(i) in ids} | set(shares)
     months = (int(by[:4]) - today.year) * 12 + int(by[5:]) - today.month
-    measure = g.get("measure") if g.get("measure") in ("worth", "investments") else (
-        int(g["measure"]) if str(g.get("measure") or "").isdigit() and int(g["measure"]) in ids else "worth")
-    if isinstance(measure, int) and measure != into:
-        measure = into  # saving into one account only reaches a goal for that account
-    return {"amount": amount, "by": by, "months": min(months, 40 * 12), "real": bool(g.get("real")), "into": into,
-            "measure": measure, "confidence": g.get("confidence") if g.get("confidence") in CONFIDENCE else "expected"}
+    return {"amount": amount, "by": by, "months": min(months, 40 * 12), "real": bool(g.get("real")),
+            "into": {k: v / total for k, v in shares.items()}, "measure": sorted(measure),
+            "confidence": g.get("confidence") if g.get("confidence") in CONFIDENCE else "expected"}
 
 
 def _quantile(values, q):
@@ -203,9 +213,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
     goal = _goal(setup, today, {a["id"] for a in accts}, {a["id"]: a["kind"] for a in accts})
     needed_ids = {plan_acct, values["savings_account"], *(b for b, _ in backups)} if with_plan else set()
     if goal:
-        needed_ids.add(goal["into"])
-        if isinstance(goal["measure"], int):
-            needed_ids.add(goal["measure"])
+        needed_ids |= set(goal["into"]) | set(goal["measure"])
     for a in accts:  # the plan's accounts and the goal's come along: money moves through them
         if a["id"] in needed_ids and not a["on"]:
             a["forced"] = True
@@ -215,13 +223,10 @@ def project(conn, setup=None, today=None, runs=RUNS):
     backups = [(b, f) for b, f in backups if b in ids]
     buffer = values["plan_buffer"] or 0.0
     items = budgeting.plan_items(conn) if with_plan else []
-    # With the Plan, the projection runs to the plan's last month and stops: nothing after it is assumed.
+    # The Plan's months, changes included, run through its last month; after that the planned month
+    # carries on as it is now (the baseline), without the changes.
     plan_end, plan_months, _ = budgeting.plan_end(conn, today)
-    horizon = plan_months if with_plan else years * 12
-    goal_error = None
-    if goal and with_plan and goal["months"] > horizon:
-        goal_error = "after the plan"
-        goal = None
+    horizon = years * 12
     months = max(horizon, goal["months"] if goal else 0)
 
     # Month by month, what doesn't depend on markets: plan nets, loan balances.
@@ -231,7 +236,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         y, m = reports.add_months(y, m, 1)
         key = _month_key(y, m)
         keys.append(key)
-        nets.append(budgeting.plan_month(values, items, key)[3] if with_plan else 0.0)
+        nets.append(budgeting.plan_month(values, items if key <= plan_end else [], key)[3] if with_plan else 0.0)
     saving = values["savings"] if with_plan and values["mode"] == "savings" else 0.0
     save_to = values["savings_account"] if values["savings_account"] in ids else None
     loan_path = {}
@@ -244,19 +249,13 @@ def project(conn, setup=None, today=None, runs=RUNS):
     invest = [a for a in used if a["kind"] in INVESTMENT_KINDS and a["vol"] > 0 and a["balance"] > 0]
     invest_total = sum(a["balance"] for a in invest)
     weights = {a["id"]: a["balance"] / invest_total for a in invest} if invest_total else {}
-    invest_ids = {a["id"] for a in used if a["kind"] in INVESTMENT_KINDS}
-    if goal and goal["measure"] == "investments":
-        invest_ids.add(goal["into"])
+    debts = {a["id"] for a in used if a["debt"]}
 
     def worth(bal):
         return sum(-bal[a["id"]] if a["debt"] else bal[a["id"]] for a in used)
 
     def measured(bal):
-        if not goal or goal["measure"] == "worth":
-            return worth(bal)
-        if goal["measure"] == "investments":
-            return sum(bal[i] for i in invest_ids)
-        return bal[goal["measure"]]
+        return sum(-bal[i] if i in debts else bal[i] for i in goal["measure"])
 
     def run(rng):
         """One future: balances at each year's end, the first month the plan runs short, the biggest fall of
@@ -270,7 +269,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
             params.append((a["id"], a["debt"], mu - sm * sm / 2 if rng else mu, sm if rng else 0.0, a["monthly_in"]))
         index = peak = 1.0
         drop = 0.0
-        per_dollar = 0.0
+        per_dollar = dict.fromkeys(goal["into"], 0.0) if goal else {}
         at_goal = None
         for t in range(months):
             z = rng.gauss(0, 1) if rng else 0.0
@@ -282,8 +281,8 @@ def project(conn, setup=None, today=None, runs=RUNS):
                 g = math.exp(mu + sm * z)
                 if aid in weights:
                     moved += weights[aid] * g
-                if goal and aid == goal["into"]:
-                    per_dollar = per_dollar * g + 1  # $1 saved at each month's end, grown since
+                if aid in per_dollar:  # $1 saved here at each month's end, grown since
+                    per_dollar[aid] = per_dollar[aid] * g + 1
                 if bal[aid] > 0 or debt:
                     bal[aid] *= g
                 bal[aid] += added
@@ -304,7 +303,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
                 if short_at is None and bal[plan_acct] < buffer - 0.005:
                     short_at = keys[t]
             if goal and t == goal["months"] - 1:
-                at_goal = (measured(bal), per_dollar)
+                at_goal = (measured(bal), sum(share * per_dollar[aid] for aid, share in goal["into"].items()))
             if t < horizon and ((t + 1) % 12 == 0 or t == horizon - 1):
                 yearly.append((t + 1, dict(bal)))
         return {"yearly": yearly, "short": short_at, "drop": drop, "goal": at_goal}
@@ -347,7 +346,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         "global_rate": setup.get("global_rate", ""), "global_vol": setup.get("global_vol", ""),
         "savings": saving, "save_to": save_to, "runs": runs, "mix": mix,
         "goal": _solve(goal, expected, sims, inflation) if goal else None, "goal_setup": setup.get("goal") or {},
-        "plan_income": values["plan_income"], "plan_end": plan_end, "goal_error": goal_error,
+        "plan_income": values["plan_income"], "plan_end": plan_end, "plan_months": plan_months,
         "span": horizon / 12,
     }
 

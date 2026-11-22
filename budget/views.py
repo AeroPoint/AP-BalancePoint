@@ -299,8 +299,11 @@ def save_projection_goal():
         setup.pop("goal", None)
     else:
         amount = _money_input(form.get("amount"))
+        ids = [aid for aid in form.getlist("account") if _int(aid)]
         setup["goal"] = {"amount": amount, "by": _month_input(form.get("by")) or "", "real": form.get("real") == "1",
-                         "measure": form.get("measure", "worth"), "into": form.get("into", ""),
+                         "measure": [aid for aid in ids if form.get(f"measure-{aid}") == "1"],
+                         "into": {aid: form.get(f"share-{aid}", "").strip().rstrip("%") for aid in ids
+                                  if form.get(f"share-{aid}", "").strip().rstrip("%") not in ("", "0")},
                          "confidence": form.get("confidence", "expected")}
     projection.save_setup(conn, setup)
     conn.commit()
