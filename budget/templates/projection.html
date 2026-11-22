@@ -6,7 +6,7 @@
 <header class="page-head">
   <div>
     <h1>Projection</h1>
-    <p class="sub">Where your money could be in {{ p.years }} year{{ 's' if p.years != 1 }}, and what it would take to reach a goal.
+    <p class="sub">Where your money could be {{ 'by ' ~ (p.plan_end|month_label) ~ ', when your Plan ends' if p.with_plan else 'in ' ~ p.years ~ (' years' if p.years != 1 else ' year') }}, and what it would take to reach a goal.
       The app plays out {{ p.runs }} possible futures month by month: each account grows at its rate, markets swing up and down
       at random, paychecks keep putting into retirement accounts, loans pay down, and {{ 'the Plan runs through it' if p.with_plan else 'the Plan is left out' }}.
       <a href="#how">How this works</a></p>
@@ -16,7 +16,7 @@
 <section class="statement">
   <h1>
     Net worth{% if p.real %} in today's dollars{% endif %}: <b>{{ p.start_worth|money(false) }}</b> today,
-    about <b>{{ last.worth|money(false) }}</b> by {{ last.year }}, likely between {{ last.low|money(false) }} and {{ last.high|money(false) }}.
+    about <b>{{ last.worth|money(false) }}</b> by {{ last.key|month_label if last.partial else last.year }}, likely between {{ last.low|money(false) }} and {{ last.high|money(false) }}.
   </h1>
   {% if p.with_plan %}
   <p class="compare">
@@ -35,6 +35,10 @@
   <div class="panel-head"><h2>What would it take?</h2>
     <p class="muted">Pick an amount and a date, and the app works out how much to save each month to get there, with your current
       rates and swings and everything else above staying as it is.</p></div>
+  {% if p.goal_error %}
+  <p class="goal-answer">Your goal's date is after the Plan ends ({{ p.plan_end|month_label }}), and with the Plan included the projection stops there.
+    Plan further ahead on <a href="{{ url_for('main.plan') }}">Plan</a> ("Plan through"), or turn off "Include the Plan" below.</p>
+  {% endif %}
   {% if g %}
   <p class="goal-answer">
     {% if g.needed is none %}
@@ -91,7 +95,7 @@
       <tbody>
         {% for r in p.rows %}
         <tr>
-          <td class="c-main">{{ r.year }}</td>
+          <td class="c-main">{{ r.key|month_label if r.partial else r.year }}</td>
           <td class="num strong c-side">{{ r.worth|money(false) }}</td>
           <td class="num c-meta" data-label="Low (1 in 10)">{{ r.low|money(false) }}</td>
           <td class="num c-meta" data-label="High (1 in 10)">{{ r.high|money(false) }}</td>
@@ -106,14 +110,14 @@
     {% set picks = [] %}{% for r in p.rows %}{% if loop.index in (1, 5, 10, 20, 30, 40) or loop.last %}{% set _ = picks.append(r) %}{% endif %}{% endfor %}
     <div class="table-wrap">
       <table class="ledger cards">
-        <thead><tr><th>Account</th><th class="num">Today</th>{% for r in picks %}<th class="num">{{ r.year }}</th>{% endfor %}</tr></thead>
+        <thead><tr><th>Account</th><th class="num">Today</th>{% for r in picks %}<th class="num">{{ r.key|month_label if r.partial else r.year }}</th>{% endfor %}</tr></thead>
         <tbody>
           {% for a in p.used %}
           <tr>
             <td class="c-main">{{ a.name }}</td>
             <td class="num c-meta" data-label="Today">{{ ('−' if a.debt and a.balance > 0.5 else '') ~ (a.balance|money(false)) }}</td>
             {% for r in picks %}
-            <td class="num c-meta" data-label="{{ r.year }}">{{ ('−' if a.debt and r.accounts[a.id] > 0.5 else '') ~ (r.accounts[a.id]|money(false)) }}</td>
+            <td class="num c-meta" data-label="{{ r.key|month_label if r.partial else r.year }}">{{ ('−' if a.debt and r.accounts[a.id] > 0.5 else '') ~ (r.accounts[a.id]|money(false)) }}</td>
             {% endfor %}
           </tr>
           {% endfor %}
@@ -129,7 +133,7 @@
     <p class="muted">Your investments together ({{ x.total|money(false) }} today) grow about {{ '%.1f'|format(x.rate) }}% a year, swinging about
       ±{{ '%.0f'|format(x.vol) }}% in a typical year.</p></div>
   <ul class="ride">
-    <li><b>Falls along the way:</b> in a typical future, at some point in the {{ p.years }} years your investments drop {{ '%.0f'|format(x.drop_typical * 100) }}% from their high
+    <li><b>Falls along the way:</b> in a typical future, at some point in the {{ '%.0f'|format(p.span) if p.span >= 1 else 'under 1' }} year{{ 's' if p.span != 1 }} your investments drop {{ '%.0f'|format(x.drop_typical * 100) }}% from their high
       before recovering (about {{ (x.drop_typical * x.total)|money(false) }} on today's balance). In 1 in 10 futures the worst drop is
       {{ '%.0f'|format(x.drop_bad * 100) }}% or more. Contributions keep going in, so your balance falls less than the market does.</li>
     <li><b>Chance of being behind:</b> invested money alone (no contributions) is below where it started after
@@ -150,7 +154,8 @@
       one move for all of them, scaled by each account's swings, because markets tend to fall together. Paycheck 401(k) money goes in,
       loans pay down on their schedules{% if p.with_plan %}, and the Plan's month happens: its surplus or shortfall lands in
       {{ names.get(p.plan_account, 'the spending account') }}, the backups top it up as on the Plan page, and any savings goal goes into its account.
-      After the Plan's changes end, the planned month repeats{% endif %}.</li>
+      The Plan ends in {{ p.plan_end|month_label }}, so the projection stops there too: nothing past the Plan is assumed.
+      To look further, plan further ahead, or turn off "Include the Plan" to see growth alone for the years you pick{% endif %}.</li>
     <li><b>{{ p.runs }} futures</b> are played out this way, each with different market luck (the same set every time you open the page,
       so numbers only change when your data or settings do). The expected path is the same month-by-month math with no luck at all.</li>
     <li><b>Rates</b> come from an account's own history once it has 3 years of balances, otherwise from a typical figure for its kind.
@@ -167,11 +172,11 @@
   <div class="panel-head"><h2>Settings</h2></div>
   <form method="post" action="{{ url_for('main.save_projection') }}" class="stack proj-form">
     <div class="inline">
-      <label class="field"><span>Years</span>
+      <label class="field"><span>Years{% if p.with_plan %} <small class="muted">without the Plan</small>{% endif %}</span>
         <select name="years">{% for n in [1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 40] %}<option{% if n == p.years %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
       </label>
       <label class="check"><input type="checkbox" name="plan" value="1"{% if p.with_plan %} checked{% endif %}{% if not p.plan_ready %} disabled{% endif %}>
-        Include the Plan {% if not p.plan_ready %}<small class="muted">(set one up on <a href="{{ url_for('main.plan') }}">Plan</a> first)</small>{% else %}<small class="muted">its monthly surplus or shortfall, backup draws and savings goal</small>{% endif %}</label>
+        Include the Plan {% if not p.plan_ready %}<small class="muted">(set one up on <a href="{{ url_for('main.plan') }}">Plan</a> first)</small>{% else %}<small class="muted">its months through {{ p.plan_end|month_label }}, and the projection stops there (<a href="{{ url_for('main.plan') }}">change on Plan</a>)</small>{% endif %}</label>
       <label class="check"><input type="checkbox" name="real" value="1"{% if p.real %} checked{% endif %}> In today's dollars</label>
       <label class="field"><span>Inflation % a year</span><input name="inflation" inputmode="decimal" value="{{ p.inflation }}" size="4"></label>
     </div>
@@ -217,7 +222,7 @@
   (function () {
     const rows = JSON.parse(document.getElementById("data-proj").textContent);
     const start = {{ p.start_worth|tojson }};
-    const labels = ["Now", ...rows.map((r) => String(r.year))];
+    const labels = ["Now", ...rows.map((r) => (r.partial ? r.key : String(r.year)))];
     Charts.lines(document.getElementById("proj-chart"), {
       labels, height: 280, colors: [Charts.seriesColor(0)],
       series: [{ name: "Expected net worth", values: [start, ...rows.map((r) => r.worth)] }],

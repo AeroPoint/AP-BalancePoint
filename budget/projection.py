@@ -6,7 +6,8 @@ known to have gone in, like paycheck 401(k) contributions), else from a default 
 either can be changed, per account or one rate for every investment. Paycheck contributions continue,
 loans with terms pay down on schedule, and the Plan's months can run through it: each month's surplus
 or shortfall lands in the plan account, draws from the backups as on the Plan page, and the savings goal
-goes into its account. After the Plan's changes end, the planned month repeats.
+goes into its account. With the Plan included the projection stops at the Plan's last month (Plan page,
+"Plan through"); without it, it runs the years picked here.
 
 The expected line uses each rate exactly. The range comes from simulated runs (a fixed seed, so the page
 doesn't change on reload): every month draws one market move that all the investments share, scaled by
@@ -214,7 +215,14 @@ def project(conn, setup=None, today=None, runs=RUNS):
     backups = [(b, f) for b, f in backups if b in ids]
     buffer = values["plan_buffer"] or 0.0
     items = budgeting.plan_items(conn) if with_plan else []
-    months = max(years * 12, goal["months"] if goal else 0)
+    # With the Plan, the projection runs to the plan's last month and stops: nothing after it is assumed.
+    plan_end, plan_months, _ = budgeting.plan_end(conn, today)
+    horizon = plan_months if with_plan else years * 12
+    goal_error = None
+    if goal and with_plan and goal["months"] > horizon:
+        goal_error = "after the plan"
+        goal = None
+    months = max(horizon, goal["months"] if goal else 0)
 
     # Month by month, what doesn't depend on markets: plan nets, loan balances.
     keys, nets = [], []
@@ -297,22 +305,22 @@ def project(conn, setup=None, today=None, runs=RUNS):
                     short_at = keys[t]
             if goal and t == goal["months"] - 1:
                 at_goal = (measured(bal), per_dollar)
-            if t < years * 12 and ((t + 1) % 12 == 0 or t == years * 12 - 1):
-                yearly.append(dict(bal))
+            if t < horizon and ((t + 1) % 12 == 0 or t == horizon - 1):
+                yearly.append((t + 1, dict(bal)))
         return {"yearly": yearly, "short": short_at, "drop": drop, "goal": at_goal}
 
     expected = run(None)
     rng = random.Random(SEED)
     sims = [run(rng) for _ in range(runs)]
-    deflate = [(1 + inflation / 100) ** -(i + 1) if real else 1.0 for i in range(len(expected["yearly"]))]
 
     start_worth = sum(-a["balance"] if a["debt"] else a["balance"] for a in used)
     rows = []
-    for i, bal in enumerate(expected["yearly"]):
-        f = deflate[i]
-        spread = [worth(s["yearly"][i]) * f for s in sims]
+    for i, (elapsed, bal) in enumerate(expected["yearly"]):
+        f = (1 + inflation / 100) ** -(elapsed / 12) if real else 1.0
+        spread = [worth(s["yearly"][i][1]) * f for s in sims]
+        y, m = reports.add_months(today.year, today.month, elapsed)
         rows.append({
-            "year": today.year + i + 1, "worth": worth(bal) * f, "low": _quantile(spread, 0.10),
+            "year": y, "key": _month_key(y, m), "partial": elapsed % 12 != 0, "worth": worth(bal) * f, "low": _quantile(spread, 0.10),
             "mid": _quantile(spread, 0.50), "high": _quantile(spread, 0.90),
             "behind": sum(1 for v in spread if v < start_worth) / len(spread) if spread else 0.0,
             "accounts": {aid: bal[aid] * f for aid in ids},
@@ -339,7 +347,8 @@ def project(conn, setup=None, today=None, runs=RUNS):
         "global_rate": setup.get("global_rate", ""), "global_vol": setup.get("global_vol", ""),
         "savings": saving, "save_to": save_to, "runs": runs, "mix": mix,
         "goal": _solve(goal, expected, sims, inflation) if goal else None, "goal_setup": setup.get("goal") or {},
-        "plan_income": values["plan_income"],
+        "plan_income": values["plan_income"], "plan_end": plan_end, "goal_error": goal_error,
+        "span": horizon / 12,
     }
 
 

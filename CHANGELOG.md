@@ -13,6 +13,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   the chance of being below today; "How bumpy the ride is" gives the typical and bad-case fall from a high,
   the chance of being behind over time, and N0. "What would it take?" works out the monthly saving that
   reaches an amount by a date (today's or future dollars), on the expected path or in 3 of 4 or 9 of 10 futures.
+- Plan through: the Plan can run up to 40 years ahead to a month you pick (still the next 12 months by
+  default), shown monthly for the first year and then yearly; with the Plan included, the Projection stops there.
 - Plan by a savings goal: an amount or a % of income put into an account first each month, with the
   flexible target what's left. The Overview and the month forecast judge the month on that target.
 

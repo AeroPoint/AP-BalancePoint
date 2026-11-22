@@ -547,7 +547,8 @@ A 401(k) comes out of a paycheck before the bank sees it. Add it under **Account
 retirement savings** (base pay per paycheck, your %, the employer match) and it counts as saving in
 the Overview and in yearly savings rates. For a raise or a new rate, add an entry from that date on.
 
-The **Plan** page projects the account you spend from over the next 12 months: planned income,
+The **Plan** page projects the account you spend from through the plan's last month (**Plan through**, up to
+40 years out; blank means always the next 12 months), month by month for the first year and then each year: planned income,
 fixed and non-monthly spending, the flexible target, and changes you expect (time off work,
 overtime, a planned purchase). When the account would drop below the cushion you set, the
 shortfall comes from backup accounts in the order you pick (say savings, then a brokerage account),
@@ -570,8 +571,10 @@ a month that jumped over 15% is taken as an unrecorded deposit and left out), el
 the kind of account (7% ±15 for investments, 0 for checking, 3% for a home, −15% for vehicles). Paycheck
 retirement contributions continue, loans with terms pay down on schedule, and **Include the Plan**
 runs the Plan's months through it: the surplus or shortfall lands in the spending account, the backups
-cover it as on the Plan page, and a savings goal goes into its account; after the Plan's changes end, the
-planned month repeats. The line is the expected path; the shaded range is the 10th to 90th percentile
+cover it as on the Plan page, and a savings goal goes into its account. With the Plan included the
+projection stops at the Plan's last month, since nothing past it is planned (plan further ahead to see
+further); without it, it shows growth alone for the years picked. A goal dated after the Plan's end asks
+for one or the other. The line is the expected path; the shaded range is the 10th to 90th percentile
 of 300 simulated futures (a fixed seed, so it doesn't change on reload), where all investments rise and
 fall together. It says when the spending account can't be kept topped up and in how many of the futures,
 and can show today's dollars after inflation. Accounts held for someone else are left out.

@@ -327,6 +327,7 @@ def plan():
         backup_accounts=[budgeting.get_setting(conn, k, cast=int) for k in budgeting.BACKUP_KEYS],
         backup_mins=[budgeting.get_setting(conn, k) for k in budgeting.BACKUP_MIN_KEYS],
         this_month=date.today().strftime("%Y-%m"),
+        plan_through=budgeting.get_setting(conn, budgeting.PLAN_THROUGH, cast=str),
         plan_items=conn.execute("SELECT * FROM plan_items ORDER BY start_month, id").fetchall(),
         categories=conn.execute("SELECT id, name, COALESCE(grp, 'flexible') AS grp FROM categories WHERE kind = 'expense' "
                                 "ORDER BY sort, name").fetchall(),
@@ -343,6 +344,8 @@ def save_plan_settings():
     for key in ("plan_account", "plan_savings_account", *budgeting.BACKUP_KEYS):
         if key in request.form:
             budgeting.set_setting(conn, key, _int(request.form.get(key)))
+    if budgeting.PLAN_THROUGH in request.form:
+        budgeting.set_setting(conn, budgeting.PLAN_THROUGH, _month_input(request.form.get(budgeting.PLAN_THROUGH)))
     if budgeting.PLAN_MODE in request.form:
         budgeting.set_setting(conn, budgeting.PLAN_MODE, "savings" if request.form[budgeting.PLAN_MODE] == "savings" else None)
     if "plan_savings" in request.form:

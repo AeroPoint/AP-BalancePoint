@@ -6,8 +6,9 @@
   <div>
     <h1>Plan</h1>
     <p class="sub">
-      Where the next 12 months leave you if you stick to a plan. Start from a normal stretch of months, set what a month
-      should look like, then add the changes you expect, like time off work, overtime or a big purchase.
+      Where {{ 'the plan leaves you by ' ~ (projection.end|month_label) if projection else 'the next 12 months leave you' }} if you stick to it.
+      Start from a normal stretch of months, set what a month should look like and how far ahead to plan, then add the changes you
+      expect, like time off work, overtime or a big purchase. The plan stops at its last month; nothing after it is assumed.
     </p>
   </div>
 </header>
@@ -22,11 +23,11 @@
   <h1>
     On this plan, {{ acct_name }} goes from <b>{{ p.start_balance|money(false) }}</b> today
     {%- if p.first_draw %} to your {{ (settings.plan_buffer or 0)|money(false) }} cushion by <b>{{ p.first_draw|month_label }}</b>,
-      and you'd draw {% for b in p.backups if p.drawn[b] %}<b>{{ p.drawn[b]|money(false) }}</b> from {{ names[b] }}{{ ' and ' if not loop.last }}{% endfor %} over the year.
+      and you'd draw {% for b in p.backups if p.drawn[b] %}<b>{{ p.drawn[b]|money(false) }}</b> from {{ names[b] }}{{ ' and ' if not loop.last }}{% endfor %} through {{ last.key|month_label }}.
     {%- else %} to <b>{{ last.balance|money(false) }}</b> by {{ last.key|month_label }}.{% endif %}
   </h1>
   <p class="compare">
-    {% if p.saving %}You put <b>{{ p.saving|money(false) }}</b> a month into {{ names.get(p.save_to, 'savings') }} first ({{ p.saved_total|money(false) }} over the year); after that, a{% else %}A{% endif %}
+    {% if p.saving %}You put <b>{{ p.saving|money(false) }}</b> a month into {{ names.get(p.save_to, 'savings') }} first ({{ p.saved_total|money(false) }} through {{ last.key|month_label }}); after that, a{% else %}A{% endif %}
     planned month runs {{ p.average_net|abs|money(false) }} {{ 'ahead' if p.average_net >= 0 else 'short' }} on average.
     {% if p.first_short %}{{ backup_name }} {{ 'reaches what you keep in it' if p.floors.values()|select|list else 'runs out' }} in {{ p.first_short|month_label }}.
     {% elif p.total_drawn %}Left at the end: {% for b in p.backups %}{{ names[b] }} {{ last.left[b]|money(false) }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% endif %}
@@ -35,7 +36,7 @@
 
 <section class="panel">
   <div class="panel-head">
-    <h2>Next 12 months</h2>
+    <h2>{{ 'Next 12 months' if p.months == 12 else 'Through ' ~ (p.end|month_label) }}</h2>
     <p class="muted">Balances at each month's end. When {{ acct_name }} would drop below the cushion, the difference comes from {{ backup_name }}{% if p.floors.values()|select|list %}, never taking one below what you keep in it{% endif %}.</p>
   </div>
   {# One small chart per account, each on its own scale: a big backup account would otherwise flatten the rest. #}
@@ -57,9 +58,12 @@
         <tr><th>Month</th><th class="num">Planned</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th>Drawn from</th>{% if p.saving %}<th class="num">Saved</th>{% endif %}{% for b in p.backups %}<th class="num">{{ names[b] }} left</th>{% endfor %}</tr>
       </thead>
       <tbody>
-        {% for r in p.rows %}
+        {# A long plan: every month of the first year, then each year's last month and the plan's last; a change is named
+           on the first row shown after it starts. #}
+        {% for r in p.rows %}{% if loop.index <= 12 or loop.index % 12 == 0 or loop.last %}
         <tr{% if r.short %} class="is-short"{% endif %}>
-          {% set before = loop.previtem['items']|map(attribute='label')|list if loop.previtem else [] %}
+          {% set idx = loop.index0 %}
+          {% set before = p.rows[(idx // 12) * 12 - 1 if idx >= 12 else idx - 1]['items']|map(attribute='label')|list if idx > 0 else [] %}
           <td class="c-main">
             <span class="nowrap">{{ r.key|month_label }}</span>
             {# A change is named in the month it starts, not repeated every month it runs. #}
@@ -72,7 +76,7 @@
           {% if p.saving %}<td class="num c-meta" data-label="Saved">{{ r.saved|money(false) }}</td>{% endif %}
           {% for b in p.backups %}<td class="num c-meta" data-label="{{ names[b] }} left">{{ r.left[b]|money(false) }}</td>{% endfor %}
         </tr>
-        {% endfor %}
+        {% endif %}{% endfor %}
       </tbody>
     </table>
   </div>
@@ -126,6 +130,11 @@
       {% endif %}
     </div>
     {% endfor %}
+    <div class="plan-row">
+      <label class="field"><span>Plan through <small class="muted">its last month; blank = always the next 12 months</small></span>
+        <input type="month" name="plan_through" value="{{ plan_through or '' }}">
+      </label>
+    </div>
     <div class="plan-row">
       <label class="field"><span>Spend from</span>
         <select name="plan_account">{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == plan_account %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
@@ -250,7 +259,8 @@
 <script>
   (function () {
     const rows = JSON.parse(document.getElementById("data-runway").textContent);
-    const labels = rows.map((r) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(r.key.slice(5)) - 1]);
+    const short = (r) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(r.key.slice(5)) - 1];
+    const labels = rows.map((r) => rows.length > 24 ? `${short(r)} ${r.key.slice(2, 4)}` : short(r));
     const titles = rows.map((r) => r.key);
     const cushion = {{ (settings.plan_buffer or 0)|tojson }};
     Charts.lines(document.getElementById("runway-main"), {

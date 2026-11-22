@@ -364,6 +364,8 @@ BACKUP_MIN_KEYS = ("plan_backup_min", "plan_backup_min_2")  # each backup's own 
 # "savings": set a savings goal (an amount, or a % of income, put into an account each month), and the
 # flexible target is what's left after fixed, non-monthly and the goal.
 PLAN_MODE = "plan_mode"
+PLAN_THROUGH = "plan_through"  # "YYYY-MM", the plan's last month; unset = always the next 12 months
+PLAN_MAX_MONTHS = 40 * 12
 SAVINGS_KEYS = ("plan_savings", "plan_savings_unit", "plan_savings_account")  # amount or %, "$" or "%", account id
 
 
@@ -383,6 +385,21 @@ def plan_values(conn):
         savings_first = False
     return {**v, "mode": "savings" if savings_first else "flex", "savings": savings, "savings_goal": goal,
             "savings_unit": unit, "savings_account": account}
+
+
+def plan_end(conn, today=None):
+    """(last month "YYYY-MM", months from now, set by hand?) for the plan: the month set on the Plan page
+    (up to 40 years out), else 12 months from now."""
+    today = today or date.today()
+    saved = get_setting(conn, PLAN_THROUGH, cast=str) or ""
+    if len(saved) == 7 and saved[4] == "-" and saved[:4].isdigit() and saved[5:].isdigit():
+        months = (int(saved[:4]) - today.year) * 12 + int(saved[5:]) - today.month
+        if 1 <= months:
+            months = min(months, PLAN_MAX_MONTHS)
+            y, m = reports.add_months(today.year, today.month, months)
+            return f"{y}-{m:02d}", months, True
+    y, m = reports.add_months(today.year, today.month, 12)
+    return f"{y}-{m:02d}", 12, False
 
 
 def flex_target(conn):
@@ -458,8 +475,8 @@ def plan_month(values, items, key):
     return active, adjust, spend, values["plan_income"] + adjust - spend - saving
 
 
-def project(conn, months=12, today=None):
-    """Month-by-month projection of the plan account from next month on.
+def project(conn, months=None, today=None):
+    """Month-by-month projection of the plan account from next month through the plan's end (plan_end).
 
     Each month: planned income - fixed - flexible target - non-monthly (- the savings goal, planning
     savings first) + plan items. The savings goal goes into its account. When the plan account would drop
@@ -468,6 +485,8 @@ def project(conn, months=12, today=None):
     """
     today = today or date.today()
     values = plan_values(conn)
+    end_key, end_months, end_set = plan_end(conn, today)
+    months = months or end_months
     if values["plan_income"] is None:
         return None
     ledgers = load_ledgers(conn)
@@ -515,7 +534,8 @@ def project(conn, months=12, today=None):
     return {
         "values": values, "items": items, "rows": rows, "start_balance": start_balance, "start_left": start_left,
         "account": account, "backups": backups, "floors": floors, "drawn": drawn, "total_drawn": sum(drawn.values()),
-        "saving": saving, "save_to": save_to, "saved_total": saved_total,
+        "saving": saving, "save_to": save_to, "saved_total": saved_total, "end": rows[-1]["key"] if rows else end_key,
+        "end_set": end_set, "months": months,
         "average_net": sum(r["net"] for r in rows) / len(rows) if rows else 0.0,
         "first_draw": next((r["key"] for r in rows if r["draw"] > 0), None),
         "first_short": next((r["key"] for r in rows if r["short"]), None),
