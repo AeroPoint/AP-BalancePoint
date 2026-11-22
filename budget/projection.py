@@ -202,7 +202,10 @@ def lump_sums(setup, ids):
 # How the monthly saving is set: a flat amount; a % of an income (a yearly amount, growing by a raise each
 # year); or a % of what the Plan's month has left over (its surplus, moved out of the spending account).
 BASIS = {"flat": "a flat amount", "income": "a % of income", "savings": "a % of what you save"}
-CONFIDENCE = {"expected": "on the expected path", "0.75": "in 3 of 4 futures", "0.9": "in 9 of 10 futures"}
+# "expected" is every rate exactly: better than most futures, since swings cost growth (down 20% then up 20%
+# leaves 96%). "0.5" is a true coin flip: half the futures do better.
+CONFIDENCE = {"expected": "on the expected path", "0.5": "in half the futures", "0.75": "in 3 of 4 futures",
+              "0.9": "in 9 of 10 futures"}
 
 
 def _goal(setup, today, ids, kinds):

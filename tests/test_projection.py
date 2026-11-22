@@ -300,3 +300,16 @@ def test_money_going_in_with_a_raise_and_dates_and_a_property_sale(conn, client)
     assert "Lump sums" in html and "Windfall" in html and "Money going in" in html
     client.post("/projection/lumps", data={"delete": "1"})
     assert projection.load_setup(conn)["lumps"] == []
+
+
+def test_half_the_futures_is_below_the_expected_path(conn):
+    fund = account(conn, "Fund", "brokerage")
+    balance(conn, fund, "2026-10", 100_000)
+    conn.commit()
+    setup = {"accounts": {str(fund): {"rate": "7", "vol": "15"}}, "years": 1,
+             "goal": {"amount": 1_000_000, "by": "2056-11", "into": {str(fund): 100}, "measure": [str(fund)]}}
+    needed = {}
+    for level in ("expected", "0.5"):
+        setup["goal"]["confidence"] = level
+        needed[level] = projection.project(conn, setup, TODAY)["goal"]["needed"]
+    assert needed["0.5"] > needed["expected"]  # a typical future trails the every-rate-exactly path

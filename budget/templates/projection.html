@@ -106,7 +106,8 @@
       <label class="field"><span>Raise % a year</span><input name="raise" inputmode="decimal" size="4" value="{{ gs['raise'] or '' }}" placeholder="0"></label>
       <label class="field"><span>How sure</span>
         <select name="confidence">
-          <option value="expected"{% if gs.confidence == 'expected' %} selected{% endif %}>On the expected path (about a coin flip)</option>
+          <option value="expected"{% if gs.confidence == 'expected' %} selected{% endif %}>On the expected path (every rate exactly; optimistic)</option>
+          <option value="0.5"{% if gs.confidence == '0.5' %} selected{% endif %}>Half the futures (a true coin flip)</option>
           <option value="0.75"{% if gs.confidence == '0.75' %} selected{% endif %}>3 in 4 futures</option>
           <option value="0.9"{% if gs.confidence == '0.9' %} selected{% endif %}>9 in 10 futures</option>
         </select></label>
@@ -251,7 +252,8 @@
     <li><b>Rates</b> come from an account's own history once it has 3 years of balances, otherwise from a typical figure for its kind.
       Change any of them below. "Swings" is volatility: how far a year usually lands from the average (about 15 for a stock fund, 0 for cash).</li>
     <li><b>What would it take</b> reruns those same futures with a monthly amount added, split across the accounts you pick, and finds the smallest amount
-      that reaches the goal on the expected path, or in 3 of 4 or 9 of 10 futures. A goal in today's dollars is raised by inflation
+      that reaches the goal on the expected path, or in half, 3 of 4 or 9 of 10 futures. The expected path is
+      optimistic: with swings, a typical future ends below it (down 20% then up 20% leaves 96%), so half the futures is the true coin flip. A goal in today's dollars is raised by inflation
       ({{ p.inflation }}% a year) to the dollars of that date first.</li>
     <li><b>It's an estimate:</b> real markets have streaks and crashes bigger than this model's, and rates of the past don't promise the future.
       Use it to compare choices, not as a promise.</li>
