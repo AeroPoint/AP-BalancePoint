@@ -35,26 +35,40 @@
   <div class="panel-head"><h2>What would it take?</h2>
     <p class="muted">Pick an amount and a date, and the app works out how much to save each month to get there, with your current
       rates and swings and everything else above staying as it is.</p></div>
+  {% if p.goal_error %}
+  <p class="goal-answer">{% if p.goal_error == 'savings needs the plan' %}A share of what you save needs the Plan: turn on "Include the Plan" below.
+    {% else %}There's nothing to take a share of: {{ 'the Plan has no month with money left over before that date' if gs.basis == 'savings' else 'the income is 0' }}.{% endif %}</p>
+  {% endif %}
   {% if g %}
   {% set into_names = [] %}{% for aid, share in g.into.items() %}{% set _ = into_names.append(names.get(aid) ~ (' ' ~ '%.0f'|format(share * 100) ~ '%' if g.into|length > 1 else '')) %}{% endfor %}
   {% set measure_names = [] %}{% for aid in g.measure %}{% set _ = measure_names.append(names.get(aid)) %}{% endfor %}
   <p class="goal-answer">
-    {% if g.needed is none %}
+    {% if g.needed is none and g.basis == 'savings' %}
+      Even everything the Plan's months leave over doesn't reach {{ g.amount|money(false) }} by {{ g.by|month_label }} {{ g.label }}: save a flat amount
+      or a share of income on top, pick a later date, or a lower level of certainty.
+    {% elif g.needed is none %}
       Even saving a lot more each month doesn't reach {{ g.amount|money(false) }} by {{ g.by|month_label }} {{ g.label }}: try a later date or a lower level of certainty.
     {% elif g.on_track %}
       <b>You're already on track:</b> without saving anything extra, you'd reach {{ g.amount|money(false) }}{% if g.real %} (today's dollars){% endif %}
       by {{ g.by|month_label }} {{ g.label }}.
     {% else %}
-      Save <b>{{ g.needed|money(false) }} a month</b>{% if g.into|length > 1 %}, split {{ into_names|join(', ') }},{% else %} into {{ into_names[0] }}{% endif %}
-      on top of what you do now, to have <b>{{ g.amount|money(false) }}</b>{% if g.real %} in today's dollars ({{ g.target|money(false) }} in {{ g.by[:4] }} dollars){% endif %}
+      {% if g.basis == 'income' %}
+      Save <b>{{ '%.1f'|format(g.needed * 100) }}% of income</b> ({{ g.income|money(false) }} a year{% if g.raise %}, growing {{ g.raise }}% a year{% endif %}:
+      {{ (g.needed * p.goal_first)|money(false) }} a month to start){% elif g.basis == 'savings' %}
+      Put <b>{{ '%.0f'|format(g.needed * 100) }}% of what you save</b> each month (what the Plan's month leaves over; {{ (g.needed * p.goal_first)|money(false) }}
+      in the first month){% else %}
+      Save <b>{{ g.needed|money(false) }} a month</b>{% endif %}{% if g.into|length > 1 %}, split {{ into_names|join(', ') }},{% else %} into {{ into_names[0] }}{% endif %}
+      {{ 'instead of leaving it in the spending account,' if g.basis == 'savings' else 'on top of what you do now,' }} to have <b>{{ g.amount|money(false) }}</b>{% if g.real %} in today's dollars ({{ g.target|money(false) }} in {{ g.by[:4] }} dollars){% endif %}
       by {{ g.by|month_label }}, {{ g.label }}.
-      {% if p.plan_income %}That's {{ '%.0f'|format(g.needed / p.plan_income * 100) }}% of the Plan's monthly income.{% endif %}
+      {% if p.plan_income and g.basis == 'flat' %}That's {{ '%.0f'|format(g.needed / p.plan_income * 100) }}% of the Plan's monthly income.{% endif %}
     {% endif %}
   </p>
   <p class="muted">Counted toward the goal: {{ measure_names|join(', ') }}{% if g.measure|length > 3 %} ({{ g.measure|length }} accounts){% endif %}.
     Without saving anything extra, the expected path gets to {{ g.expected_without|money(false) }}{% if g.real %} in today's dollars{% endif %},
-    and {{ '%.0f'|format(g.reach_without * 100) }}% of the futures reach the goal. The amount is the same each month{% if g.real %}, in dollars of the day (it isn't raised with inflation){% endif %};
-    it comes out of what you'd otherwise spend, so it's on top of the Plan.</p>
+    and {{ '%.0f'|format(g.reach_without * 100) }}% of the futures reach the goal. {% if g.basis == 'flat' %}The amount is the same each month{% if g.real %}, in dollars of the day (it isn't raised with inflation){% endif %};
+    it comes out of what you'd otherwise spend, so it's on top of the Plan.{% elif g.basis == 'income' %}It moves with the income{% if g.raise %} as it grows{% endif %},
+    and comes out of what you'd otherwise spend, on top of the Plan.{% else %}It changes with the month: more when the Plan's month leaves more over,
+    nothing in months that run short.{% endif %}</p>
   {% endif %}
   {% set gm = gs.measure if gs.measure is iterable and gs.measure is not string else [] %}
   {% set gi = gs.into if gs.into is mapping else {} %}
@@ -64,6 +78,11 @@
       <label class="field"><span>By</span><input type="month" name="by" required value="{{ gs.by or '' }}"></label>
       <label class="field"><span>In</span>
         <select name="real"><option value="1"{% if gs.real %} selected{% endif %}>today's dollars</option><option value="0"{% if gs and not gs.real %} selected{% endif %}>dollars of that day</option></select></label>
+      <label class="field"><span>Saving as</span>
+        <select name="basis">{% for value, label in [('flat', 'A flat amount a month'), ('income', 'A % of income'), ('savings', 'A % of what you save')] %}<option value="{{ value }}"{% if gs.basis == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+      <label class="field"><span>Income a year <small class="muted">for a % of income</small></span>
+        <input name="income" inputmode="decimal" size="10" value="{{ '%.0f'|format(gs.income) if gs.income else '' }}" placeholder="{{ '%.0f'|format(p.plan_income * 12) if p.plan_income else '120,000' }}"></label>
+      <label class="field"><span>Raise % a year</span><input name="raise" inputmode="decimal" size="4" value="{{ gs['raise'] or '' }}" placeholder="0"></label>
       <label class="field"><span>How sure</span>
         <select name="confidence">
           <option value="expected"{% if gs.confidence == 'expected' %} selected{% endif %}>On the expected path (about a coin flip)</option>
@@ -89,7 +108,9 @@
       </table>
     </div>
     <p class="muted">Tick the accounts whose total should reach the amount (a loan counts against it). Shares split the monthly saving,
-      like 60 and 40; they're scaled to add up to 100%, and an account you save into always counts toward the goal.</p>
+      like 60 and 40; they're scaled to add up to 100%, and an account you save into always counts toward the goal.
+      The saving can be a flat amount, a % of an income (blank = the Plan's income; it can grow by a raise each year), or a % of what you
+      save: the money the Plan's month has left over, moved out of the spending account into these accounts.</p>
     <div class="inline"><button class="btn primary">Work it out</button>{% if g %}<button class="btn quiet" name="clear" value="1" formnovalidate>Clear</button>{% endif %}</div>
   </form>
 </section>

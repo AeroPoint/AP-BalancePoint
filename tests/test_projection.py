@@ -209,3 +209,41 @@ def test_after_the_plans_end_the_planned_month_carries_on_without_the_changes(co
     assert "then the planned month as it is now" in client.get("/projection").get_data(as_text=True)
     client.post("/plan/settings", data={"plan_through": ""})
     assert budgeting.plan_end(conn, TODAY) == ("2027-11", 12, False)
+
+
+def test_the_saving_can_be_a_share_of_income_or_of_what_the_month_leaves_over(conn, client):
+    chk = account(conn, "Checking")
+    fund = account(conn, "Fund", "brokerage")
+    balance(conn, chk, "2026-10", 1000)
+    balance(conn, fund, "2026-10", 0.01)
+    for key, value in (("plan_income", 5000), ("plan_fixed", 3000), ("flex_target", 1500), ("plan_account", chk),
+                       (budgeting.PLAN_THROUGH, "2028-11")):
+        budgeting.set_setting(conn, key, value)
+    conn.commit()
+    flat = {str(a): {"rate": "0", "vol": "0"} for a in (chk, fund)}
+
+    def solve(**goal):
+        base = {"amount": 12_000, "by": "2027-11", "into": {str(fund): 100}, "measure": [str(fund)]}
+        return projection.project(conn, {"years": 2, "accounts": flat, "goal": {**base, **goal}}, TODAY, runs=5)
+
+    g = solve(basis="income", income=120_000)["goal"]
+    assert abs(g["needed"] - 0.10) < 1e-6  # 10% of 10,000 a month
+    p = solve(basis="income", income=120_000, amount=24_000, by="2028-11", **{"raise": 10})
+    assert abs(p["goal"]["needed"] - 24_000 / (12 * 10_000 + 12 * 11_000)) < 1e-6 and p["goal_first"] == 10_000
+    assert abs(solve(basis="income")["goal"]["needed"] - 12_000 / (12 * 5000)) < 1e-6  # blank: the Plan's income
+
+    g = solve(basis="savings", amount=3000)["goal"]  # the month leaves 500 over
+    assert abs(g["needed"] - 0.5) < 1e-5
+    assert solve(basis="savings", amount=7000)["goal"]["needed"] is None  # more than all of it
+    assert solve(basis="savings", measure=[str(fund), str(chk)])["goal"]["needed"] is None  # just moves money around
+    assert projection.project(conn, {"plan": False, "accounts": flat, "goal": {
+        "amount": 3000, "by": "2027-11", "into": {str(fund): 100}, "basis": "savings"}}, TODAY, runs=5)["goal_error"]
+
+    client.post("/projection/goal", data={"amount": "3000", "by": "2027-11", "basis": "savings", "account": [str(fund)],
+                                          f"measure-{fund}": "1", f"share-{fund}": "100"})
+    html = client.get("/projection").get_data(as_text=True)
+    assert "of what you save</b>" in html
+    client.post("/projection/goal", data={"amount": "12000", "by": "2027-11", "basis": "income", "income": "$120,000",
+                                          "raise": "3", "account": [str(fund)], f"share-{fund}": "100"})
+    assert projection.load_setup(conn)["goal"]["income"] == 120_000
+    assert "of income</b> ($120,000 a year, growing 3.0% a year" in client.get("/projection").get_data(as_text=True)

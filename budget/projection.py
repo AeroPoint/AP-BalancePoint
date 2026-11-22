@@ -160,6 +160,9 @@ def accounts(conn, setup, today):
     return out
 
 
+# How the monthly saving is set: a flat amount; a % of an income (a yearly amount, growing by a raise each
+# year); or a % of what the Plan's month has left over (its surplus, moved out of the spending account).
+BASIS = {"flat": "a flat amount", "income": "a % of income", "savings": "a % of what you save"}
 CONFIDENCE = {"expected": "on the expected path", "0.75": "in 3 of 4 futures", "0.9": "in 9 of 10 futures"}
 
 
@@ -187,6 +190,8 @@ def _goal(setup, today, ids, kinds):
     measure = {int(i) for i in measure if str(i).isdigit() and int(i) in ids} | set(shares)
     months = (int(by[:4]) - today.year) * 12 + int(by[5:]) - today.month
     return {"amount": amount, "by": by, "months": min(months, 40 * 12), "real": bool(g.get("real")),
+            "basis": g.get("basis") if g.get("basis") in BASIS else "flat",
+            "income": _number(g.get("income"), 0, 1e10), "raise": _number(g.get("raise"), -20, 50) or 0.0,
             "into": {k: v / total for k, v in shares.items()}, "measure": sorted(measure),
             "confidence": g.get("confidence") if g.get("confidence") in CONFIDENCE else "expected"}
 
@@ -245,6 +250,23 @@ def project(conn, setup=None, today=None, runs=RUNS):
             loan_path[a["id"]] = [sum(loan_balance(l["principal"], l["annual_rate"], l["term_months"], l["start_date"], f"{k}-28")
                                       for l in a["loans"]) for k in keys]
 
+    # The goal's saving each month, per unit solved for: $1 (flat), 100% of the income, or 100% of the surplus.
+    goal_error = None
+    if goal and goal["basis"] == "savings" and not with_plan:
+        goal_error, goal = "savings needs the plan", None
+    weights_t = []
+    if goal:
+        if goal["basis"] == "income":
+            yearly_income = goal["income"] if goal["income"] else (values["plan_income"] or 0) * 12
+            goal["income"] = yearly_income
+            weights_t = [yearly_income / 12 * (1 + goal["raise"] / 100) ** (t // 12) for t in range(months)]
+        elif goal["basis"] == "savings":
+            weights_t = [max(n, 0.0) for n in nets]
+        else:
+            weights_t = [1.0] * months
+        if not any(weights_t[:goal["months"]]):
+            goal_error, goal = "nothing to take a share of", None
+
     # Investments: the accounts that swing. Their mix sets the drawdown and N0 figures.
     invest = [a for a in used if a["kind"] in INVESTMENT_KINDS and a["vol"] > 0 and a["balance"] > 0]
     invest_total = sum(a["balance"] for a in invest)
@@ -281,8 +303,8 @@ def project(conn, setup=None, today=None, runs=RUNS):
                 g = math.exp(mu + sm * z)
                 if aid in weights:
                     moved += weights[aid] * g
-                if aid in per_dollar:  # $1 saved here at each month's end, grown since
-                    per_dollar[aid] = per_dollar[aid] * g + 1
+                if aid in per_dollar:  # what's saved here at each month's end, grown since
+                    per_dollar[aid] = per_dollar[aid] * g + weights_t[t]
                 if bal[aid] > 0 or debt:
                     bal[aid] *= g
                 bal[aid] += added
@@ -303,7 +325,10 @@ def project(conn, setup=None, today=None, runs=RUNS):
                 if short_at is None and bal[plan_acct] < buffer - 0.005:
                     short_at = keys[t]
             if goal and t == goal["months"] - 1:
-                at_goal = (measured(bal), sum(share * per_dollar[aid] for aid, share in goal["into"].items()))
+                grown = sum(share * per_dollar[aid] for aid, share in goal["into"].items())
+                if goal["basis"] == "savings" and plan_acct in goal["measure"]:
+                    grown -= sum(weights_t[:t + 1])  # moved out of the spending account, which counts too
+                at_goal = (measured(bal), grown)
             if t < horizon and ((t + 1) % 12 == 0 or t == horizon - 1):
                 yearly.append((t + 1, dict(bal)))
         return {"yearly": yearly, "short": short_at, "drop": drop, "goal": at_goal}
@@ -347,6 +372,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         "savings": saving, "save_to": save_to, "runs": runs, "mix": mix,
         "goal": _solve(goal, expected, sims, inflation) if goal else None, "goal_setup": setup.get("goal") or {},
         "plan_income": values["plan_income"], "plan_end": plan_end, "plan_months": plan_months,
+        "goal_error": goal_error, "goal_first": weights_t[0] if goal and weights_t else None,
         "span": horizon / 12,
     }
 
@@ -368,7 +394,9 @@ def _solve(goal, expected, sims, inflation):
         needed = (target - base) / per if per else None
     else:
         share = 1 - float(goal["confidence"])  # e.g. 9 in 10 reach it: the 10th percentile must
-        lo, hi = 0.0, max(target, 1.0)
+        lo = 0.0
+        helped = [(target - v) / f for v, f in futures if f > 0]
+        hi = max(max(helped, default=0.0), 0.0) * 1.01 + 1e-9
         if _quantile([v + hi * f for v, f in futures], share) < target:
             hi = None
         elif _quantile([v for v, _ in futures], share) >= target:
@@ -383,6 +411,8 @@ def _solve(goal, expected, sims, inflation):
         needed = hi
     shown = (lambda v: v / (1 + inflation / 100) ** years) if goal["real"] else (lambda v: v)
     reach_now = sum(1 for v, _ in futures if v >= target) / len(futures) if futures else 0.0
+    if goal["basis"] == "savings" and needed is not None and needed > 1:
+        needed = None  # more than everything the month has left over
     return {**goal, "target": target, "needed": None if needed is None else max(needed, 0.0),
             "on_track": needed is not None and needed <= 0, "label": CONFIDENCE[goal["confidence"]],
             "expected_without": shown(base), "reach_without": reach_now}

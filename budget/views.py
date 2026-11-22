@@ -304,7 +304,8 @@ def save_projection_goal():
                          "measure": [aid for aid in ids if form.get(f"measure-{aid}") == "1"],
                          "into": {aid: form.get(f"share-{aid}", "").strip().rstrip("%") for aid in ids
                                   if form.get(f"share-{aid}", "").strip().rstrip("%") not in ("", "0")},
-                         "confidence": form.get("confidence", "expected")}
+                         "confidence": form.get("confidence", "expected"), "basis": form.get("basis", "flat"),
+                         "income": _money_input(form.get("income")), "raise": form.get("raise", "").strip().rstrip("%")}
     projection.save_setup(conn, setup)
     conn.commit()
     return redirect(url_for(".projection_page") + "#goal")
