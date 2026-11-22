@@ -5,21 +5,23 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
-- Projection (in the menu): net worth 1 to 40 years out, with each account's growth rate (from 3+ years of
-  its own balances, or a default for its kind; per account or one for every investment), the range 8 in
-  10 simulated futures land in, paycheck contributions, loans paying down, the Plan optionally running
-  through it (with when the spending account can't be kept topped up), and today's dollars. Each year shows
-  the chance of being below today; "How bumpy the ride is" gives the typical and bad-case fall from a high,
-  the chance of being behind over time, and N0. "What would it take?" works out the monthly saving that
-  reaches an amount by a date (today's or future dollars) across the accounts you pick, split across accounts by
-  shares, on the expected path (every rate exactly, which is optimistic) or in half, 3 of 4 or 9 of 10 futures. The answer can be a flat amount a month, a % of
-  income (with a yearly raise), or a % of what each month leaves over, and the same goal is answered for
-  other dates 5 years apart. Money going in can be set per account (an amount, a yearly raise, from and until),
-  and lump sums added: a property sale that pays off its loan, or a windfall.
+## [0.3.0] - 2026-11-22
 
-### Fixed (Projection)
-- Paycheck retirement contributions are averaged over the months since they were set up, not always 12.
+### Added
+- Projection (in the menu): net worth 1 to 40 years out. Each account grows at its own rate with a
+  "swings" figure (volatility), from 3+ years of its own balances or a default for its kind, per account or
+  one for every investment; the shaded range is where 8 in 10 of 300 simulated futures land. Paycheck
+  contributions continue, loans pay down, the Plan can run through it (and it says when the spending account
+  can't be kept topped up), and it can show today's dollars.
+- Projection: each year shows the chance of being below today, and "How bumpy the ride is" gives the
+  typical and bad-case fall from a high, the chance of being behind over time, and N0.
+- Projection, "What would it take?": the monthly saving that reaches an amount by a date (today's or future
+  dollars) across the accounts you pick, split across accounts by shares, on the expected path (every rate
+  exactly, which is optimistic) or in half, 3 of 4 or 9 of 10 futures. The answer can be a flat amount, a %
+  of income (with a yearly raise), or a % of what each month leaves over, and the same goal is answered for
+  other dates 5 years apart.
+- Projection: money going in per account (an amount, a yearly raise, from and until), and lump sums: a
+  property sale that pays off its loan, or a windfall.
 - Plan through: the Plan can run up to 40 years ahead to a month you pick (still the next 12 months by
   default), shown monthly for the first year and then yearly. After it, the Projection carries the planned
   month on as it is now, without the changes.
@@ -27,6 +29,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   expected change by its own % from its first month.
 - Plan by a savings goal: an amount or a % of income put into an account first each month, with the
   flexible target what's left. The Overview and the month forecast judge the month on that target.
+
+### Fixed
+- Projection: paycheck retirement contributions are averaged over the months since they were set up, not
+  always 12.
 
 ## [0.2.0] - 2026-11-18
 
@@ -171,7 +177,8 @@ Everything up to the first public release.
 - `python run.py demo`: a made-up demo household (Pat and Sam Smith) in its own `demo-data/` folder.
 - Test suite on made-up data, run by GitHub Actions on macOS, Windows and Linux.
 
-[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/AeroPoint/AP-BalancePoint/releases/tag/v0.1.0
