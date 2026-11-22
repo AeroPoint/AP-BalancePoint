@@ -125,6 +125,9 @@
 <section class="panel scorecard">
   <div class="panel-head">
     <h2>How the month went</h2>
+    {% if card.savings_first %}
+    <p class="muted">Flexible target {{ card.target|money(false) }} a month: what your savings goal leaves (<a href="{{ url_for('main.plan') }}">Plan</a>).</p>
+    {% else %}
     <form method="post" action="{{ url_for('main.save_flex_target') }}" class="inline target-form">
       <input type="hidden" name="next" value="{{ request.full_path }}">
       <label class="field"><span>Flexible target per month</span>
@@ -133,6 +136,7 @@
       </label>
       <button class="btn small">Set</button>
     </form>
+    {% endif %}
   </div>
   <div class="groups">
     {% for key, name, help in [('fixed', 'Fixed', 'bills that barely change'), ('flexible', 'Flexible', 'what you steer day to day'),

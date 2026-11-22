@@ -26,7 +26,8 @@
     {%- else %} to <b>{{ last.balance|money(false) }}</b> by {{ last.key|month_label }}.{% endif %}
   </h1>
   <p class="compare">
-    A planned month runs {{ p.average_net|abs|money(false) }} {{ 'ahead' if p.average_net >= 0 else 'short' }} on average.
+    {% if p.saving %}You put <b>{{ p.saving|money(false) }}</b> a month into {{ names.get(p.save_to, 'savings') }} first ({{ p.saved_total|money(false) }} over the year); after that, a{% else %}A{% endif %}
+    planned month runs {{ p.average_net|abs|money(false) }} {{ 'ahead' if p.average_net >= 0 else 'short' }} on average.
     {% if p.first_short %}{{ backup_name }} {{ 'reaches what you keep in it' if p.floors.values()|select|list else 'runs out' }} in {{ p.first_short|month_label }}.
     {% elif p.total_drawn %}Left at the end: {% for b in p.backups %}{{ names[b] }} {{ last.left[b]|money(false) }}{{ ', ' if not loop.last else '.' }}{% endfor %}{% endif %}
   </p>
@@ -53,7 +54,7 @@
   <div class="table-wrap">
     <table class="ledger plan-table cards">
       <thead>
-        <tr><th>Month</th><th class="num">Planned</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th>Drawn from</th>{% for b in p.backups %}<th class="num">{{ names[b] }} left</th>{% endfor %}</tr>
+        <tr><th>Month</th><th class="num">Planned</th><th class="num">Month</th><th class="num">{{ acct_name }}</th><th>Drawn from</th>{% if p.saving %}<th class="num">Saved</th>{% endif %}{% for b in p.backups %}<th class="num">{{ names[b] }} left</th>{% endfor %}</tr>
       </thead>
       <tbody>
         {% for r in p.rows %}
@@ -68,6 +69,7 @@
           <td class="num c-meta {{ 'in' if r.net > 0 }}" data-label="Month">{{ '+' if r.net > 0 }}{{ r.net|money(false) }}</td>
           <td class="num strong c-side">{{ r.balance|money(false) }}</td>
           <td class="c-meta{{ ' c-hide' if not r.draws }}" data-label="Drawn from">{% for b, amt in r.draws.items() %}<span class="chip">{{ names[b] }} {{ amt|money(false) }}</span> {% endfor %}</td>
+          {% if p.saving %}<td class="num c-meta" data-label="Saved">{{ r.saved|money(false) }}</td>{% endif %}
           {% for b in p.backups %}<td class="num c-meta" data-label="{{ names[b] }} left">{{ r.left[b]|money(false) }}</td>{% endfor %}
         </tr>
         {% endfor %}
@@ -83,15 +85,38 @@
     <h2>A planned month</h2>
     <p class="muted">Take-home pay, after the 401(k) and benefits come out. Suggestions come from the months on the right.</p>
   </div>
-  <form method="post" action="{{ url_for('main.save_plan_settings') }}" class="stack plan-form">
+  <form method="post" action="{{ url_for('main.save_plan_settings') }}" class="stack plan-form" data-mode="{{ values.mode }}">
     {% set b = base %}
+    <fieldset class="plan-mode">
+      <legend>Plan by</legend>
+      <label class="check"><input type="radio" name="plan_mode" value="flex"{% if values.mode != 'savings' %} checked{% endif %}> A flexible target <small class="muted">saving is what's left</small></label>
+      <label class="check"><input type="radio" name="plan_mode" value="savings"{% if values.mode == 'savings' %} checked{% endif %}> A savings goal <small class="muted">flexible is what's left</small></label>
+    </fieldset>
     {% for key, label, suggest, help in [
       ('plan_income', 'Regular income', b.regular_income if b else None, 'paychecks, rent and side income'),
       ('plan_fixed', 'Fixed spending', b.fixed if b else None, 'mortgage, bills, insurance'),
       ('flex_target', 'Flexible target', b.flexible if b else None, 'groceries, dining, shopping, kids, gas...'),
       ('plan_nonmonthly', 'Non-monthly set-aside', b.nonmonthly_year if b else None, 'projects, travel, taxes, averaged over a year'),
     ] %}
-    <div class="plan-row">
+    {% if key == 'flex_target' %}
+    <div class="plan-row for-savings">
+      <label class="field"><span>Savings goal <small class="muted">put away first, each month</small></span>
+        <input name="plan_savings" inputmode="decimal" value="{{ '%g'|format(values.savings_goal) if values.savings_goal is not none else '' }}" placeholder="1,000">
+      </label>
+      <label class="field"><span>Per month as</span>
+        <select name="plan_savings_unit"><option value="$">dollars</option><option value="%"{% if values.savings_unit == '%' %} selected{% endif %}>% of income</option></select>
+      </label>
+      <label class="field"><span>Into</span>
+        <select name="plan_savings_account"><option value="">Not tracked</option>{% for a in accounts if not a.closed %}<option value="{{ a.id }}"{% if a.id == values.savings_account %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>
+      </label>
+    </div>
+    {% if values.mode == 'savings' %}
+    <p class="for-savings{{ ' is-short' if values.flex_target < 0 }}">Flexible target: <b>{{ values.flex_target|money(false) }}</b> a month
+      ({{ (settings.plan_income or 0)|money(false) }} income − fixed − non-monthly − {{ values.savings|money(false) }} saved){% if values.flex_target < 0 %}.
+      The goal is more than the month leaves: lower it or the other lines{% endif %}.</p>
+    {% endif %}
+    {% endif %}
+    <div class="plan-row{{ ' for-flex' if key == 'flex_target' }}">
       <label class="field"><span>{{ label }} <small class="muted">{{ help }}</small></span>
         <input name="{{ key }}" inputmode="decimal" value="{{ '%.0f'|format(settings[key]) if settings[key] is not none else '' }}"
                placeholder="{{ '%.0f'|format(suggest) if suggest is not none else '' }}">
@@ -205,6 +230,13 @@
 
 {% block scripts %}
 <script>
+  // Plan by a flexible target or a savings goal: show the lines that go with the choice.
+  const planForm = document.querySelector(".plan-form");
+  if (planForm) {
+    planForm.querySelectorAll('input[name="plan_mode"]').forEach((radio) => radio.addEventListener("change", () => {
+      planForm.dataset.mode = radio.value;
+    }));
+  }
   document.querySelectorAll(".use-suggestion").forEach((button) => {
     button.addEventListener("click", () => {
       const input = button.closest(".plan-row").querySelector("input");

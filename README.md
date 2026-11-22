@@ -554,6 +554,28 @@ shortfall comes from backup accounts in the order you pick (say savings, then a 
 each down to its own "keeping at least" amount (blank means it can be emptied), and the page shows when
 that starts and how much each one gives. The Overview warns when a backup is below its amount.
 
+**Plan by** a flexible target (saving is whatever the month leaves) or a **savings goal**: an amount
+or a % of income put into an account you pick, first, each month. With a savings goal the flexible
+target is what's left (income − fixed − non-monthly − the goal); the Overview and the month forecast
+judge the month on it, and the page says when the goal is more than the month leaves. Switching back
+keeps the flexible target you had set.
+
+### Projection
+
+The **Projection** page looks 1 to 40 years ahead. Each account you include grows at a yearly rate
+with a "swings" figure (volatility, how much a year typically moves): set per account, or one rate for
+every investment. Rates start from an account's own history when it has 3+ years of month-end balances
+(growth after money known to have gone in: paycheck contributions and deposits recorded on the account;
+a month that jumped over 15% is taken as an unrecorded deposit and left out), else from a default for
+the kind of account (7% ±15 for investments, 0 for checking, 3% for a home, −15% for vehicles). Paycheck
+retirement contributions continue, loans with terms pay down on schedule, and **Include the Plan**
+runs the Plan's months through it: the surplus or shortfall lands in the spending account, the backups
+cover it as on the Plan page, and a savings goal goes into its account; after the Plan's changes end, the
+planned month repeats. The line is the expected path; the shaded range is the 10th to 90th percentile
+of 300 simulated futures (a fixed seed, so it doesn't change on reload), where all investments rise and
+fall together. It says when the spending account can't be kept topped up and in how many of the futures,
+and can show today's dollars after inflation. Accounts held for someone else are left out.
+
 ### The month forecast
 
 For the current month the Overview shows where **flexible** and **fixed** spending are headed against

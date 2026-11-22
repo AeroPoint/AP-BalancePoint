@@ -252,3 +252,28 @@ def test_pace_warns_when_a_backup_is_under_its_minimum(conn):
     budgeting.set_setting(conn, "plan_backup_min", 1000)
     assert any("Savings is at $800, $200 below the $1,000 the plan keeps in it." == w
                for w in budgeting.forecast(conn, TODAY)["warnings"])
+
+
+def test_planning_savings_first_leaves_the_flexible_target_as_what_is_left(conn, client):
+    checking, (savings, brokerage) = plan(conn)  # 6000 - 3000 fixed - 500 non-monthly
+    conn.commit()
+    assert budgeting.plan_values(conn)["mode"] == "flex" and budgeting.flex_target(conn) == 2000
+    client.post("/plan/settings", data={"plan_mode": "savings", "plan_savings": "1,000", "plan_savings_unit": "$",
+                                        "plan_savings_account": brokerage})
+    v = budgeting.plan_values(conn)
+    assert (v["mode"], v["savings"], v["flex_target"]) == ("savings", 1000, 1500)
+    assert budgeting.flex_target(conn) == 1500
+    p = budgeting.project(conn, today=date(2026, 10, 15))
+    assert p["rows"][0]["net"] == 0 and p["rows"][-1]["left"][brokerage] == 20_000 + 12 * 1000
+    assert p["saved_total"] == 12_000
+    assert "You put <b>$1,000</b> a month into Brokerage first" in client.get("/plan").get_data(as_text=True)
+    assert budgeting.scorecard(conn, 2026, 10)["savings_first"]
+
+    client.post("/plan/settings", data={"plan_mode": "savings", "plan_savings": "10%", "plan_savings_unit": "$"})
+    assert budgeting.plan_values(conn)["savings"] == 600 and budgeting.flex_target(conn) == 1900
+    client.post("/plan/settings", data={"plan_mode": "savings", "plan_savings": "4000", "plan_savings_unit": "$"})
+    assert budgeting.plan_values(conn)["flex_target"] == -1500 and budgeting.flex_target(conn) == 0
+    assert "more than the month leaves" in client.get("/plan").get_data(as_text=True)
+
+    client.post("/plan/settings", data={"plan_mode": "flex"})  # back: the target set before is still there
+    assert budgeting.flex_target(conn) == 2000 and budgeting.project(conn, today=date(2026, 10, 15))["saving"] == 0

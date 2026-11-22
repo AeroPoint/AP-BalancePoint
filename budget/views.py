@@ -10,7 +10,7 @@ from uuid import uuid4
 from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from . import amazon, blackjack, budgeting, business, manage_data, personal, recurring, reports, seed, simplefin_import, splits, tax
+from . import amazon, blackjack, budgeting, business, manage_data, personal, projection, recurring, reports, seed, simplefin_import, splits, tax
 from .balances import load_ledgers, loan_balance, loan_payment, month_end, month_range
 from .csv_import import BAD_DATES_NOTE, CsvFormatError, flips_sign, parse_csv, replace_spreadsheet_rows, store_transactions
 from .db import get_db, merge_category
@@ -267,6 +267,28 @@ def save_flex_target():
     return redirect(request.form.get("next") or url_for(".dashboard"))
 
 
+@bp.route("/projection")
+def projection_page():
+    conn = get_db()
+    return render_template("projection.html", p=projection.project(conn))
+
+
+@bp.post("/projection")
+def save_projection():
+    conn = get_db()
+    form = request.form
+    setup = {"years": form.get("years", "20"), "plan": form.get("plan") == "1", "real": form.get("real") == "1",
+             "inflation": form.get("inflation", "").strip(), "rate_mode": "global" if form.get("rate_mode") == "global" else "account",
+             "global_rate": form.get("global_rate", "").strip(), "global_vol": form.get("global_vol", "").strip(), "accounts": {}}
+    for aid in form.getlist("account"):
+        if _int(aid):
+            setup["accounts"][aid] = {"on": form.get(f"on-{aid}") == "1", "rate": form.get(f"rate-{aid}", "").strip(),
+                                      "vol": form.get(f"vol-{aid}", "").strip()}
+    projection.save_setup(conn, setup)
+    conn.commit()
+    return redirect(url_for(".projection_page"))
+
+
 @bp.route("/plan")
 def plan():
     conn = get_db()
@@ -282,7 +304,7 @@ def plan():
         "plan.html", base=budgeting.baseline(conn, months), projection=budgeting.project(conn),
         count=count, through=f"{months[-1][0]}-{months[-1][1]:02d}" if months else "",
         accounts=accounts, names={a["id"]: a["name"] for a in accounts},
-        settings={k: budgeting.get_setting(conn, k) for k in budgeting.PLAN_KEYS},
+        settings={k: budgeting.get_setting(conn, k) for k in budgeting.PLAN_KEYS}, values=budgeting.plan_values(conn),
         plan_account=budgeting.get_setting(conn, "plan_account", cast=int),
         backup_accounts=[budgeting.get_setting(conn, k, cast=int) for k in budgeting.BACKUP_KEYS],
         backup_mins=[budgeting.get_setting(conn, k) for k in budgeting.BACKUP_MIN_KEYS],
@@ -300,9 +322,17 @@ def save_plan_settings():
         if key in request.form:
             value = _money_input(request.form.get(key))
             budgeting.set_setting(conn, key, round(value, 2) if value is not None else None)
-    for key in ("plan_account", *budgeting.BACKUP_KEYS):
+    for key in ("plan_account", "plan_savings_account", *budgeting.BACKUP_KEYS):
         if key in request.form:
             budgeting.set_setting(conn, key, _int(request.form.get(key)))
+    if budgeting.PLAN_MODE in request.form:
+        budgeting.set_setting(conn, budgeting.PLAN_MODE, "savings" if request.form[budgeting.PLAN_MODE] == "savings" else None)
+    if "plan_savings" in request.form:
+        raw = request.form["plan_savings"].strip()
+        percent = raw.endswith("%") or request.form.get("plan_savings_unit") == "%"
+        value = _money_input(raw.rstrip("%"))
+        budgeting.set_setting(conn, "plan_savings", round(value, 2) if value is not None and value >= 0 else None)
+        budgeting.set_setting(conn, "plan_savings_unit", "%" if percent else None)
     conn.commit()
     flash("Saved the plan.", "ok")
     return redirect(url_for(".plan", **request.args))

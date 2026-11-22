@@ -153,7 +153,7 @@ def scorecard(conn, year, month, accounts=None):
     totals = reports.totals(conn, start, end, accounts)
     groups, flexible = by_group(conn, start, end, accounts)
     typical_total, typical, typical_n = typical_flexible(conn, year, month, accounts)
-    target = get_setting(conn, "flex_target")
+    target = flex_target(conn)
 
     drivers = []
     for (cid, name), total in flexible.items():
@@ -173,6 +173,7 @@ def scorecard(conn, year, month, accounts=None):
         "start": start, "end": end, **groups,
         "income": totals["income"], "spending": totals["spending"], "cash_flow": cash_flow,
         "target": target, "typical_flexible": typical_total, "typical_months": typical_n,
+        "savings_first": plan_values(conn)["mode"] == "savings",
         "over": over, "under": under,
         "big": big_charges(conn, start, end, accounts),
         "invested": invested(conn, start, end, accounts),
@@ -279,7 +280,7 @@ def forecast(conn, today=None):
     start, end = reports.bounds(today.year, today.month)
     days = (date.fromisoformat(end) - date.fromisoformat(start)).days
     days_left = days - today.day + 1
-    targets = {g: get_setting(conn, key) for g, key, _ in FORECAST_GROUPS}
+    targets = {g: (flex_target(conn) if key == "flex_target" else get_setting(conn, key)) for g, key, _ in FORECAST_GROUPS}
     out = {"day": today.day, "days": days, "days_left": days_left, "warnings": [], "spent": None, "target": targets["flexible"]}
     if any(targets.values()):
         grp_of = {r["name"]: r["grp"] for r in conn.execute("SELECT name, COALESCE(grp, 'flexible') AS grp FROM categories WHERE kind = 'expense'")}
@@ -359,6 +360,35 @@ def savings_rate(conn, start, end, accounts=None):
 PLAN_KEYS = ("plan_income", "plan_fixed", "plan_nonmonthly", "flex_target", "plan_buffer")
 BACKUP_KEYS = ("plan_backup_account", "plan_backup_account_2")  # drawn from in this order
 BACKUP_MIN_KEYS = ("plan_backup_min", "plan_backup_min_2")  # each backup's own "keep at least" (blank = 0)
+# Two ways to plan a month. "flex" (the default): set the flexible target, and saving is whatever's left.
+# "savings": set a savings goal (an amount, or a % of income, put into an account each month), and the
+# flexible target is what's left after fixed, non-monthly and the goal.
+PLAN_MODE = "plan_mode"
+SAVINGS_KEYS = ("plan_savings", "plan_savings_unit", "plan_savings_account")  # amount or %, "$" or "%", account id
+
+
+def plan_values(conn):
+    """The plan's monthly numbers, with the flexible target worked out from the savings goal when planning
+    savings first. Adds mode, savings (per month), savings_goal, savings_unit and savings_account."""
+    v = {k: get_setting(conn, k) for k in PLAN_KEYS}
+    goal = get_setting(conn, "plan_savings")
+    unit = "%" if get_setting(conn, "plan_savings_unit", cast=str) == "%" else "$"
+    account = get_setting(conn, "plan_savings_account", cast=int)
+    savings_first = get_setting(conn, PLAN_MODE, cast=str) == "savings"
+    savings = 0.0
+    if savings_first and goal is not None and v["plan_income"] is not None:
+        savings = round(goal * v["plan_income"] / 100 if unit == "%" else goal, 2)
+        v["flex_target"] = round(v["plan_income"] - (v["plan_fixed"] or 0) - (v["plan_nonmonthly"] or 0) - savings, 2)
+    else:
+        savings_first = False
+    return {**v, "mode": "savings" if savings_first else "flex", "savings": savings, "savings_goal": goal,
+            "savings_unit": unit, "savings_account": account}
+
+
+def flex_target(conn):
+    """The flexible target the month is judged on: as set, or what the savings goal leaves (never below 0)."""
+    target = plan_values(conn)["flex_target"]
+    return None if target is None else max(target, 0.0)
 
 
 def complete_months(conn, count, before=None):
@@ -409,15 +439,35 @@ def baseline(conn, months):
     }
 
 
+def plan_items(conn):
+    """Plan changes that move the plan. One with a fixed or flexible category is spending inside that
+    month's target (the month forecast counts it there), so only the others count."""
+    return [dict(r) for r in conn.execute(
+        """SELECT p.* FROM plan_items p LEFT JOIN categories c ON c.id = p.category_id
+           WHERE p.amount > 0 OR c.id IS NULL OR COALESCE(c.grp, 'flexible') NOT IN ('fixed', 'flexible')
+           ORDER BY p.start_month, p.id""")]
+
+
+def plan_month(values, items, key):
+    """(changes active, their total, planned spending, net into the plan account) for a month "YYYY-MM".
+    Planning savings first, the savings goal is taken out of the net (it goes to its own account)."""
+    active = [i for i in items if i["start_month"] <= key and (i["end_month"] or "9999-12") >= key]
+    adjust = sum(i["amount"] for i in active)
+    spend = (values["plan_fixed"] or 0) + max(values["flex_target"] or 0, 0) + (values["plan_nonmonthly"] or 0)
+    saving = values["savings"] if values["mode"] == "savings" else 0.0
+    return active, adjust, spend, values["plan_income"] + adjust - spend - saving
+
+
 def project(conn, months=12, today=None):
     """Month-by-month projection of the plan account from next month on.
 
-    Each month: planned income - fixed - flexible target - non-monthly + plan items. When the plan
-    account would drop below the buffer, the difference is drawn from the backup accounts in order
-    (BACKUP_KEYS): the first down to its own minimum (BACKUP_MIN_KEYS; blank = empty), then the next.
+    Each month: planned income - fixed - flexible target - non-monthly (- the savings goal, planning
+    savings first) + plan items. The savings goal goes into its account. When the plan account would drop
+    below the buffer, the difference is drawn from the backup accounts in order (BACKUP_KEYS): the first
+    down to its own minimum (BACKUP_MIN_KEYS; blank = empty), then the next.
     """
     today = today or date.today()
-    values = {k: get_setting(conn, k) for k in PLAN_KEYS}
+    values = plan_values(conn)
     if values["plan_income"] is None:
         return None
     ledgers = load_ledgers(conn)
@@ -429,24 +479,22 @@ def project(conn, months=12, today=None):
     balance = (ledgers[account].on(iso) or 0.0) if account in ledgers else 0.0
     left = {b: ledgers[b].on(iso) or 0.0 for b in backups}
     buffer = values["plan_buffer"] or 0.0
-    # A change with a fixed or flexible category is spending inside that month's target (the month
-    # forecast counts it there), so only the others move the plan.
-    items = [dict(r) for r in conn.execute(
-        """SELECT p.* FROM plan_items p LEFT JOIN categories c ON c.id = p.category_id
-           WHERE p.amount > 0 OR c.id IS NULL OR COALESCE(c.grp, 'flexible') NOT IN ('fixed', 'flexible')
-           ORDER BY p.start_month, p.id""")]
+    items = plan_items(conn)
 
+    saving = values["savings"] if values["mode"] == "savings" else 0.0
+    save_to = values["savings_account"]
+    saved_total = 0.0
     rows, drawn = [], {b: 0.0 for b in backups}
     y, m = today.year, today.month
     start_balance, start_left = balance, dict(left)
     for _ in range(months):
         y, m = reports.add_months(y, m, 1)
         key = f"{y}-{m:02d}"
-        active = [i for i in items if i["start_month"] <= key and (i["end_month"] or "9999-12") >= key]
-        adjust = sum(i["amount"] for i in active)
-        spend = (values["plan_fixed"] or 0) + (values["flex_target"] or 0) + (values["plan_nonmonthly"] or 0)
-        net = values["plan_income"] + adjust - spend
+        active, adjust, spend, net = plan_month(values, items, key)
         balance += net
+        saved_total += saving
+        if save_to in left:
+            left[save_to] += saving
         draws = {}
         for b in backups:
             if balance >= buffer:
@@ -462,10 +510,12 @@ def project(conn, months=12, today=None):
             "key": key, "income": values["plan_income"] + sum(i["amount"] for i in active if i["amount"] > 0),
             "adjust": adjust, "items": active, "spend": spend, "net": net, "balance": balance,
             "draw": draw, "draws": draws, "reserve": reserve, "left": dict(left), "short": balance < buffer - 0.005,
+            "saved": saving,
         })
     return {
         "values": values, "items": items, "rows": rows, "start_balance": start_balance, "start_left": start_left,
         "account": account, "backups": backups, "floors": floors, "drawn": drawn, "total_drawn": sum(drawn.values()),
+        "saving": saving, "save_to": save_to, "saved_total": saved_total,
         "average_net": sum(r["net"] for r in rows) / len(rows) if rows else 0.0,
         "first_draw": next((r["key"] for r in rows if r["draw"] > 0), None),
         "first_short": next((r["key"] for r in rows if r["short"]), None),

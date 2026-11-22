@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Projection{% endblock %}
+{% block content %}
+{% set last = p.rows[-1] %}
+{% set names = {} %}{% for a in p.accounts %}{% set _ = names.update({a.id: a.name}) %}{% endfor %}
+<header class="page-head">
+  <div>
+    <h1>Projection</h1>
+    <p class="sub">Where your accounts could be in {{ p.years }} year{{ 's' if p.years != 1 }}: each grows at its own rate, paychecks keep
+      putting into retirement accounts, loans pay down, and {{ 'the Plan runs through it' if p.with_plan else 'the Plan is left out' }}.
+      The shaded range is where 8 in 10 of {{ p.runs }} simulated futures land.</p>
+  </div>
+</header>
+
+<section class="statement">
+  <h1>
+    Net worth{% if p.real %} in today's dollars{% endif %}: <b>{{ p.start_worth|money(false) }}</b> today,
+    about <b>{{ last.worth|money(false) }}</b> by {{ last.year }}, likely between {{ last.low|money(false) }} and {{ last.high|money(false) }}.
+  </h1>
+  {% if p.with_plan %}
+  <p class="compare">
+    {% if p.first_short %}On the plan, {{ names.get(p.plan_account, 'the spending account') }} can't be kept topped up from {{ p.first_short|month_label }}
+      at the expected rates{% if p.short_share < 1 %}; in {{ '%.0f'|format(p.short_share * 100) }}% of the simulated futures it happens at some point{% endif %}.
+    {% elif p.short_share %}At the expected rates the plan holds; in {{ '%.0f'|format(p.short_share * 100) }}% of the simulated futures the backups run dry at some point.
+    {% else %}The plan holds the whole way: the backups never run dry.{% endif %}
+    {% if p.savings %}{{ p.savings|money(false) }} a month goes into {{ names.get(p.save_to, 'savings') }} (the Plan's savings goal).{% endif %}
+  </p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Net worth by year</h2>
+    <p class="muted">The line uses each account's rate exactly; the range is the 10th to 90th percentile of the simulated futures.</p></div>
+  <div id="proj-chart" class="chart"></div>
+  <div class="table-wrap">
+    <table class="ledger cards">
+      <thead><tr><th>Year</th><th class="num">Expected</th><th class="num">Low (1 in 10)</th><th class="num">High (1 in 10)</th></tr></thead>
+      <tbody>
+        {% for r in p.rows %}
+        <tr>
+          <td class="c-main">{{ r.year }}</td>
+          <td class="num strong c-side">{{ r.worth|money(false) }}</td>
+          <td class="num c-meta" data-label="Low (1 in 10)">{{ r.low|money(false) }}</td>
+          <td class="num c-meta" data-label="High (1 in 10)">{{ r.high|money(false) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <details class="tax-more">
+    <summary>Each account at the expected rates</summary>
+    {% set picks = [] %}{% for r in p.rows %}{% if loop.index in (1, 5, 10, 20, 30, 40) or loop.last %}{% set _ = picks.append(r) %}{% endif %}{% endfor %}
+    <div class="table-wrap">
+      <table class="ledger cards">
+        <thead><tr><th>Account</th><th class="num">Today</th>{% for r in picks %}<th class="num">{{ r.year }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for a in p.used %}
+          <tr>
+            <td class="c-main">{{ a.name }}</td>
+            <td class="num c-meta" data-label="Today">{{ ('−' if a.debt and a.balance > 0.5 else '') ~ (a.balance|money(false)) }}</td>
+            {% for r in picks %}
+            <td class="num c-meta" data-label="{{ r.year }}">{{ ('−' if a.debt and r.accounts[a.id] > 0.5 else '') ~ (r.accounts[a.id]|money(false)) }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Settings</h2></div>
+  <form method="post" action="{{ url_for('main.save_projection') }}" class="stack proj-form">
+    <div class="inline">
+      <label class="field"><span>Years</span>
+        <select name="years">{% for n in [1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 40] %}<option{% if n == p.years %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+      </label>
+      <label class="check"><input type="checkbox" name="plan" value="1"{% if p.with_plan %} checked{% endif %}{% if not p.plan_ready %} disabled{% endif %}>
+        Include the Plan {% if not p.plan_ready %}<small class="muted">(set one up on <a href="{{ url_for('main.plan') }}">Plan</a> first)</small>{% else %}<small class="muted">its monthly surplus or shortfall, backup draws and savings goal</small>{% endif %}</label>
+      <label class="check"><input type="checkbox" name="real" value="1"{% if p.real %} checked{% endif %}> In today's dollars</label>
+      <label class="field"><span>Inflation % a year</span><input name="inflation" inputmode="decimal" value="{{ p.inflation }}" size="4"></label>
+    </div>
+    <fieldset class="plan-mode">
+      <legend>Growth rates</legend>
+      <label class="check"><input type="radio" name="rate_mode" value="account"{% if p.rate_mode != 'global' %} checked{% endif %}> Per account</label>
+      <label class="check"><input type="radio" name="rate_mode" value="global"{% if p.rate_mode == 'global' %} checked{% endif %}> One rate for every investment</label>
+      <label class="field"><span>Rate % a year</span><input name="global_rate" inputmode="decimal" value="{{ p.global_rate }}" placeholder="7" size="4"></label>
+      <label class="field"><span>Swings % a year</span><input name="global_vol" inputmode="decimal" value="{{ p.global_vol }}" placeholder="15" size="4"></label>
+    </fieldset>
+    <div class="table-wrap">
+      <table class="ledger cards">
+        <thead><tr><th>Include</th><th>Account</th><th class="num">Today</th><th class="num">Rate % a year</th><th class="num">Swings %</th><th>Rate from</th></tr></thead>
+        <tbody>
+          {% for a in p.accounts %}
+          <tr>
+            <td class="c-side"><input type="hidden" name="account" value="{{ a.id }}">
+              <label class="check"><input type="checkbox" name="on-{{ a.id }}" value="1"{% if a.on %} checked{% endif %}><span class="visually-hidden">Include {{ a.name }}</span></label></td>
+            <td class="c-main">{{ a.name }}{% if a.forced %} <span class="muted">· the Plan uses it</span>{% endif %}
+              {% if a.monthly_in %}<br><small class="muted">+{{ a.monthly_in|money(false) }}/mo from paychecks</small>{% endif %}
+              {% if a.loans %}<br><small class="muted">pays down on its loan schedule</small>{% endif %}</td>
+            <td class="num c-meta" data-label="Today">{{ ('−' if a.debt and a.balance > 0.5 else '') ~ (a.balance|money(false)) }}</td>
+            <td class="num c-meta" data-label="Rate % a year">{% if a.loans %}—{% else %}<input name="rate-{{ a.id }}" inputmode="decimal" value="{{ a.set_rate }}" placeholder="{{ a.rate }}" size="4" aria-label="{{ a.name }} rate"></td>{% endif %}
+            <td class="num c-meta" data-label="Swings %">{% if a.loans %}—{% else %}<input name="vol-{{ a.id }}" inputmode="decimal" value="{{ a.set_vol }}" placeholder="{{ a.vol }}" size="4" aria-label="{{ a.name }} swings"></td>{% endif %}
+            <td class="c-meta muted" data-label="Rate from">{{ a.source }}{% if not a.loans %}: {{ a.rate }}%{% if a.vol %}, ±{{ a.vol }}%{% endif %}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Leave a rate blank to use the one shown. Rates from history are growth after the money known to have gone in
+      (paycheck contributions, deposits recorded on the account); transfers from checking that weren't recorded there would count as growth,
+      so a history that looks too good falls back to the default. "Swings" is how much a year typically moves up or down (volatility):
+      0 for cash, about 15 for a stock fund. Accounts you hold for someone else are left out.</p>
+    <div><button class="btn primary">Update projection</button></div>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="data-proj">{{ p.rows|tojson }}</script>
+<script>
+  (function () {
+    const rows = JSON.parse(document.getElementById("data-proj").textContent);
+    const start = {{ p.start_worth|tojson }};
+    const labels = ["Now", ...rows.map((r) => String(r.year))];
+    Charts.lines(document.getElementById("proj-chart"), {
+      labels, height: 280, colors: [Charts.seriesColor(0)],
+      series: [{ name: "Expected net worth", values: [start, ...rows.map((r) => r.worth)] }],
+      band: { name: "8 in 10 land in", low: [start, ...rows.map((r) => r.low)], high: [start, ...rows.map((r) => r.high)] },
+    });
+  })();
+</script>
+{% endblock %}

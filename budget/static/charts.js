@@ -209,7 +209,8 @@
   }
 
   // ---------------------------------------------------------------- lines
-  function lines(container, { labels, series, height = 250, colors, titles, emphasis, refs = [] }) {
+  // band: { low: [...], high: [...], name } shades a range behind the lines (a projection's likely outcomes).
+  function lines(container, { labels, series, height = 250, colors, titles, emphasis, refs = [], band }) {
     const palette = colors || series.map((_, i) => seriesColor(i));
     responsive(container, (width) => {
       if (series.length > 1) legend(container, series.map((s, i) => ({ name: s.name, color: palette[i], line: true })));
@@ -219,7 +220,8 @@
       const m = { top: 12, right: direct ? Math.min(130, longest * 7 + 16) : 16, bottom: 26, left: width < 480 ? 46 : 56 };
       const plotW = width - m.left - m.right;
       const plotH = height - m.top - m.bottom;
-      const values = [...series.flatMap((s) => s.values.filter((v) => v != null)), ...refs.map((r) => r.value)];
+      const values = [...series.flatMap((s) => s.values.filter((v) => v != null)), ...refs.map((r) => r.value),
+                      ...(band ? [...band.low, ...band.high].filter((v) => v != null) : [])];
       const low = Math.min(0, ...values);
       let max = niceMax(Math.max(0, ...values));
       let min = 0;
@@ -245,6 +247,11 @@
         const y = Y(r.value);
         svg("line", { x1: m.left, x2: width - m.right, y1: y, y2: y, stroke: token("--ink-2"), "stroke-width": 1.25, "stroke-dasharray": "5 4" }, root);
         if (r.label) svg("text", { x: m.left + 4, y: y - 5 }, root).textContent = r.label;
+      }
+      if (band) {
+        const top = band.high.map((v, i) => `${i ? "L" : "M"}${X(i)},${Y(v)}`).join("");
+        const bottom = band.low.map((v, i) => `L${X(i)},${Y(v)}`).reverse().join("");
+        svg("path", { d: `${top}${bottom}Z`, fill: palette[0], "fill-opacity": 0.16, stroke: "none" }, root);
       }
       const cross = svg("line", { y1: m.top, y2: m.top + plotH, stroke: token("--axis"), "stroke-width": 1, opacity: 0 }, root);
       const surface = token("--panel");
@@ -300,6 +307,7 @@
             rows.push({ name: s.name, color: series.length > 1 ? palette[si] : null, value: money(v) });
           }
         });
+        if (band) rows.push({ name: band.name || "Range", color: null, value: `${money(band.low[i])} – ${money(band.high[i])}` });
         showTip(tipRows(titles ? titles[i] : labels[i], rows), ev.clientX, ev.clientY);
       });
       hits.addEventListener("pointerleave", () => {
