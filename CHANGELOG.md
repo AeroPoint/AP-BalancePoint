@@ -9,7 +9,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Projection (in the menu): net worth 1 to 40 years out, with each account's growth rate (from 3+ years of
   its own balances, or a default for its kind; per account or one for every investment), the range 8 in
   10 simulated futures land in, paycheck contributions, loans paying down, the Plan optionally running
-  through it (with when the spending account can't be kept topped up), and today's dollars.
+  through it (with when the spending account can't be kept topped up), and today's dollars. Each year shows
+  the chance of being below today; "How bumpy the ride is" gives the typical and bad-case fall from a high,
+  the chance of being behind over time, and N0. "What would it take?" works out the monthly saving that
+  reaches an amount by a date (today's or future dollars), on the expected path or in 3 of 4 or 9 of 10 futures.
 - Plan by a savings goal: an amount or a % of income put into an account first each month, with the
   flexible target what's left. The Overview and the month forecast judge the month on that target.
 

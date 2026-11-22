@@ -6,9 +6,10 @@
 <header class="page-head">
   <div>
     <h1>Projection</h1>
-    <p class="sub">Where your accounts could be in {{ p.years }} year{{ 's' if p.years != 1 }}: each grows at its own rate, paychecks keep
-      putting into retirement accounts, loans pay down, and {{ 'the Plan runs through it' if p.with_plan else 'the Plan is left out' }}.
-      The shaded range is where 8 in 10 of {{ p.runs }} simulated futures land.</p>
+    <p class="sub">Where your money could be in {{ p.years }} year{{ 's' if p.years != 1 }}, and what it would take to reach a goal.
+      The app plays out {{ p.runs }} possible futures month by month: each account grows at its rate, markets swing up and down
+      at random, paychecks keep putting into retirement accounts, loans pay down, and {{ 'the Plan runs through it' if p.with_plan else 'the Plan is left out' }}.
+      <a href="#how">How this works</a></p>
   </div>
 </header>
 
@@ -28,13 +29,65 @@
   {% endif %}
 </section>
 
+{# ------------------------------------------------------------ the goal #}
+{% set g = p.goal %}{% set gs = p.goal_setup %}
+<section class="panel" id="goal">
+  <div class="panel-head"><h2>What would it take?</h2>
+    <p class="muted">Pick an amount and a date, and the app works out how much to save each month to get there, with your current
+      rates and swings and everything else above staying as it is.</p></div>
+  {% if g %}
+  <p class="goal-answer">
+    {% if g.needed is none %}
+      Even saving a lot more each month doesn't reach {{ g.amount|money(false) }} by {{ g.by|month_label }} {{ g.label }}: try a later date or a lower level of certainty.
+    {% elif g.on_track %}
+      <b>You're already on track:</b> without saving anything extra, you'd reach {{ g.amount|money(false) }}{% if g.real %} (today's dollars){% endif %}
+      by {{ g.by|month_label }} {{ g.label }}.
+    {% else %}
+      Save <b>{{ g.needed|money(false) }} a month</b> into {{ names.get(g.into) }}, on top of what you do now, to have
+      <b>{{ g.amount|money(false) }}</b>{% if g.real %} in today's dollars ({{ g.target|money(false) }} in {{ g.by[:4] }} dollars){% endif %}
+      {% if g.measure == 'worth' %}of net worth{% elif g.measure == 'investments' %}in investments{% else %}in {{ names.get(g.measure) }}{% endif %}
+      by {{ g.by|month_label }}, {{ g.label }}.
+      {% if p.plan_income %}That's {{ '%.0f'|format(g.needed / p.plan_income * 100) }}% of the Plan's monthly income.{% endif %}
+    {% endif %}
+  </p>
+  <p class="muted">Without saving anything extra, the expected path gets to {{ g.expected_without|money(false) }}{% if g.real %} in today's dollars{% endif %},
+    and {{ '%.0f'|format(g.reach_without * 100) }}% of the futures reach the goal. The amount is the same each month{% if g.real %}, in dollars of the day (it isn't raised with inflation){% endif %};
+    it comes out of what you'd otherwise spend, so it's on top of the Plan.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('main.save_projection_goal') }}" class="stack">
+    <div class="inline">
+      <label class="field"><span>Reach</span><input name="amount" inputmode="decimal" required value="{{ '%.0f'|format(gs.amount) if gs.amount else '' }}" placeholder="2,000,000" size="11"></label>
+      <label class="field"><span>By</span><input type="month" name="by" required value="{{ gs.by or '' }}"></label>
+      <label class="field"><span>In</span>
+        <select name="real"><option value="1"{% if gs.real %} selected{% endif %}>today's dollars</option><option value="0"{% if gs and not gs.real %} selected{% endif %}>dollars of that day</option></select></label>
+      <label class="field"><span>Measured as</span>
+        <select name="measure">
+          <option value="worth"{% if gs.measure == 'worth' %} selected{% endif %}>Net worth</option>
+          <option value="investments"{% if gs.measure == 'investments' %} selected{% endif %}>Investments (brokerage, retirement, HSA)</option>
+          {% for a in p.accounts if not a.debt %}<option value="{{ a.id }}"{% if gs.measure == a.id|string %} selected{% endif %}>Only {{ a.name }}</option>{% endfor %}
+        </select></label>
+      <label class="field"><span>Saving into</span>
+        <select name="into" required>{% for a in p.accounts if not a.debt %}<option value="{{ a.id }}"{% if gs.into == a.id|string %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></label>
+      <label class="field"><span>How sure</span>
+        <select name="confidence">
+          <option value="expected"{% if gs.confidence == 'expected' %} selected{% endif %}>On the expected path (about a coin flip)</option>
+          <option value="0.75"{% if gs.confidence == '0.75' %} selected{% endif %}>3 in 4 futures</option>
+          <option value="0.9"{% if gs.confidence == '0.9' %} selected{% endif %}>9 in 10 futures</option>
+        </select></label>
+    </div>
+    <div class="inline"><button class="btn primary">Work it out</button>{% if g %}<button class="btn quiet" name="clear" value="1" formnovalidate>Clear</button>{% endif %}</div>
+  </form>
+</section>
+
 <section class="panel">
   <div class="panel-head"><h2>Net worth by year</h2>
-    <p class="muted">The line uses each account's rate exactly; the range is the 10th to 90th percentile of the simulated futures.</p></div>
+    <p class="muted">The line is the expected path: every account at its rate, no surprises. The shaded range is where 8 in 10 futures land
+      (1 in 10 do worse than its bottom, 1 in 10 better than its top). "Below today" is the share of futures where net worth is under
+      today's {{ p.start_worth|money(false) }} that year.</p></div>
   <div id="proj-chart" class="chart"></div>
   <div class="table-wrap">
     <table class="ledger cards">
-      <thead><tr><th>Year</th><th class="num">Expected</th><th class="num">Low (1 in 10)</th><th class="num">High (1 in 10)</th></tr></thead>
+      <thead><tr><th>Year</th><th class="num">Expected</th><th class="num">Low (1 in 10)</th><th class="num">High (1 in 10)</th><th class="num">Below today</th></tr></thead>
       <tbody>
         {% for r in p.rows %}
         <tr>
@@ -42,6 +95,7 @@
           <td class="num strong c-side">{{ r.worth|money(false) }}</td>
           <td class="num c-meta" data-label="Low (1 in 10)">{{ r.low|money(false) }}</td>
           <td class="num c-meta" data-label="High (1 in 10)">{{ r.high|money(false) }}</td>
+          <td class="num c-meta" data-label="Below today">{{ '<1' if 0 < r.behind < 0.01 else '%.0f'|format(r.behind * 100) }}%</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -67,6 +121,46 @@
       </table>
     </div>
   </details>
+</section>
+
+{% if p.mix %}{% set x = p.mix %}
+<section class="panel">
+  <div class="panel-head"><h2>How bumpy the ride is</h2>
+    <p class="muted">Your investments together ({{ x.total|money(false) }} today) grow about {{ '%.1f'|format(x.rate) }}% a year, swinging about
+      ±{{ '%.0f'|format(x.vol) }}% in a typical year.</p></div>
+  <ul class="ride">
+    <li><b>Falls along the way:</b> in a typical future, at some point in the {{ p.years }} years your investments drop {{ '%.0f'|format(x.drop_typical * 100) }}% from their high
+      before recovering (about {{ (x.drop_typical * x.total)|money(false) }} on today's balance). In 1 in 10 futures the worst drop is
+      {{ '%.0f'|format(x.drop_bad * 100) }}% or more. Contributions keep going in, so your balance falls less than the market does.</li>
+    <li><b>Chance of being behind:</b> invested money alone (no contributions) is below where it started after
+      1 year in {{ '%.0f'|format(x.behind_by_year[1] * 100) }}% of futures, after 5 years in {{ '%.0f'|format(x.behind_by_year[5] * 100) }}%,
+      after 10 in {{ '%.0f'|format(x.behind_by_year[10] * 100) }}%, and after 20 in {{ '%.0f'|format(x.behind_by_year[20] * 100) }}%.</li>
+    {% if x.n0 %}<li><b>When growth outweighs the swings (N0):</b> about <b>{{ '%.0f'|format(x.n0) }} year{{ 's' if x.n0 >= 1.5 }}</b>.
+      Like counting cards: what you expect to win grows in step with time (hands played), while the swings grow only with its square root,
+      so the longer you stay in, the less luck matters. N0 is when the expected gain equals one standard deviation of the swings;
+      before it, a bad stretch can easily wipe out the gains, after it that gets steadily less likely.</li>{% endif %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="panel" id="how">
+  <div class="panel-head"><h2>How this works</h2></div>
+  <ul class="ride">
+    <li><b>Each month</b>, every account you include grows at its rate. Accounts that swing (investments) also get a random market move:
+      one move for all of them, scaled by each account's swings, because markets tend to fall together. Paycheck 401(k) money goes in,
+      loans pay down on their schedules{% if p.with_plan %}, and the Plan's month happens: its surplus or shortfall lands in
+      {{ names.get(p.plan_account, 'the spending account') }}, the backups top it up as on the Plan page, and any savings goal goes into its account.
+      After the Plan's changes end, the planned month repeats{% endif %}.</li>
+    <li><b>{{ p.runs }} futures</b> are played out this way, each with different market luck (the same set every time you open the page,
+      so numbers only change when your data or settings do). The expected path is the same month-by-month math with no luck at all.</li>
+    <li><b>Rates</b> come from an account's own history once it has 3 years of balances, otherwise from a typical figure for its kind.
+      Change any of them below. "Swings" is volatility: how far a year usually lands from the average (about 15 for a stock fund, 0 for cash).</li>
+    <li><b>What would it take</b> reruns those same futures with a monthly amount added to the account you pick, and finds the smallest amount
+      that reaches the goal on the expected path, or in 3 of 4 or 9 of 10 futures. A goal in today's dollars is raised by inflation
+      ({{ p.inflation }}% a year) to the dollars of that date first.</li>
+    <li><b>It's an estimate:</b> real markets have streaks and crashes bigger than this model's, and rates of the past don't promise the future.
+      Use it to compare choices, not as a promise.</li>
+  </ul>
 </section>
 
 <section class="panel">

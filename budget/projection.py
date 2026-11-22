@@ -159,6 +159,32 @@ def accounts(conn, setup, today):
     return out
 
 
+CONFIDENCE = {"expected": "on the expected path", "0.75": "in 3 of 4 futures", "0.9": "in 9 of 10 futures"}
+
+
+def _goal(setup, today, ids, kinds):
+    """The "what would it take" question, cleaned up, or None: reach `amount` by month `by` (today's or
+    future dollars), measured as net worth, investments or one account, saving into an account."""
+    g = setup.get("goal") or {}
+    amount = _number(g.get("amount"), 1, 1e12)
+    by = str(g.get("by") or "")
+    into = int(g["into"]) if str(g.get("into") or "").isdigit() else None
+    if amount is None or len(by) != 7 or by <= today.isoformat()[:7] or into not in ids or kinds[into] in ("credit", "loan"):
+        return None
+    months = (int(by[:4]) - today.year) * 12 + int(by[5:]) - today.month
+    measure = g.get("measure") if g.get("measure") in ("worth", "investments") else (
+        int(g["measure"]) if str(g.get("measure") or "").isdigit() and int(g["measure"]) in ids else "worth")
+    if isinstance(measure, int) and measure != into:
+        measure = into  # saving into one account only reaches a goal for that account
+    return {"amount": amount, "by": by, "months": min(months, 40 * 12), "real": bool(g.get("real")), "into": into,
+            "measure": measure, "confidence": g.get("confidence") if g.get("confidence") in CONFIDENCE else "expected"}
+
+
+def _quantile(values, q):
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, max(0, int(q * len(ordered))))]
+
+
 def project(conn, setup=None, today=None, runs=RUNS):
     today = today or date.today()
     setup = load_setup(conn) if setup is None else setup
@@ -173,17 +199,22 @@ def project(conn, setup=None, today=None, runs=RUNS):
     plan_acct = budgeting.get_setting(conn, "plan_account", cast=int)
     backups = [(budgeting.get_setting(conn, k, cast=int), budgeting.get_setting(conn, mk) or 0.0)
                for k, mk in zip(budgeting.BACKUP_KEYS, budgeting.BACKUP_MIN_KEYS)]
-    if with_plan:  # the plan's accounts come along: it moves money through them
-        for a in accts:
-            if a["id"] in {plan_acct, values["savings_account"], *(b for b, _ in backups)}:
-                a["forced"] = not a["on"]
-                a["on"] = True
+    goal = _goal(setup, today, {a["id"] for a in accts}, {a["id"]: a["kind"] for a in accts})
+    needed_ids = {plan_acct, values["savings_account"], *(b for b, _ in backups)} if with_plan else set()
+    if goal:
+        needed_ids.add(goal["into"])
+        if isinstance(goal["measure"], int):
+            needed_ids.add(goal["measure"])
+    for a in accts:  # the plan's accounts and the goal's come along: money moves through them
+        if a["id"] in needed_ids and not a["on"]:
+            a["forced"] = True
+            a["on"] = True
     used = [a for a in accts if a["on"]]
     ids = [a["id"] for a in used]
     backups = [(b, f) for b, f in backups if b in ids]
     buffer = values["plan_buffer"] or 0.0
     items = budgeting.plan_items(conn) if with_plan else []
-    months = years * 12
+    months = max(years * 12, goal["months"] if goal else 0)
 
     # Month by month, what doesn't depend on markets: plan nets, loan balances.
     keys, nets = [], []
@@ -201,7 +232,27 @@ def project(conn, setup=None, today=None, runs=RUNS):
             loan_path[a["id"]] = [sum(loan_balance(l["principal"], l["annual_rate"], l["term_months"], l["start_date"], f"{k}-28")
                                       for l in a["loans"]) for k in keys]
 
+    # Investments: the accounts that swing. Their mix sets the drawdown and N0 figures.
+    invest = [a for a in used if a["kind"] in INVESTMENT_KINDS and a["vol"] > 0 and a["balance"] > 0]
+    invest_total = sum(a["balance"] for a in invest)
+    weights = {a["id"]: a["balance"] / invest_total for a in invest} if invest_total else {}
+    invest_ids = {a["id"] for a in used if a["kind"] in INVESTMENT_KINDS}
+    if goal and goal["measure"] == "investments":
+        invest_ids.add(goal["into"])
+
+    def worth(bal):
+        return sum(-bal[a["id"]] if a["debt"] else bal[a["id"]] for a in used)
+
+    def measured(bal):
+        if not goal or goal["measure"] == "worth":
+            return worth(bal)
+        if goal["measure"] == "investments":
+            return sum(bal[i] for i in invest_ids)
+        return bal[goal["measure"]]
+
     def run(rng):
+        """One future: balances at each year's end, the first month the plan runs short, the biggest fall of
+        the investments from a high, and for the goal the measure then and what $1 a month saved grows to."""
         bal = {a["id"]: a["balance"] for a in used}
         yearly, short_at = [], None
         params = []
@@ -209,15 +260,29 @@ def project(conn, setup=None, today=None, runs=RUNS):
             sm = a["vol"] / 100 / math.sqrt(12)
             mu = math.log(1 + a["rate"] / 100) / 12
             params.append((a["id"], a["debt"], mu - sm * sm / 2 if rng else mu, sm if rng else 0.0, a["monthly_in"]))
+        index = peak = 1.0
+        drop = 0.0
+        per_dollar = 0.0
+        at_goal = None
         for t in range(months):
             z = rng.gauss(0, 1) if rng else 0.0
+            moved = 0.0
             for aid, debt, mu, sm, added in params:
                 if aid in loan_path:
                     bal[aid] = loan_path[aid][t]
                     continue
+                g = math.exp(mu + sm * z)
+                if aid in weights:
+                    moved += weights[aid] * g
+                if goal and aid == goal["into"]:
+                    per_dollar = per_dollar * g + 1  # $1 saved at each month's end, grown since
                 if bal[aid] > 0 or debt:
-                    bal[aid] *= math.exp(mu + sm * z)
+                    bal[aid] *= g
                 bal[aid] += added
+            if weights:
+                index *= moved
+                peak = max(peak, index)
+                drop = max(drop, 1 - index / peak)
             if with_plan and plan_acct in bal:
                 bal[plan_acct] += nets[t]
                 if save_to is not None:
@@ -230,33 +295,86 @@ def project(conn, setup=None, today=None, runs=RUNS):
                     bal[plan_acct] += take
                 if short_at is None and bal[plan_acct] < buffer - 0.005:
                     short_at = keys[t]
-            if (t + 1) % 12 == 0 or t == months - 1:
+            if goal and t == goal["months"] - 1:
+                at_goal = (measured(bal), per_dollar)
+            if t < years * 12 and ((t + 1) % 12 == 0 or t == years * 12 - 1):
                 yearly.append(dict(bal))
-        return yearly, short_at
+        return {"yearly": yearly, "short": short_at, "drop": drop, "goal": at_goal}
 
-    expected, first_short = run(None)
+    expected = run(None)
     rng = random.Random(SEED)
     sims = [run(rng) for _ in range(runs)]
-    deflate = [(1 + inflation / 100) ** -(i + 1) if real else 1.0 for i in range(len(expected))]
-
-    def worth(bal):
-        return sum(-v if a["debt"] else v for a, v in zip(used, (bal[i] for i in ids)))
+    deflate = [(1 + inflation / 100) ** -(i + 1) if real else 1.0 for i in range(len(expected["yearly"]))]
 
     start_worth = sum(-a["balance"] if a["debt"] else a["balance"] for a in used)
     rows = []
-    for i, bal in enumerate(expected):
-        spread = sorted(worth(s[0][i]) for s in sims)
-        pick = lambda q: spread[min(len(spread) - 1, int(q * len(spread)))]
+    for i, bal in enumerate(expected["yearly"]):
         f = deflate[i]
+        spread = [worth(s["yearly"][i]) * f for s in sims]
         rows.append({
-            "year": today.year + i + 1, "worth": worth(bal) * f, "low": pick(0.10) * f, "mid": pick(0.50) * f,
-            "high": pick(0.90) * f, "accounts": {aid: bal[aid] * f for aid in ids},
+            "year": today.year + i + 1, "worth": worth(bal) * f, "low": _quantile(spread, 0.10),
+            "mid": _quantile(spread, 0.50), "high": _quantile(spread, 0.90),
+            "behind": sum(1 for v in spread if v < start_worth) / len(spread) if spread else 0.0,
+            "accounts": {aid: bal[aid] * f for aid in ids},
         })
+
+    # The investments' mix as one: its rate, swings, and N0 (years until the expected growth is as big as
+    # one standard deviation of the swings: (sigma / mu)^2 with mu the growth after volatility drag).
+    mix = None
+    if weights:
+        rate = sum(weights[a["id"]] * a["rate"] for a in invest) / 100
+        vol = sum(weights[a["id"]] * a["vol"] for a in invest) / 100
+        drift = math.log(1 + rate) - vol * vol / 2
+        drops = [s["drop"] for s in sims]
+        mix = {"rate": rate * 100, "vol": vol * 100, "total": invest_total,
+               "n0": (vol / drift) ** 2 if drift > 0 and vol > 0 else None,
+               "drop_typical": _quantile(drops, 0.5), "drop_bad": _quantile(drops, 0.9),
+               "behind_by_year": {n: _normal_cdf(-drift * math.sqrt(n) / vol) if vol else 0.0 for n in (1, 5, 10, 20)}}
+
     return {
         "years": years, "real": real, "inflation": inflation, "accounts": accts, "used": used, "rows": rows,
         "start_worth": start_worth, "with_plan": with_plan, "plan_ready": plan_ready, "plan_account": plan_acct,
-        "first_short": first_short, "short_share": sum(1 for s in sims if s[1]) / len(sims) if sims else 0.0,
+        "first_short": expected["short"], "short_share": sum(1 for s in sims if s["short"]) / len(sims) if sims else 0.0,
         "rate_mode": "global" if setup.get("rate_mode") == "global" else "account",
         "global_rate": setup.get("global_rate", ""), "global_vol": setup.get("global_vol", ""),
-        "savings": saving, "save_to": save_to, "runs": runs,
+        "savings": saving, "save_to": save_to, "runs": runs, "mix": mix,
+        "goal": _solve(goal, expected, sims, inflation) if goal else None, "goal_setup": setup.get("goal") or {},
+        "plan_income": values["plan_income"],
     }
+
+
+def _normal_cdf(x):
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def _solve(goal, expected, sims, inflation):
+    """How much a month, saved into the goal's account on top of everything else, reaches the goal: on the
+    expected path, or in 3 of 4 / 9 of 10 futures. Each future's measure at the goal date is its value
+    without the extra plus the extra times what $1 a month grows to in it, so the answer is exact for the
+    simulated futures (backup draws aside)."""
+    years = goal["months"] / 12
+    target = goal["amount"] * ((1 + inflation / 100) ** years if goal["real"] else 1.0)
+    base, per = expected["goal"]
+    futures = [s["goal"] for s in sims]
+    if goal["confidence"] == "expected":
+        needed = (target - base) / per if per else None
+    else:
+        share = 1 - float(goal["confidence"])  # e.g. 9 in 10 reach it: the 10th percentile must
+        lo, hi = 0.0, max(target, 1.0)
+        if _quantile([v + hi * f for v, f in futures], share) < target:
+            hi = None
+        elif _quantile([v for v, _ in futures], share) >= target:
+            hi = 0.0
+        else:
+            for _ in range(60):
+                mid = (lo + hi) / 2
+                if _quantile([v + mid * f for v, f in futures], share) >= target:
+                    hi = mid
+                else:
+                    lo = mid
+        needed = hi
+    shown = (lambda v: v / (1 + inflation / 100) ** years) if goal["real"] else (lambda v: v)
+    reach_now = sum(1 for v, _ in futures if v >= target) / len(futures) if futures else 0.0
+    return {**goal, "target": target, "needed": None if needed is None else max(needed, 0.0),
+            "on_track": needed is not None and needed <= 0, "label": CONFIDENCE[goal["confidence"]],
+            "expected_without": shown(base), "reach_without": reach_now}

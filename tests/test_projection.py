@@ -113,3 +113,56 @@ def test_the_plan_runs_through_it_with_backups_and_the_savings_goal(conn):
         budgeting.set_setting(conn, key, value)
     p = projection.project(conn, {"years": 1, "accounts": zero}, TODAY, runs=5)  # 5000 - 3000 - 500 saved = 1500 flexible
     assert p["first_short"] is None and p["rows"][0]["accounts"][goal] == 6000 and p["savings"] == 500
+
+
+def test_what_would_it_take_solves_for_the_monthly_saving(conn, client):
+    fund = account(conn, "Fund", "brokerage")
+    cash = account(conn, "Checking")
+    balance(conn, fund, "2026-10", 0.01)
+    balance(conn, cash, "2026-10", 500)
+    conn.commit()
+    flat = {"accounts": {str(fund): {"rate": "0", "vol": "0"}}, "years": 1,
+            "goal": {"amount": 12_000, "by": "2027-11", "into": str(fund), "measure": str(fund), "confidence": "expected"}}
+    g = projection.project(conn, flat, TODAY, runs=20)["goal"]
+    assert abs(g["needed"] - 1000) < 0.01  # 12 months of 1,000, no growth
+
+    flat["goal"]["measure"] = "worth"  # net worth already has the 500 in checking
+    assert abs(projection.project(conn, flat, TODAY, runs=20)["goal"]["needed"] - 11_500 / 12) < 0.01
+    flat["goal"].update(measure=str(fund), real=True)
+    p = projection.project(conn, {**flat, "inflation": "10"}, TODAY, runs=20)
+    assert abs(p["goal"]["target"] - 13_200) < 0.01 and abs(p["goal"]["needed"] - 1100) < 0.01  # raised by a year of 10%
+
+    swinging = {"accounts": {str(fund): {"rate": "7", "vol": "15"}}, "years": 1,
+                "goal": {"amount": 500_000, "by": "2046-11", "into": str(fund), "measure": str(fund)}}
+    answers = {}
+    for level in ("expected", "0.75", "0.9"):
+        swinging["goal"]["confidence"] = level
+        answers[level] = projection.project(conn, swinging, TODAY)["goal"]["needed"]
+    assert answers["expected"] < answers["0.75"] < answers["0.9"]
+    assert 800 < answers["expected"] < 1100  # about what 7% a year needs for 20 years
+
+    swinging["goal"].update(amount=400, measure="worth")  # the 500 in checking already covers it
+    assert projection.project(conn, swinging, TODAY, runs=20)["goal"]["on_track"]
+
+    client.post("/projection/goal", data={"amount": "$250,000", "by": "2040-01", "real": "1", "measure": "investments",
+                                          "into": str(fund), "confidence": "0.9"})
+    saved = projection.load_setup(conn)["goal"]
+    assert saved["amount"] == 250_000 and saved["real"] and saved["confidence"] == "0.9"
+    html = client.get("/projection").get_data(as_text=True)
+    assert "a month</b> into Fund" in html and "in 9 of 10 futures" in html and "How this works" in html
+    client.post("/projection/goal", data={"clear": "1"})
+    assert "goal" not in projection.load_setup(conn)
+
+
+def test_how_bumpy_drawdowns_chance_behind_and_n0(conn, client):
+    fund = account(conn, "Fund", "brokerage")
+    balance(conn, fund, "2026-10", 100_000)
+    conn.commit()
+    p = projection.project(conn, {"accounts": {str(fund): {"rate": "7", "vol": "15"}}, "years": 20}, TODAY)
+    mix = p["mix"]
+    assert abs(mix["n0"] - 7.1) < 0.2  # (0.15 / (ln 1.07 - 0.15^2 / 2))^2
+    assert mix["behind_by_year"][1] > mix["behind_by_year"][5] > mix["behind_by_year"][20] > 0
+    assert 0.1 < mix["drop_typical"] < mix["drop_bad"] < 0.8
+    assert p["rows"][0]["behind"] > p["rows"][-1]["behind"]
+    html = client.get("/projection").get_data(as_text=True)
+    assert "How bumpy the ride is" in html and "N0" in html

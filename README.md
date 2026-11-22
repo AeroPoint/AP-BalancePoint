@@ -576,6 +576,17 @@ of 300 simulated futures (a fixed seed, so it doesn't change on reload), where a
 fall together. It says when the spending account can't be kept topped up and in how many of the futures,
 and can show today's dollars after inflation. Accounts held for someone else are left out.
 
+Each year also shows the share of futures **below today's net worth**. *How bumpy the ride is* takes the
+investments together: the typical and 1-in-10 worst fall from a high along the way, the chance invested
+money alone is behind after 1, 5, 10 and 20 years, and **N0**, the years until expected growth equals one
+standard deviation of the swings (as in card counting: the expected gain grows with time, the swings
+with its square root).
+
+**What would it take?** solves for the monthly saving: reach an amount (today's dollars, raised by
+inflation, or dollars of that day) by a month, measured as net worth, investments or one account, saving
+into an account you pick, on the expected path or in 3 of 4 or 9 of 10 futures. It reruns the same futures
+with the amount added each month (on top of the Plan) and finds the smallest that gets there.
+
 ### The month forecast
 
 For the current month the Overview shows where **flexible** and **fixed** spending are headed against

@@ -284,9 +284,27 @@ def save_projection():
         if _int(aid):
             setup["accounts"][aid] = {"on": form.get(f"on-{aid}") == "1", "rate": form.get(f"rate-{aid}", "").strip(),
                                       "vol": form.get(f"vol-{aid}", "").strip()}
+    setup["goal"] = projection.load_setup(conn).get("goal")  # set in its own form
     projection.save_setup(conn, setup)
     conn.commit()
     return redirect(url_for(".projection_page"))
+
+
+@bp.post("/projection/goal")
+def save_projection_goal():
+    conn = get_db()
+    form = request.form
+    setup = projection.load_setup(conn)
+    if form.get("clear"):
+        setup.pop("goal", None)
+    else:
+        amount = _money_input(form.get("amount"))
+        setup["goal"] = {"amount": amount, "by": _month_input(form.get("by")) or "", "real": form.get("real") == "1",
+                         "measure": form.get("measure", "worth"), "into": form.get("into", ""),
+                         "confidence": form.get("confidence", "expected")}
+    projection.save_setup(conn, setup)
+    conn.commit()
+    return redirect(url_for(".projection_page") + "#goal")
 
 
 @bp.route("/plan")
