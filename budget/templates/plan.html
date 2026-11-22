@@ -131,6 +131,14 @@
     </div>
     {% endfor %}
     <div class="plan-row">
+      <label class="field"><span>Income grows <small class="muted">% a year (raises)</small></span>
+        <input name="plan_income_growth" inputmode="decimal" value="{{ settings.plan_income_growth if settings.plan_income_growth is not none else '' }}" placeholder="0">
+      </label>
+      <label class="field"><span>Spending grows <small class="muted">% a year (inflation)</small></span>
+        <input name="plan_spending_growth" inputmode="decimal" value="{{ settings.plan_spending_growth if settings.plan_spending_growth is not none else '' }}" placeholder="0">
+      </label>
+    </div>
+    <div class="plan-row">
       <label class="field"><span>Plan through <small class="muted">its last month; blank = always the next 12 months</small></span>
         <input type="month" name="plan_through" value="{{ plan_through or '' }}">
       </label>
@@ -199,12 +207,13 @@
   {% if plan_items %}
   <div class="table-wrap">
     <table class="ledger rules">
-      <thead><tr><th>Change</th><th class="num">Per month</th><th>Comes out of</th><th>From</th><th>Through</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <thead><tr><th>Change</th><th class="num">Per month</th><th class="num">Grows % a year</th><th>Comes out of</th><th>From</th><th>Through</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
       <tbody>
         {% for i in plan_items %}
         <tr>
           <td><input form="item-{{ i.id }}" name="label" value="{{ i.label }}" aria-label="Change"></td>
           <td><input form="item-{{ i.id }}" name="amount" inputmode="decimal" value="{{ '%.0f'|format(i.amount) }}" aria-label="Amount per month; negative is less money"></td>
+          <td><input form="item-{{ i.id }}" name="growth" inputmode="decimal" size="4" value="{{ i.growth if i.growth is not none else '' }}" placeholder="0" aria-label="Grows % a year"></td>
           <td>{% if i.amount < 0 %}<select form="item-{{ i.id }}" name="category_id" aria-label="Comes out of">{{ target_options(i.category_id) }}</select>{% endif %}</td>
           <td><input form="item-{{ i.id }}" type="month" name="start_month" value="{{ i.start_month }}" aria-label="From"></td>
           <td><input form="item-{{ i.id }}" type="month" name="end_month" value="{{ i.end_month or '' }}" aria-label="Through"></td>
@@ -229,6 +238,7 @@
       <select name="direction"><option value="less">less money</option><option value="more">more money</option></select>
     </label>
     <label class="field"><span>Per month</span><input name="amount" inputmode="decimal" required placeholder="450"></label>
+    <label class="field"><span>Grows % a year</span><input name="growth" inputmode="decimal" size="4" placeholder="0"></label>
     <label class="field"><span>Comes out of</span><select name="category_id">{{ target_options(None) }}</select></label>
     <label class="field"><span>From</span><input type="month" name="start_month" required value="{{ this_month }}"></label>
     <label class="field"><span>Through</span><input type="month" name="end_month"></label>

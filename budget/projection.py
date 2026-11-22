@@ -249,6 +249,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
     inflation = 2.5 if inflation is None else inflation
     accts = accounts(conn, setup, today)
     values = budgeting.plan_values(conn)
+    values["start"] = today.strftime("%Y-%m")
     plan_ready = values["plan_income"] is not None
     with_plan = plan_ready and setup.get("plan", True)
     plan_acct = budgeting.get_setting(conn, "plan_account", cast=int)

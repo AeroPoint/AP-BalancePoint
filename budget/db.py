@@ -132,7 +132,8 @@ CREATE TABLE IF NOT EXISTS plan_items (
     amount      REAL NOT NULL,
     start_month TEXT NOT NULL,                  -- YYYY-MM
     end_month   TEXT,                           -- YYYY-MM, inclusive; NULL = ongoing
-    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL  -- spending inside this category's target
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,  -- spending inside this category's target
+    growth      REAL                            -- % a year it grows from its first month (a raise, inflation)
 );
 
 -- Fixed-term loans. From counts_from on, an account's balance is calculated from its loans
@@ -348,6 +349,8 @@ def migrate(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS ix_transactions_split_of ON transactions(split_of)")
     if "category_id" not in _columns(conn, "plan_items"):
         conn.execute("ALTER TABLE plan_items ADD COLUMN category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL")
+    if "growth" not in _columns(conn, "plan_items"):
+        conn.execute("ALTER TABLE plan_items ADD COLUMN growth REAL")
     existing = _columns(conn, "rules")
     for column in ("leave_uncategorized", "allow_split"):
         if column not in existing:

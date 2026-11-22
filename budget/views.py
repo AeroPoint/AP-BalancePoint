@@ -351,7 +351,7 @@ def plan():
         "plan.html", base=budgeting.baseline(conn, months), projection=budgeting.project(conn),
         count=count, through=f"{months[-1][0]}-{months[-1][1]:02d}" if months else "",
         accounts=accounts, names={a["id"]: a["name"] for a in accounts},
-        settings={k: budgeting.get_setting(conn, k) for k in budgeting.PLAN_KEYS}, values=budgeting.plan_values(conn),
+        settings={k: budgeting.get_setting(conn, k) for k in (*budgeting.PLAN_KEYS, *budgeting.GROWTH_KEYS)}, values=budgeting.plan_values(conn),
         plan_account=budgeting.get_setting(conn, "plan_account", cast=int),
         backup_accounts=[budgeting.get_setting(conn, k, cast=int) for k in budgeting.BACKUP_KEYS],
         backup_mins=[budgeting.get_setting(conn, k) for k in budgeting.BACKUP_MIN_KEYS],
@@ -366,6 +366,13 @@ def plan():
 @bp.post("/plan/settings")
 def save_plan_settings():
     conn = get_db()
+    for key in budgeting.GROWTH_KEYS:
+        if key in request.form:
+            raw = request.form.get(key, "").strip().rstrip("%")
+            try:
+                budgeting.set_setting(conn, key, round(float(raw), 2) if raw else None)
+            except ValueError:
+                pass
     for key in (*budgeting.PLAN_KEYS, *budgeting.BACKUP_MIN_KEYS):
         if key in request.form:
             value = _money_input(request.form.get(key))
@@ -402,12 +409,16 @@ def save_plan_item():
         return redirect(url_for(".plan") + "#changes")
     iid = _int(form.get("id"))
     category = _int(form.get("category_id")) if amount < 0 else None
+    try:
+        growth = round(float(form.get("growth", "").strip().rstrip("%")), 2) if form.get("growth", "").strip() else None
+    except ValueError:
+        growth = None
     if iid:
-        conn.execute("UPDATE plan_items SET label = ?, amount = ?, start_month = ?, end_month = ?, category_id = ? WHERE id = ?",
-                     (label, amount, start, end, category, iid))
+        conn.execute("UPDATE plan_items SET label = ?, amount = ?, start_month = ?, end_month = ?, category_id = ?, growth = ? WHERE id = ?",
+                     (label, amount, start, end, category, growth, iid))
     else:
-        conn.execute("INSERT INTO plan_items (label, amount, start_month, end_month, category_id) VALUES (?, ?, ?, ?, ?)",
-                     (label, amount, start, end, category))
+        conn.execute("INSERT INTO plan_items (label, amount, start_month, end_month, category_id, growth) VALUES (?, ?, ?, ?, ?, ?)",
+                     (label, amount, start, end, category, growth))
     conn.commit()
     return redirect(url_for(".plan") + "#changes")
 

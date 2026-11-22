@@ -277,3 +277,19 @@ def test_planning_savings_first_leaves_the_flexible_target_as_what_is_left(conn,
 
     client.post("/plan/settings", data={"plan_mode": "flex"})  # back: the target set before is still there
     assert budgeting.flex_target(conn) == 2000 and budgeting.project(conn, today=date(2026, 10, 15))["saving"] == 0
+
+
+def test_plan_income_spending_and_changes_grow_each_year(conn, client):
+    checking, _ = plan(conn, income=1000, fixed=500, flex=0, nonmonthly=0, buffer=0, start=0.0, backups=())
+    conn.commit()
+    client.post("/plan/settings", data={"plan_income_growth": "10", "plan_spending_growth": "2%", "plan_through": "2029-11"})
+    client.post("/plan/items/save", data={"label": "Second job", "direction": "more", "amount": "100", "growth": "50",
+                                          "start_month": "2027-03"})
+    rows = {r["key"]: r for r in budgeting.project(conn, today=date(2026, 11, 15))["rows"]}
+    assert rows["2026-12"]["net"] == 1000 - 500  # the first year: as set
+    assert rows["2027-11"]["net"] == 1000 - 500 + 100
+    assert abs(rows["2027-12"]["net"] - (1100 - 510 + 100)) < 0.01  # a year in: raise and inflation
+    assert abs(rows["2028-03"]["net"] - (1100 - 510 + 150)) < 0.01  # the change's own raise a year after it starts
+    assert conn.execute("SELECT growth FROM plan_items").fetchone()[0] == 50
+    html = client.get("/plan").get_data(as_text=True)
+    assert 'name="plan_income_growth" inputmode="decimal" value="10.0"' in html and "Grows % a year" in html

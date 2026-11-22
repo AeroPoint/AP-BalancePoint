@@ -358,6 +358,9 @@ def savings_rate(conn, start, end, accounts=None):
 # ---------------------------------------------------------------- the plan
 
 PLAN_KEYS = ("plan_income", "plan_fixed", "plan_nonmonthly", "flex_target", "plan_buffer")
+# Yearly growth, % (blank = none): regular income (raises) and the planned spending (inflation). Each step
+# lands a year after the plan starts, and every year after.
+GROWTH_KEYS = ("plan_income_growth", "plan_spending_growth")
 BACKUP_KEYS = ("plan_backup_account", "plan_backup_account_2")  # drawn from in this order
 BACKUP_MIN_KEYS = ("plan_backup_min", "plan_backup_min_2")  # each backup's own "keep at least" (blank = 0)
 # Two ways to plan a month. "flex" (the default): set the flexible target, and saving is whatever's left.
@@ -373,6 +376,8 @@ def plan_values(conn):
     """The plan's monthly numbers, with the flexible target worked out from the savings goal when planning
     savings first. Adds mode, savings (per month), savings_goal, savings_unit and savings_account."""
     v = {k: get_setting(conn, k) for k in PLAN_KEYS}
+    v.update({k: get_setting(conn, k) or 0.0 for k in GROWTH_KEYS})
+    v["start"] = date.today().strftime("%Y-%m")
     goal = get_setting(conn, "plan_savings")
     unit = "%" if get_setting(conn, "plan_savings_unit", cast=str) == "%" else "$"
     account = get_setting(conn, "plan_savings_account", cast=int)
@@ -465,14 +470,27 @@ def plan_items(conn):
            ORDER BY p.start_month, p.id""")]
 
 
+def _years_between(first, key):
+    """Whole years from month `first` to month `key` ("YYYY-MM"): 0 for its first 12 months."""
+    return max(0, ((int(key[:4]) - int(first[:4])) * 12 + int(key[5:]) - int(first[5:])) // 12)
+
+
 def plan_month(values, items, key):
     """(changes active, their total, planned spending, net into the plan account) for a month "YYYY-MM".
-    Planning savings first, the savings goal is taken out of the net (it goes to its own account)."""
-    active = [i for i in items if i["start_month"] <= key and (i["end_month"] or "9999-12") >= key]
-    adjust = sum(i["amount"] for i in active)
-    spend = (values["plan_fixed"] or 0) + max(values["flex_target"] or 0, 0) + (values["plan_nonmonthly"] or 0)
+    Income and spending grow by their yearly % from the month after the plan starts; each change by its own
+    from its first month. Planning savings first, the savings goal is taken out of the net (it goes to its
+    own account)."""
+    start = values.get("start") or key
+    y, m = reports.add_months(int(start[:4]), int(start[5:]), 1)
+    years = _years_between(f"{y}-{m:02d}", key)
+    income_step = (1 + (values.get("plan_income_growth") or 0) / 100) ** years
+    spend_step = (1 + (values.get("plan_spending_growth") or 0) / 100) ** years
+    active = [{**i, "now": i["amount"] * (1 + (i.get("growth") or 0) / 100) ** _years_between(i["start_month"], key)}
+              for i in items if i["start_month"] <= key and (i["end_month"] or "9999-12") >= key]
+    adjust = sum(i["now"] for i in active)
+    spend = ((values["plan_fixed"] or 0) + max(values["flex_target"] or 0, 0) + (values["plan_nonmonthly"] or 0)) * spend_step
     saving = values["savings"] if values["mode"] == "savings" else 0.0
-    return active, adjust, spend, values["plan_income"] + adjust - spend - saving
+    return active, adjust, spend, values["plan_income"] * income_step + adjust - spend - saving
 
 
 def project(conn, months=None, today=None):
@@ -485,6 +503,7 @@ def project(conn, months=None, today=None):
     """
     today = today or date.today()
     values = plan_values(conn)
+    values["start"] = today.strftime("%Y-%m")
     end_key, end_months, end_set = plan_end(conn, today)
     months = months or end_months
     if values["plan_income"] is None:

@@ -555,6 +555,10 @@ shortfall comes from backup accounts in the order you pick (say savings, then a 
 each down to its own "keeping at least" amount (blank means it can be emptied), and the page shows when
 that starts and how much each one gives. The Overview warns when a backup is below its amount.
 
+**Income grows** and **Spending grows** (% a year) raise the regular income and the planned spending
+each year from the plan's start, and each expected change can grow by its own % a year from its first month
+(a second income's raises, childcare rising with inflation).
+
 **Plan by** a flexible target (saving is whatever the month leaves) or a **savings goal**: an amount
 or a % of income put into an account you pick, first, each month. With a savings goal the flexible
 target is what's left (income − fixed − non-monthly − the goal); the Overview and the month forecast

@@ -23,6 +23,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Plan through: the Plan can run up to 40 years ahead to a month you pick (still the next 12 months by
   default), shown monthly for the first year and then yearly. After it, the Projection carries the planned
   month on as it is now, without the changes.
+- Plan growth: regular income and planned spending can grow by a % a year (raises, inflation), and each
+  expected change by its own % from its first month.
 - Plan by a savings goal: an amount or a % of income put into an account first each month, with the
   flexible target what's left. The Overview and the month forecast judge the month on that target.
 
