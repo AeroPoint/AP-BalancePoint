@@ -137,6 +137,74 @@
   </form>
 </section>
 
+{# ------------------------------------------------------------ retirement #}
+{% set rt = p.retire %}{% set rs = p.retire_setup %}
+<section class="panel" id="retire">
+  <div class="panel-head"><h2>Retirement: does the money last?</h2>
+    <p class="muted">From your retirement month, the cash and investment accounts pay your yearly spending (in today's dollars,
+      rising with inflation), less incomes like Social Security or a pension from the month each starts. Each simulated future keeps
+      its own market luck through retirement.</p></div>
+  {% if rt %}
+  <p class="goal-answer">
+    {% if rt.share_now >= 0.995 %}The money lasts through {{ rt.until|month_label }} in <b>every</b> future, as things stand.
+    {% else %}As things stand, the money lasts through {{ rt.until|month_label }} in <b>{{ '%.0f'|format(rt.share_now * 100) }}%</b> of futures.{% endif %}
+    {% if rt.needed is none and rt.basis %} Even the most "What would it take?" allows doesn't get it to {{ rt.label }}: spend less, retire later or add income.
+    {% elif rt.needed and rt.basis %} To make it {{ rt.label }} of futures:
+      {% if rt.basis == 'savings' %}invest <b>{{ '%.0f'|format(rt.needed * 100) }}% of what's left over</b> each month{% if rt.first_unit %} ({{ (rt.needed * rt.first_unit)|money(false) }} in the first month){% endif %}
+      {% elif rt.basis == 'income' %}save <b>{{ '%.1f'|format(rt.needed * 100) }}% of income</b>
+      {% else %}save <b>{{ rt.needed|money(false) }} a month</b>{% endif %}
+      into {% for aid, share in rt.into.items() %}{{ names.get(aid) }}{{ ', ' if not loop.last }}{% endfor %}.
+    {% elif rt.basis %} That's already {{ rt.label }} of futures or better.{% endif %}
+  </p>
+  <ul class="ride">
+    <li><b>At retirement ({{ rt.month|month_label }}):</b> about {{ rt.at_retire_mid|money(false) }} in a typical future
+      (today's dollars; {{ rt.at_retire|money(false) }} on the expected path), invested about {{ '%.1f'|format(rt.rate) }}% ±{{ '%.0f'|format(rt.vol) }}%.</li>
+    <li><b>The first year:</b> spending {{ rt.spend|money(false) }}, incomes {{ rt.first_income|money(false) }}, so the investments pay
+      {{ rt.first_gap|money(false) }} (today's dollars){% if rt.at_retire_mid %}, {{ '%.1f'|format(rt.first_gap / rt.at_retire_mid * 100) }}% of a typical balance{% endif %}.</li>
+    <li><b>At the end ({{ rt.until|month_label }}):</b> {% if rt.expected_lasts %}the expected path still has {{ rt.expected_left|money(false) }}{% else %}the expected path runs out in {{ rt.expected_gone|month_label }}{% endif %};
+      a typical future has {{ rt.end_mid|money(false) }} left, a 1-in-10 bad one {{ rt.end_low|money(false) }} (today's dollars).</li>
+  </ul>
+  {% if not rt.basis %}<p class="muted">Set up "What would it take?" above (how you'd save, and into which accounts) to see what would make it {{ rt.label }}.</p>{% endif %}
+  {% endif %}
+  <form method="post" action="{{ url_for('main.save_projection_retire') }}" class="inline">
+    <label class="field"><span>Retire</span><input type="month" name="month" required value="{{ rs.month or '' }}"></label>
+    <label class="field"><span>Spend a year <small class="muted">today's dollars</small></span><input name="spend" inputmode="decimal" required size="9" value="{{ '%.0f'|format(rs.spend) if rs.spend else '' }}" placeholder="120,000"></label>
+    <label class="field"><span>Last through</span><input type="month" name="until" required value="{{ rs.until or '' }}"></label>
+    <label class="field"><span>Aim for</span><select name="confidence">{% for v, l in [('0.5', 'Half the futures'), ('0.75', '3 in 4 futures'), ('0.9', '9 in 10 futures')] %}<option value="{{ v }}"{% if (rs.confidence or '0.75') == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+    <button class="btn primary">Save</button>
+  </form>
+  <h3 class="h-sm">Incomes in retirement</h3>
+  {% if rs.incomes %}
+  <div class="table-wrap">
+    <table class="ledger cards">
+      <thead><tr><th>Income</th><th class="num">A month</th><th>From</th><th>Grows</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+        {% for i in rs.incomes %}
+        <tr>
+          <td class="c-main">{{ i.label }}</td>
+          <td class="num c-meta" data-label="A month">{{ (i.amount or 0)|money(false) }}</td>
+          <td class="c-meta" data-label="From">{{ i['from']|month_label if i['from'] else '—' }}</td>
+          <td class="c-meta" data-label="Grows">{% if i.kind == 'nominal' %}dollars of that month, then {{ i.cola or 0 }}% a year{% else %}today's dollars, with inflation{% endif %}</td>
+          <td class="actions"><form method="post" action="{{ url_for('main.save_projection_retire') }}"><input type="hidden" name="delete_income" value="{{ loop.index }}"><button class="btn small quiet danger">Delete</button></form></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <form method="post" action="{{ url_for('main.save_projection_retire') }}" class="inline">
+    <label class="field grow"><span>Income</span><input name="income_label" required placeholder="Social Security"></label>
+    <label class="field"><span>A month</span><input name="income_amount" inputmode="decimal" required size="7" placeholder="2,500"></label>
+    <label class="field"><span>From</span><input type="month" name="income_from" required></label>
+    <label class="field"><span>In</span><select name="income_kind"><option value="real">today's dollars, with inflation</option><option value="nominal">dollars of that month</option></select></label>
+    <label class="field"><span>then grows %</span><input name="income_cola" inputmode="decimal" size="4" placeholder="0"></label>
+    <button class="btn">Add</button>
+  </form>
+  <p class="muted">Social Security: use your statement's estimate at the age you plan to claim, in today's dollars (it rises with inflation);
+    many plan on about 80% of it in case of cuts. A pension: the plan's estimate, in dollars of its first month, then its yearly increase.
+    The net worth chart above stops at retirement.</p>
+</section>
+
 <section class="panel">
   <div class="panel-head"><h2>Net worth by year</h2>
     <p class="muted">The line is the expected path: every account at its rate, no surprises. The shaded range is where 8 in 10 futures land

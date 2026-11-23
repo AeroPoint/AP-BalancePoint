@@ -5,6 +5,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Projection, "Retirement: does the money last?": yearly spending from a retirement month, less incomes
+  like Social Security or a pension from their own months, through a last month, in every simulated future;
+  the share of futures the money lasts in, what's left, and what would make it last in half, 3 of 4 or
+  9 of 10 of them.
+
 ## [0.3.0] - 2026-11-22
 
 ### Added

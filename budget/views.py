@@ -290,10 +290,37 @@ def save_projection():
                                       "add_from": _month_input(form.get(f"from-{aid}")) or "",
                                       "add_until": _month_input(form.get(f"until-{aid}")) or ""}
     saved = projection.load_setup(conn)
-    setup["goal"], setup["lumps"] = saved.get("goal"), saved.get("lumps", [])  # set in their own forms
+    setup["goal"], setup["lumps"], setup["retire"] = saved.get("goal"), saved.get("lumps", []), saved.get("retire")  # own forms
     projection.save_setup(conn, setup)
     conn.commit()
     return redirect(url_for(".projection_page"))
+
+
+@bp.post("/projection/retire")
+def save_projection_retire():
+    conn = get_db()
+    form = request.form
+    setup = projection.load_setup(conn)
+    retire = setup.get("retire") or {}
+    if form.get("clear"):
+        setup.pop("retire", None)
+    elif form.get("delete_income"):
+        drop = _int(form.get("delete_income"))
+        retire["incomes"] = [i for n, i in enumerate(retire.get("incomes") or [], 1) if n != drop]
+        setup["retire"] = retire
+    elif form.get("income_label") is not None:
+        retire.setdefault("incomes", []).append({
+            "label": " ".join(form.get("income_label", "").split()), "amount": _money_input(form.get("income_amount")),
+            "from": _month_input(form.get("income_from")) or "", "kind": "nominal" if form.get("income_kind") == "nominal" else "real",
+            "cola": form.get("income_cola", "").strip().rstrip("%")})
+        setup["retire"] = retire
+    else:
+        retire.update(month=_month_input(form.get("month")) or "", until=_month_input(form.get("until")) or "",
+                      spend=_money_input(form.get("spend")), confidence=form.get("confidence", "0.75"))
+        setup["retire"] = retire
+    projection.save_setup(conn, setup)
+    conn.commit()
+    return redirect(url_for(".projection_page") + "#retire")
 
 
 @bp.post("/projection/lumps")

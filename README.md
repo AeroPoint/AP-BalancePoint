@@ -597,6 +597,14 @@ half (a true coin flip), 3 of 4 or 9 of 10 futures. The saving can be a flat amo
 of the Plan's months leaves over, moved out of the spending account). Not sure when? The same goal is
 also answered for the same month every 5 years, up to 40 years out.
 
+**Retirement: does the money last?** From a retirement month, the cash and investment accounts pay a
+yearly spending amount (today's dollars, rising with inflation) less incomes (Social Security, a pension),
+each from its own month, through a last month. Every simulated future keeps its own market luck through
+retirement, so the page gives the share of futures where the money lasts, what's left in a typical and a
+bad one, and what would make it last in half, 3 of 4 or 9 of 10 futures (using "What would it take?"'s way
+of saving). In retirement all the money is taken as invested like the investments. The net worth chart
+stops at retirement.
+
 **Money going in** sets, per account, a monthly amount (blank: what paychecks have put in lately), a raise
 each year, and from/until months: a 401(k) growing with raises, or an HSA maxed each year until retirement.
 **Lump sums** are one-time events: a property sale (the price less selling costs and the loan's remaining

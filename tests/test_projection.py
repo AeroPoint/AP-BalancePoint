@@ -313,3 +313,35 @@ def test_half_the_futures_is_below_the_expected_path(conn):
         setup["goal"]["confidence"] = level
         needed[level] = projection.project(conn, setup, TODAY)["goal"]["needed"]
     assert needed["0.5"] > needed["expected"]  # a typical future trails the every-rate-exactly path
+
+
+def test_retirement_the_money_lasts_or_runs_out_and_what_it_takes(conn, client):
+    fund = account(conn, "Fund", "brokerage")
+    balance(conn, fund, "2026-10", 1_000_000)
+    conn.commit()
+    setup = {"years": 5, "inflation": "0", "accounts": {str(fund): {"rate": "0", "vol": "0"}},
+             "retire": {"month": "2027-11", "until": "2037-11", "spend": 120_000, "confidence": "0.75"}}
+    rt = projection.project(conn, setup, TODAY, runs=20)["retire"]
+    assert rt["share_now"] == 0 and not rt["expected_lasts"]  # 10,000 a month for 120 months is 1.2M
+    assert rt["expected_gone"] == "2036-03"  # 1M lasts 100 months
+    assert rt["needed"] is None and rt["basis"] is None  # no "what would it take" set up
+
+    setup["retire"]["incomes"] = [{"label": "Pension", "amount": 2000, "from": "2027-01"}]
+    rt = projection.project(conn, setup, TODAY, runs=20)["retire"]
+    assert rt["share_now"] == 1 and abs(rt["expected_left"] - 40_000) < 0.01 and abs(rt["first_income"] - 24_000) < 0.01
+
+    setup["retire"]["incomes"] = [{"label": "Pension", "amount": 2000, "from": "2032-11", "kind": "nominal", "cola": "0"}]
+    setup["goal"] = {"amount": 1, "by": "2027-11", "basis": "flat", "into": {str(fund): 100}, "measure": [str(fund)]}
+    rt = projection.project(conn, setup, TODAY, runs=20)["retire"]
+    assert rt["share_now"] == 0  # the pension pays the last 61 months: 1.2M - 122,000 = 1.078M needed
+    assert abs(rt["needed"] - 78_000 / 12) < 1  # saved monthly for the 12 months before retiring
+
+    client.post("/projection/retire", data={"month": "2057-01", "spend": "$200,000", "until": "2093-07", "confidence": "0.75"})
+    client.post("/projection/retire", data={"income_label": "Social Security", "income_amount": "2,900", "income_from": "2065-07",
+                                            "income_kind": "real"})
+    saved = projection.load_setup(conn)["retire"]
+    assert saved["spend"] == 200_000 and saved["incomes"][0]["amount"] == 2900
+    html = client.get("/projection").get_data(as_text=True)
+    assert "does the money last?" in html and "Social Security" in html and "The first year:" in html
+    client.post("/projection/retire", data={"delete_income": "1"})
+    assert projection.load_setup(conn)["retire"]["incomes"] == []

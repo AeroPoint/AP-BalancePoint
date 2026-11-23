@@ -238,6 +238,32 @@ def _goal(setup, today, ids, kinds):
             "confidence": g.get("confidence") if g.get("confidence") in CONFIDENCE else "expected"}
 
 
+MONEY_KINDS = ("checking", "savings", "cash", "brokerage", "retirement", "hsa", "crypto")
+
+
+def _retirement(setup, today):
+    """Retirement, cleaned up, or None: from month `month`, spend `spend` a year (today's dollars, rising with
+    inflation) out of the money accounts, less incomes (Social Security, a pension: each from its month, in
+    today's dollars rising with inflation, or in dollars of its first month then rising by its own %), through
+    month `until`. `confidence` is the share of futures the money should last in."""
+    r = setup.get("retire") or {}
+    month, until = _month_ok(r.get("month")), _month_ok(r.get("until"))
+    spend = _number(r.get("spend"), 0, 1e9)
+    if not (month and until and spend) or month <= today.isoformat()[:7] or until <= month:
+        return None
+    since = lambda key: (int(key[:4]) - today.year) * 12 + int(key[5:]) - today.month
+    incomes = []
+    for i in r.get("incomes") or []:
+        amount, start = _number(i.get("amount"), 0, 1e8), _month_ok(i.get("from"))
+        if amount and start:
+            incomes.append({"label": str(i.get("label") or "Income")[:80], "amount": amount, "from": start,
+                            "months": since(start), "real": i.get("kind") != "nominal",
+                            "cola": _number(i.get("cola"), -5, 20) or 0.0})
+    return {"month": month, "until": until, "months": min(since(month), 40 * 12), "length": min(since(until) - since(month), 60 * 12),
+            "spend": spend, "incomes": incomes,
+            "confidence": r.get("confidence") if r.get("confidence") in ("0.5", "0.75", "0.9") else "0.75"}
+
+
 def _quantile(values, q):
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, max(0, int(q * len(ordered))))]
@@ -279,7 +305,10 @@ def project(conn, setup=None, today=None, runs=RUNS):
     # carries on as it is now (the baseline), without the changes.
     plan_end, plan_months, _ = budgeting.plan_end(conn, today)
     horizon = years * 12
-    months = max(horizon, max(goal["dates"]) if goal else 0)
+    retire = _retirement(setup, today)
+    if retire:  # the chart stops at retirement: after it, the retirement figures take over
+        horizon = min(horizon, retire["months"])
+    months = max(horizon, max(goal["dates"]) if goal else 0, retire["months"] if retire else 0)
 
     # Month by month, what doesn't depend on markets: plan nets, loan balances.
     keys, nets = [], []
@@ -351,6 +380,8 @@ def project(conn, setup=None, today=None, runs=RUNS):
     def measured(bal):
         return sum(-bal[i] if i in debts else bal[i] for i in goal["measure"])
 
+    retire_ids = [a["id"] for a in used if not a["debt"] and a["kind"] in MONEY_KINDS]
+
     def run(rng):
         """One future: balances at each year's end, the first month the plan runs short, the biggest fall of
         the investments from a high, and for the goal the measure then and what $1 a month saved grows to."""
@@ -365,6 +396,7 @@ def project(conn, setup=None, today=None, runs=RUNS):
         drop = 0.0
         per_dollar = dict.fromkeys(goal["into"], 0.0) if goal else {}
         at_goal = {}
+        at_retire = None
         for t in range(months):
             z = rng.gauss(0, 1) if rng else 0.0
             moved = 0.0
@@ -411,9 +443,15 @@ def project(conn, setup=None, today=None, runs=RUNS):
                 if goal["basis"] == "savings" and plan_acct in goal["measure"]:
                     grown -= sum(weights_t[:t + 1])  # moved out of the spending account, which counts too
                 at_goal[t + 1] = (measured(bal), grown)
+            if retire and t + 1 == retire["months"]:
+                grown = sum(share * per_dollar[aid] for aid, share in goal["into"].items()) if goal else 0.0
+                if goal and goal["basis"] == "savings" and plan_acct in retire_ids:
+                    grown -= sum(weights_t[:t + 1])
+                at_retire = (sum(bal[i] for i in retire_ids), grown, {i: bal[i] for i in retire_ids})
             if t < horizon and ((t + 1) % 12 == 0 or t == horizon - 1):
                 yearly.append((t + 1, dict(bal)))
-        return {"yearly": yearly, "short": short_at, "drop": drop, "goal": at_goal}
+        shocks = [rng.gauss(0, 1) for _ in range(retire["length"])] if retire and rng else None
+        return {"yearly": yearly, "short": short_at, "drop": drop, "goal": at_goal, "retire": at_retire, "shocks": shocks}
 
     expected = run(None)
     rng = random.Random(SEED)
@@ -452,12 +490,86 @@ def project(conn, setup=None, today=None, runs=RUNS):
         "rate_mode": "global" if setup.get("rate_mode") == "global" else "account",
         "global_rate": setup.get("global_rate", ""), "global_vol": setup.get("global_vol", ""),
         "savings": saving, "save_to": save_to, "runs": runs, "mix": mix,
-        "goal": _solve(goal, expected, sims, inflation, today) if goal else None, "goal_setup": setup.get("goal") or {},
+        "goal": _solve(goal, expected, sims, inflation, today) if goal else None,
+        "retire": _retire_outcome(retire, goal, expected, sims, used, inflation, weights_t[0] if goal and weights_t else None) if retire else None,
+        "retire_setup": setup.get("retire") or {}, "goal_setup": setup.get("goal") or {},
         "plan_income": values["plan_income"], "plan_end": plan_end, "plan_months": plan_months,
 "lumps": lumps, "lump_setup": setup.get("lumps") or [],
         "goal_error": goal_error, "goal_first": weights_t[0] if goal and weights_t else None,
         "span": horizon / 12,
     }
+
+
+def _retire_outcome(retire, goal, expected, sims, used, inflation, first_unit):
+    """Whether the money lasts from retirement to its last month, in each future: every month it grows by the
+    investments' mix (by their expected balances then; cash is taken as put to work) with that future's market moves, and pays the
+    spending less the incomes running that month. The share of futures it lasts in, the expected path's
+    run-out month, what's left (today's dollars), and the saving (the goal's "Saving as" and accounts) that
+    makes it last in the chosen share of futures."""
+    infl = 1 + inflation / 100
+    start, length = retire["months"], retire["length"]
+    # In retirement all the money is taken as invested like the investments are then (cash at retirement,
+    # like a pile of leftover in checking, would be put to work), weighted by their expected balances.
+    by_id = {a["id"]: a for a in used}
+    mix_bal = {i: max(v, 0.0) for i, v in expected["retire"][2].items() if by_id[i]["kind"] in INVESTMENT_KINDS}
+    if not any(mix_bal.values()):
+        mix_bal = {i: max(v, 0.0) for i, v in expected["retire"][2].items()}
+    total = sum(mix_bal.values()) or 1.0
+    rate = sum(mix_bal[i] * by_id[i]["rate"] for i in mix_bal) / total / 100
+    vol = sum(mix_bal[i] * by_id[i]["vol"] for i in mix_bal) / total / 100
+    s = vol / math.sqrt(12)
+    mu_e, mu_r = math.log(1 + rate) / 12, math.log(1 + rate) / 12 - s * s / 2
+    need, incomes_now = [], []
+    for k in range(length):
+        m = start + k + 1
+        spend = retire["spend"] / 12 * infl ** (m / 12)
+        income = 0.0
+        for i in retire["incomes"]:
+            if m >= i["months"]:
+                income += i["amount"] * (infl ** (m / 12) if i["real"] else (1 + i["cola"] / 100) ** ((m - i["months"]) // 12))
+        need.append(spend - income)
+        if k == 0:
+            incomes_now = [income, spend]
+
+    def last(w, zs, mu, sd):
+        for k in range(length):
+            w = w * math.exp(mu + sd * (zs[k] if zs else 0.0)) - need[k]
+            if w < 0:
+                return False, k, 0.0
+        return True, length, w
+
+    def share(x):
+        return sum(1 for f in sims if last(f["retire"][0] + x * f["retire"][1], f["shocks"], mu_r, s)[0]) / len(sims)
+
+    now = share(0.0)
+    ok, gone, left = last(expected["retire"][0], None, mu_e, 0.0)
+    ends = sorted(last(f["retire"][0], f["shocks"], mu_r, s)[2] for f in sims)
+    deflate = infl ** ((start + length) / 12)
+    target = float(retire["confidence"])
+    needed = None
+    if goal:
+        if now >= target:
+            needed = 0.0
+        else:
+            hi = {"savings": 1.0, "income": 3.0}.get(goal["basis"], 100_000.0)
+            if share(hi) >= target:
+                lo = 0.0
+                for _ in range(16):
+                    mid = (lo + hi) / 2
+                    if share(mid) >= target:
+                        hi = mid
+                    else:
+                        lo = mid
+                needed = hi
+    y, m = int(retire["month"][:4]), int(retire["month"][5:])
+    gone_key = None if ok else "%d-%02d" % reports.add_months(y, m, gone)
+    return {**retire, "share_now": now, "expected_lasts": ok, "expected_gone": gone_key,
+            "expected_left": left / deflate, "end_mid": ends[len(ends) // 2] / deflate, "end_low": ends[len(ends) // 10] / deflate,
+            "at_retire": expected["retire"][0] / infl ** (start / 12), "at_retire_mid": sorted(f["retire"][0] for f in sims)[len(sims) // 2] / infl ** (start / 12),
+            "rate": rate * 100, "vol": vol * 100, "first_gap": need[0] / infl ** ((start + 1) / 12) * 12 if need else None,
+            "first_income": incomes_now[0] / infl ** ((start + 1) / 12) * 12 if incomes_now else 0.0,
+            "needed": needed, "basis": goal["basis"] if goal else None, "into": goal["into"] if goal else {},
+            "first_unit": first_unit, "label": {"0.5": "half", "0.75": "3 in 4", "0.9": "9 in 10"}[retire["confidence"]]}
 
 
 def _normal_cdf(x):
