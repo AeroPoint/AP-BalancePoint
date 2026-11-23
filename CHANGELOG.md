@@ -5,6 +5,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
 ### Added
 - Projection, "Retirement: does the money last?": yearly spending from a retirement month, less incomes
   like Social Security or a pension from their own months, through a last month, in every simulated future;
@@ -183,7 +185,8 @@ Everything up to the first public release.
 - `python run.py demo`: a made-up demo household (Pat and Sam Smith) in its own `demo-data/` folder.
 - Test suite on made-up data, run by GitHub Actions on macOS, Windows and Linux.
 
-[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/AeroPoint/AP-BalancePoint/compare/v0.1.0...v0.1.1
